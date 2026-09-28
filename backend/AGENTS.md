@@ -60,7 +60,7 @@ core/      설정(config), DB 세션, 공통 유틸.
 - [ ] 채팅(WebSocket) 아키텍처 상세 설계
 - [ ] 광고 노출 로직 설계
 - [ ] ETL 파이프라인 상세(스케줄링, 지오코딩)
-- [ ] Query API 엔드포인트 명세
+- [x] Query API 엔드포인트 명세 → [`../docs/API_SPEC.md`](../docs/API_SPEC.md)
 - [ ] 토지이용계획 분석 로직
 - [ ] 어댑터/모의 데이터·설정·에러·테스트 규약
 - [ ] Alembic 마이그레이션 초기 세팅

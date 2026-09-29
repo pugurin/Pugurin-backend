@@ -80,6 +80,9 @@ core/          설정(config), DB·Redis 세션, 에러 핸들러, 공통 유틸
 ### 4.4 조회·캐시
 1. 공개 조회 API는 `Cache-Control` + `ETag`를 붙인다(실거래가는 일 1회 갱신).
 2. 토지이용계획·토지특성 캐시 키는 **PNU**, TTL 30일. 좌표 조회는 `좌표 → PNU` 변환 후 캐시를 조회한다.
+   - 캐시에는 필지 **경계 도형**(연속지적도)도 함께 저장한다. 응답 `geometry`는 표시용으로 단순화(`ST_SimplifyPreserveTopology`, 오차 0.5m 이내)해서 내린다.
+   - 용도지역 **면적 비율**(`zonings[].area_ratio`)은 필지 도형과 VWorld 용도지역 레이어(`LT_C_UQ111` 등) 도형의 교차 면적(`ST_Area(ST_Intersection(...)::geography)`)으로 계산해 함께 캐시한다.
+   - 좌표에 필지가 없거나(도로·바다) 부산 밖이면 예외가 아니라 `unavailable_reason`(`no_parcel`/`out_of_service_area`)으로 반환한다. `no_parcel` 결과도 좌표 격자 단위로 짧게(1일) 캐시해 반복 호출을 막는다.
 3. **건폐율·용적률 한도**는 VWorld가 아니라 `zoning_rules`(부산시 도시계획 조례 기준 용도지역별 한도) 테이블에서 산출한다. (VWorld 제공 여부 확인 전까지 이 방식 기준)
 4. 통계는 **중위값** 기준, `property_type`은 단일 값 필수, 해제거래 제외.
 5. 조회수 등 카운터는 Redis에서 증가시키고 주기적으로 DB에 반영한다(읽기 요청마다 DB 쓰기 금지).

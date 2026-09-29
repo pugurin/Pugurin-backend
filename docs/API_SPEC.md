@@ -1,9 +1,21 @@
-# API 명세서 (Pugurin Backend) — v0.3
+# API 명세서 (Pugurin Backend) — v0.4
 
 부산 부동산 지도 서비스 백엔드 API 명세입니다.
-전체 개요·단계별 범위는 [`../AGENTS.md`](../AGENTS.md), 백엔드 구현 규칙은 [`../backend/AGENTS.md`](../backend/AGENTS.md) 참고.
+전체 개요·단계별 범위는 [`../AGENTS.md`](../AGENTS.md), 기능 규칙은 [`FEATURE_SPEC.md`](./FEATURE_SPEC.md), 백엔드 구현 규칙은 [`../backend/AGENTS.md`](../backend/AGENTS.md) 참고.
 
 각 섹션 제목의 **[1차]/[2차]/[3차]** 는 구현 단계입니다.
+
+### v0.3 → v0.4 주요 변경 (프론트 피드백 반영)
+- 지도 마커 `latest`에 `deposit`, `monthly_rent`, `supply_area_pyeong` 추가 — 전·월세 마커 빈칸 문제 해결
+- 구·동 집계 마커의 대표값을 거래유형별로 정의 (`summary`)
+- 면적 필드·필터 이름을 **전용면적 기준임이 드러나게** 변경 (`area_pyeong` → `exclusive_area_pyeong`)
+- `zoom` 기준을 표준 웹 메르카토르 줌으로 명시
+- 토지 응답에 필지 경계 `geometry`(GeoJSON) 추가
+- 필지 없음(도로·바다·하천)·부산 밖 클릭을 **200 + `data: null` + `meta.unavailable_reason`** 으로 통일
+- `zoning` 객체 → `zonings` 배열 (한 필지가 여러 용도지역에 걸치는 경우, 면적 비율 포함)
+- `glossary_term_ids` 목록 → 필드명 기준 `glossary` 맵
+- 용어 해설에 `category`, `is_popular`, `display_order` 추가
+- 검색 결과에 지역 `bbox` 추가
 
 ### v0.2 → v0.3 주요 변경
 - 지도 조회를 **단지·건물 단위 마커 + 줌별 집계** 단일 엔드포인트(`/map/markers`)로 통합
@@ -52,7 +64,7 @@
 | `RESOURCE_NOT_FOUND` | 404 | 대상 없음 |
 | `CONFLICT` | 409 | 중복 (예: 이미 진행 중인 중개사 신청) |
 | `RATE_LIMITED` | 429 | 요청 과다 (`Retry-After` 헤더 포함) |
-| `SOURCE_UNAVAILABLE` | 503 | 외부 데이터 소스 장애 (토지 API는 graceful degrade, §5 참고) |
+| `SOURCE_UNAVAILABLE` | 503 | 외부 데이터 소스 장애 (토지 API는 200 + `unavailable_reason`으로 degrade, §5 참고) |
 | `INTERNAL_ERROR` | 500 | 서버 오류 |
 
 **페이지네이션**
@@ -63,7 +75,10 @@
 **단위·형식 규약**
 - 금액: **원 단위 정수**(int64)
 - 면적: `*_m2`(㎡, 소수 2자리) + `*_pyeong`(평, 소수 1자리)을 **항상 함께** 반환
+- 면적 이름 규칙: `exclusive_area_*`(전용면적), `supply_area_*`(공급면적, 아파트 평형), `land_area_*`(토지 면적). 이름 없는 `area_*`는 쓰지 않는다
 - 좌표: WGS84(EPSG:4326). `bbox`는 `min_lng,min_lat,max_lng,max_lat`
+- 도형: GeoJSON (`Polygon` / `MultiPolygon`, 좌표 순서 `[lng, lat]`)
+- 줌: **표준 웹 메르카토르 줌 레벨(0~22, 숫자가 클수록 확대)**. 지도 SDK 레벨 체계가 다르면(예: 카카오맵 level) 앱이 변환해서 보낸다
 - 지역 코드: **법정동 코드**(시군구 5자리 / 법정동 10자리)
 - 필지: **PNU** 19자리
 - 시각: ISO8601 + 오프셋(`2026-09-29T10:00:00+09:00`), 계약일은 `YYYY-MM-DD`
@@ -112,12 +127,12 @@
 | 파라미터 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `bbox` | `min_lng,min_lat,max_lng,max_lat` | ✅ | 지도 뷰포트 |
-| `zoom` | int | ✅ | 지도 줌 레벨 |
+| `zoom` | int (0~22) | ✅ | 표준 웹 메르카토르 줌 레벨 (§0) |
 | `property_type` | `apartment\|officetel\|villa\|land` | ✅ | **단일 선택** (유형 혼합 집계 방지) |
 | `deal_type` | `sale\|jeonse\|monthly` | - | 기본 `sale` |
 | `period_months` | int (1~60) | - | 기본 12. 최근 N개월 |
 | `price_min`, `price_max` / `deposit_min`, `deposit_max` / `rent_min`, `rent_max` | 원 | - | 거래유형별 가격 필터 |
-| `area_pyeong_min`, `area_pyeong_max` | 평 | - | 전용면적 기준 |
+| `exclusive_area_pyeong_min`, `exclusive_area_pyeong_max` | 평 | - | **전용면적** 기준 (앱에서 "전용면적" 라벨 표시). 토지는 `land_area_pyeong_min/max` |
 | `exclude_direct` | bool | - | 직거래 제외 (기본 false) |
 
 **응답 — 줌에 따라 `level`이 달라진다**
@@ -131,26 +146,48 @@
         "region_code": "2635010500", "name": "우동",
         "lat": 35.16, "lng": 129.16,
         "transaction_count": 128,
-        "median_price_per_pyeong": 32000000
+        "summary": { "median_price_per_pyeong": 32000000 }
       },
       {
         "kind": "complex",
         "complex_id": "uuid", "name": "해운대아이파크",
         "lat": 35.15, "lng": 129.14,
-        "latest": { "price": 1450000000, "area_pyeong": 34.2, "contract_date": "2026-08-14" },
+        "latest": {
+          "deal_type": "sale",
+          "price": 1450000000, "deposit": null, "monthly_rent": null,
+          "exclusive_area_pyeong": 25.7, "supply_area_pyeong": 34.0,
+          "floor": 21, "contract_date": "2026-08-14"
+        },
         "transaction_count": 21
       },
       {
         "kind": "parcel",
         "transaction_id": "uuid", "pnu": "2635010500100010000",
         "lat": 35.17, "lng": 129.17,
-        "latest": { "price": 380000000, "area_pyeong": 120.5, "contract_date": "2026-07-02" }
+        "latest": {
+          "deal_type": "sale", "price": 380000000,
+          "land_area_pyeong": 120.5, "contract_date": "2026-07-02"
+        }
       }
     ]
   },
   "meta": { "data_as_of": "2026-09-29T04:00:00+09:00", "reporting_lag_notice": true }
 }
 ```
+
+**`latest` 필드 규칙**
+- 가격 필드는 §0 "거래유형별 가격 필드 의미" 표를 따른다. 전세는 `deposit`, 월세는 `deposit` + `monthly_rent`가 채워지고 `price`는 null
+- `supply_area_pyeong`(공급 평형, "34평")은 아파트만, 산출 불가 시 null. 앱은 `supply_area_pyeong`이 있으면 우선 표시하고 없으면 `exclusive_area_pyeong`을 "전용 25.7평"으로 표시
+
+**`summary` (구·동 집계 마커 대표값) — 요청 `deal_type`에 따라 달라진다**
+
+| `deal_type` | `summary` 필드 | 의미 |
+|---|---|---|
+| `sale` | `median_price_per_pyeong` | 매매가 ÷ 전용 평 의 중위값 |
+| `jeonse` | `median_deposit_per_pyeong` | 전세 보증금 ÷ 전용 평 의 중위값 |
+| `monthly` | `median_deposit`, `median_monthly_rent` | 보증금·월세 각각의 **절대 금액** 중위값 (보증금 조건이 제각각이라 평당 환산하지 않음) |
+
+- 토지(`land`)의 `median_price_per_pyeong`은 토지 면적 기준
 - 해제거래는 항상 제외
 - 토지 중 지번 비공개 거래(`location_precision=dong`)는 `parcel` 마커로 내리지 않고 `region` 집계에만 포함
 - 서버는 한 응답의 마커 수를 최대 500개로 제한하며, 초과 시 한 단계 상위 레벨로 집계
@@ -172,11 +209,27 @@
 {
   "data": [
     { "type": "complex", "complex_id": "uuid", "name": "해운대아이파크", "address": "부산 해운대구 우동 1407", "lat": 35.15, "lng": 129.14 },
-    { "type": "region", "region_code": "2635010500", "name": "해운대구 우동", "lat": 35.16, "lng": 129.16 },
+    {
+      "type": "region", "region_level": "sigungu|dong",
+      "region_code": "2635010500", "name": "해운대구 우동",
+      "lat": 35.16, "lng": 129.16,
+      "bbox": [129.145, 35.155, 129.180, 35.175]
+    },
     { "type": "address", "pnu": "2635010500114070000", "address": "부산 해운대구 우동 1407", "lat": 35.15, "lng": 129.14 }
   ]
 }
 ```
+
+**결과를 눌렀을 때 앱 동작**
+
+| `type` | 지도 이동 | 이후 동작 |
+|---|---|---|
+| `region` | `bbox`에 맞춰 fit (줌은 SDK가 계산) | 해당 영역으로 `/map/markers` 재조회 |
+| `complex` | `lat/lng` 중심, 단지 마커가 보이는 줌 | 단지 시트 열기 (`/complexes/{id}`) |
+| `address` | `lat/lng` 중심, 필지가 보이는 줌 | 토지 시트 열기 (`/parcels/{pnu}`) |
+
+- `bbox`는 `[min_lng, min_lat, max_lng, max_lat]`, 법정동 경계 기준
+- 점 결과(`complex`, `address`)의 줌은 지도 SDK마다 체계가 달라 서버가 정하지 않는다. 앱이 고정값을 쓴다
 
 ---
 
@@ -243,34 +296,74 @@
     "pnu": "2635010500114070000",
     "jibun_address": "부산 해운대구 우동 1407",
     "land_category": "대",
-    "area_m2": 1520.3, "area_pyeong": 459.9,
+    "land_area_m2": 1520.3, "land_area_pyeong": 459.9,
     "official_land_price_per_m2": 5120000,
     "official_land_price_year": 2026,
     "road_side": "중로한면",
     "shape": "가로장방형",
-    "zoning": {
-      "zone_type": "제2종일반주거지역",
-      "max_building_coverage_ratio": 60,
-      "max_floor_area_ratio": 250,
-      "ratio_source": "부산광역시 도시계획 조례"
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [[[129.1401, 35.1502], [129.1409, 35.1502], [129.1409, 35.1509], [129.1401, 35.1509], [129.1401, 35.1502]]]
     },
+    "zonings": [
+      {
+        "zone_type": "제2종일반주거지역",
+        "area_ratio": 0.8,
+        "inclusion": "포함",
+        "max_building_coverage_ratio": 60,
+        "max_floor_area_ratio": 250
+      },
+      {
+        "zone_type": "일반상업지역",
+        "area_ratio": 0.2,
+        "inclusion": "저촉",
+        "max_building_coverage_ratio": 80,
+        "max_floor_area_ratio": 1000
+      }
+    ],
+    "ratio_source": "부산광역시 도시계획 조례",
     "restrictions": [
       {
         "name": "가축사육제한구역",
         "plain_explanation": "소·돼지 등 가축을 키우는 시설을 지을 수 없어요.",
-        "glossary_term_ids": ["uuid"]
+        "glossary_term_id": "uuid|null"
       }
     ],
-    "glossary_term_ids": ["uuid(건폐율)", "uuid(용적률)", "uuid(공시지가)"]
+    "glossary": {
+      "land_category": "uuid(지목)",
+      "official_land_price_per_m2": "uuid(공시지가)",
+      "road_side": "uuid(도로접면)",
+      "zone_type": "uuid(용도지역)",
+      "max_building_coverage_ratio": "uuid(건폐율)",
+      "max_floor_area_ratio": "uuid(용적률)"
+    }
   },
-  "meta": { "cached_at": "2026-09-20T10:00:00+09:00", "source_unavailable": false }
+  "meta": { "cached_at": "2026-09-20T10:00:00+09:00", "unavailable_reason": null }
 }
 ```
+
+**필드 규칙**
+- `geometry`: 필지 경계 GeoJSON. 앱은 이 도형으로 선택한 필지를 하이라이트한다 (앱에 VWorld 키 불필요). 연속지적도 기준, 앱 표시용으로 단순화(오차 0.5m 이내)
+- `zonings`: 한 필지가 여러 용도지역에 걸칠 수 있으므로 **배열**. `area_ratio` 내림차순 정렬, 합계 1.0
+  - `area_ratio`는 필지 도형과 용도지역 도형의 교차 면적으로 서버가 계산. 계산 불가 시 null
+  - `inclusion`: 토지이용계획의 `포함|저촉|접합` 구분 그대로
+  - 건폐율·용적률 한도는 VWorld가 아닌 **조례 매핑 테이블**에서 용도지역별로 산출
+- `glossary`: **응답 필드명 → 용어 ID** 맵. 앱은 키에 해당하는 항목 옆에 (?) 아이콘을 단다. 용어가 없는 필드는 키 자체를 생략
+- `restrictions[].glossary_term_id`: 규제 항목별 용어 ID (없으면 null). `plain_explanation`은 40~50대가 이해할 수 있는 한 문장, 해설 사전은 서버가 관리
 - 캐시 키 **PNU**, TTL 30일
-- 건폐율·용적률 한도는 VWorld가 아닌 **조례 매핑 테이블**에서 산출 (VWorld 제공 여부 확인 전 기준)
-- `plain_explanation`은 40~50대가 이해할 수 있는 한 문장. 규제 항목별 해설 사전은 서버가 관리
-- 캐시 미스 + VWorld 장애 시: `{ "data": null, "meta": { "source_unavailable": true } }` (지도는 계속 동작하도록 graceful degrade, HTTP 200)
-- 좌표가 부산 밖이면 `400 VALIDATION_ERROR (field: lat)`
+
+**정보를 줄 수 없는 경우 — 모두 HTTP 200 + `data: null`**
+
+사용자가 도로·바다를 누르는 건 정상 동작이므로 에러로 취급하지 않는다. 앱은 `unavailable_reason`에 따라 문구만 바꿔 보여준다.
+
+| `meta.unavailable_reason` | 상황 | 앱 문구 예시 |
+|---|---|---|
+| `no_parcel` | 도로·바다·하천 등 필지가 없는 곳 | "이곳은 토지 정보가 없어요" |
+| `out_of_service_area` | 부산 밖 | "부산 지역만 지원해요" |
+| `source_unavailable` | 캐시 미스 + VWorld 장애 | "토지 정보를 잠시 불러올 수 없어요" |
+
+- 잘못된 형식의 좌표(범위 밖 위경도, 숫자 아님)나 PNU(19자리 아님)만 `400 VALIDATION_ERROR`
+- 형식은 맞지만 존재하지 않는 PNU → `200 + no_parcel`
 
 ---
 
@@ -287,7 +380,10 @@
 ```json
 {
   "data": {
-    "parcel": { "pnu": "...", "land_category": "대", "zone_type": "제2종일반주거지역", "official_land_price_per_m2": 5120000 },
+    "parcel": {
+      "pnu": "...", "land_category": "대", "official_land_price_per_m2": 5120000,
+      "zonings": [ { "zone_type": "제2종일반주거지역", "area_ratio": 1.0, "max_building_coverage_ratio": 60, "max_floor_area_ratio": 250 } ]
+    },
     "nearby_land_trend": {
       "radius_m": 500, "transaction_count": 18,
       "trend": [ { "year": 2025, "median_price_per_pyeong": 9800000 } ]
@@ -298,6 +394,8 @@
   "meta": { "data_as_of": "..." }
 }
 ```
+- 용도지역이 여러 개면 `buildable_summary`는 `area_ratio` **가중평균**으로 단순 계산한다. 국토계획법 제84조(걸친 부분이 작을 때 과반 용도지역 적용 등) 예외는 반영하지 않으며, 이 경우 문구에 "여러 용도지역에 걸친 필지로 실제와 다를 수 있음"을 덧붙인다
+- `area_ratio`가 null인 용도지역이 있으면 `buildable_summary`는 null
 
 ---
 
@@ -305,11 +403,33 @@
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/glossary` | 전체 목록 (페이지네이션 없음, `ETag`로 캐시). `q` 검색 선택 |
+| GET | `/glossary` | 전체 목록 (페이지네이션 없음, `ETag`로 캐시). `q` 검색, `category` 필터 선택 |
 | GET | `/glossary/{term_id}` | 단일 용어 |
 
-응답: `{ "id", "term": "용적률", "short_definition": "툴팁용 쉬운 1줄 설명", "long_definition": "상세 화면용", "example": "string" }`
-- 관련 용어 추천 API는 두지 않는다. 필지·단지 응답의 `glossary_term_ids`로 연결한다.
+**용어 1건**
+```json
+{
+  "id": "uuid",
+  "term": "용적률",
+  "category": "trade|land|building|tax",
+  "is_popular": true,
+  "display_order": 10,
+  "short_definition": "툴팁용 쉬운 1줄 설명",
+  "long_definition": "상세 화면용",
+  "example": "string"
+}
+```
+
+| `category` | 분류 칩 | 예시 용어 |
+|---|---|---|
+| `trade` | 거래 | 실거래가, 전세, 직거래, 해제거래 |
+| `land` | 토지 | 지목, 용도지역, 공시지가, 도로접면 |
+| `building` | 건물 | 건폐율, 용적률, 전용면적, 공급면적 |
+| `tax` | 세금 | 취득세, 양도소득세, 재산세 |
+
+- 기본 정렬: `display_order` 오름차순 → `term` 가나다순
+- "자주 찾는 용어"는 `is_popular=true`인 용어 (`GET /glossary?popular=true`)
+- 관련 용어 추천 API는 두지 않는다. 필지·단지 응답의 `glossary` 맵(필드명 → 용어 ID)으로 연결한다.
 
 ---
 

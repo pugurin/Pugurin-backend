@@ -108,7 +108,7 @@
 
 ## 7. 열린 결정사항 (TODO)
 
-- [x] Query API 엔드포인트 명세 → [`docs/API_SPEC.md`](./docs/API_SPEC.md) (v0.3)
+- [x] Query API 엔드포인트 명세 → [`docs/API_SPEC.md`](./docs/API_SPEC.md) (v0.4)
 - [ ] 공공데이터포털·VWorld API 키 발급
 - [ ] ETL 스케줄(일 1회 권장) 및 백필 계획
 - [ ] 신고 신뢰도 점수·임계치

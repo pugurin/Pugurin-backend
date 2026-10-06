@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,6 +22,16 @@ class Settings(BaseSettings):
     data_go_kr_rent_key: str = ""
     molit_base_url: str = "https://apis.data.go.kr/1613000"
     molit_daily_call_limit: int | None = None
+
+    # 카카오 로컬(REST 키): 지번 주소 → 좌표·법정동 코드. 수집 명령(refresh)에서만 쓴다
+    kakao_rest_key: str = ""
+
+    # sample: 가짜 샘플 데이터 / real: `python -m app.ingestion refresh`로 모은 실데이터(.cache)를 읽는다
+    data_mode: Literal["sample", "real"] = "sample"
+    data_dir: Path = Path(".cache")
+    real_data_months: int = 3
+    exclude_share_deals: bool = True  # 토지 지분거래는 가격이 왜곡되어 집계에서 뺀다
+    exclude_road_land: bool = True  # 지목이 '도로'인 토지 거래도 뺀다
 
     cache_max_age_seconds: int = 300
     parcel_cache_ttl_days: int = 30

@@ -3,16 +3,10 @@
 import math
 from dataclasses import dataclass
 
+from app.core.busan import SIGUNGU_BY_CODE, Sigungu
+
 LAT0, LNG0 = 34.85, 128.75
 CELL_DLAT, CELL_DLNG = 0.0002, 0.00025
-
-
-@dataclass(frozen=True)
-class SigunguSample:
-    code: str
-    name: str
-    lat: float
-    lng: float
 
 
 @dataclass(frozen=True)
@@ -43,29 +37,9 @@ class DongSample:
         return self.land_ppp < 700
 
     @property
-    def sigungu(self) -> SigunguSample:
+    def sigungu(self) -> Sigungu:
         return SIGUNGU_BY_CODE[self.sigungu_code]
 
-
-SIGUNGU: tuple[SigunguSample, ...] = (
-    SigunguSample("26110", "중구", 35.1064, 129.0323),
-    SigunguSample("26140", "서구", 35.0977, 129.0243),
-    SigunguSample("26170", "동구", 35.1293, 129.0454),
-    SigunguSample("26200", "영도구", 35.0912, 129.0679),
-    SigunguSample("26230", "부산진구", 35.1629, 129.0530),
-    SigunguSample("26260", "동래구", 35.2050, 129.0837),
-    SigunguSample("26290", "남구", 35.1365, 129.0843),
-    SigunguSample("26320", "북구", 35.1972, 128.9903),
-    SigunguSample("26350", "해운대구", 35.1631, 129.1639),
-    SigunguSample("26380", "사하구", 35.1046, 128.9748),
-    SigunguSample("26410", "금정구", 35.2430, 129.0922),
-    SigunguSample("26440", "강서구", 35.2124, 128.9803),
-    SigunguSample("26470", "연제구", 35.1760, 129.0820),
-    SigunguSample("26500", "수영구", 35.1454, 129.1133),
-    SigunguSample("26530", "사상구", 35.1527, 128.9910),
-    SigunguSample("26710", "기장군", 35.2446, 129.2222),
-)
-SIGUNGU_BY_CODE = {s.code: s for s in SIGUNGU}
 
 R2, R3, R1 = "제2종일반주거지역", "제3종일반주거지역", "제1종일반주거지역"
 C1, C2 = "일반상업지역", "근린상업지역"

@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 
 from app.adapters.mock.parcel_source import MockParcelSource
+from app.adapters.unconfigured import UnconfiguredParcelSource
 from app.core.config import Settings
 from app.core.dates import Clock, latest_etl_time
+from app.ingestion.real import load_real_data
 from app.repositories.memory.glossary import InMemoryGlossaryRepository
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.memory.zoning import SampleZoningRules
@@ -31,6 +33,11 @@ def build_container(
     zoning_rules: ZoningRuleRepository | None = None,
 ) -> Container:
     as_of = latest_etl_time(clock())
+    if market_repo is None and settings.data_mode == "real":
+        real = load_real_data(settings)
+        market_repo = InMemoryMarketRepository(real.as_of, real.dataset, real.regions)
+        # VWorld 연동 전에는 가짜 필지를 실제처럼 내려보내지 않고 '불러올 수 없음'으로 응답한다
+        parcel_source = parcel_source or UnconfiguredParcelSource()
     market_repo = market_repo or InMemoryMarketRepository(as_of)
     glossary_repo = glossary_repo or InMemoryGlossaryRepository()
     parcel_source = parcel_source or MockParcelSource(land_price_year=as_of.year)

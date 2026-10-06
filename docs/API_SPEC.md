@@ -9,6 +9,7 @@
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
 - `/map/markers` 필터 조합 검증 규칙 명시, 토지의 줌 14 이상 동작 명시
 - `price_per_pyeong`은 매매만 채움
+- 실데이터 연동: 세대수·공급면적·전·월세 `trade_method`는 원천에 없어 `null`이 될 수 있음. 토지는 지분거래·지목 '도로'를 집계에서 제외
 
 ### v0.3 → v0.4 주요 변경 (프론트 피드백 반영)
 - 지도 마커 `latest`에 `deposit`, `monthly_rent`, `supply_area_pyeong` 추가 — 전·월세 마커 빈칸 문제 해결
@@ -266,10 +267,11 @@
 }
 ```
 - `supply_area_pyeong`(공급 평형)은 건축물대장 기반, 산출 불가 시 `null` (사용자가 흔히 말하는 "34평"은 공급면적 기준)
+- 실거래가 공공데이터에는 **세대수·공급면적이 없다**. 건축물대장 연동 전에는 `household_count`, `supply_area_pyeong`이 `null`이다. 좌표를 못 찾은 단지는 `pnu`도 `null`이고, `build_year`도 원천에 없으면 `null`이다. 앱은 `null`을 처리해야 한다
 
 **거래 1건 필드** (`/transactions`, `/complexes/{id}/transactions` 공통)
 
-`id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct), is_cancelled, cancelled_at`
+`id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct, 전·월세는 원천이 구분을 주지 않아 null), is_cancelled, cancelled_at`
 
 - `price_per_pyeong`은 매매(`sale`)만 채우고 전·월세는 null
 - `/transactions`는 기본 해제거래 제외, `include_cancelled=true`일 때만 포함(해제 표시 필수)

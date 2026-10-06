@@ -126,6 +126,24 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 
 ## 6. 실행·테스트
 
+### 실데이터 모드
+
+실제 공공데이터포털 거래를 받아 와서 API가 그대로 내려주게 한다. 서버는 시작할 때 `.cache`(git 제외)만 읽고 네트워크를 쓰지 않는다.
+
+```bash
+# backend/.env에 PUGURIN_DATA_GO_KR_TRADE_KEY, PUGURIN_DATA_GO_KR_RENT_KEY, PUGURIN_KAKAO_REST_KEY 설정
+uv run python -m app.ingestion refresh --months 3   # 수집 + 지오코딩 (한도에 닿으면 멈추고, 다시 실행하면 이어서 받음)
+uv run python -m app.ingestion status               # 캐시로 만든 데이터셋 요약
+PUGURIN_DATA_MODE=real uv run uvicorn --factory app.main:create_app
+```
+
+- 3개월 수집은 실거래가 API 약 340회, 카카오 약 5,000회 호출이다. `--months 12`는 약 1,350회, 60개월은 약 6,800회다.
+- **토지이용계획·필지(`/parcels`)는 VWorld 키가 없어 실데이터가 아니다.** 실데이터 모드에서는 가짜 필지 대신 `source_unavailable`로 응답한다.
+- 세대수·공급면적은 원천에 없어 `null`이다. 토지는 지분거래·지목 '도로'를 집계에서 제외한다(`PUGURIN_EXCLUDE_SHARE_DEALS`, `PUGURIN_EXCLUDE_ROAD_LAND`).
+- 카카오 지오코딩 결과(`.cache/geocode.json`)는 약관 확인 전이라 커밋하거나 배포하지 않는다.
+
+### 샘플 모드 (기본)
+
 mock 모드는 키·DB 없이 바로 실행된다. 모든 데이터는 가짜이며 `/parcels` 응답의 `ratio_source`에도 샘플임을 표시한다.
 
 ```bash

@@ -82,6 +82,7 @@ class RawTrade:
     contract_term: str | None = None
     use_renewal_right: str | None = None
     land_leasehold: bool = False
+    is_share_deal: bool = False  # 토지 지분거래
     ordinal: int = 0  # 같은 응답 안의 완전히 같은 행을 구분하는 순번
     raw: dict[str, str] = field(default_factory=dict, compare=False, hash=False, repr=False)
 

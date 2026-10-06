@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pydantic-settings>=2.4",
     "tzdata>=2024.1",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]

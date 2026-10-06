@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <buildYear>2008</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay>25.11.12</cdealDay>
+        <cdealType>O</cdealType>
+        <dealAmount>110,000</dealAmount>
+        <dealDay>28</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 해운대구</estateAgentSggNm>
+        <excluUseAr>169.54</excluUseAr>
+        <floor>27</floor>
+        <jibun>1520</jibun>
+        <offiNm>롯데갤러리움센텀</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>우동</umdNm>
+      </item>
+      <item>
+        <buildYear>2018</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>22,000</dealAmount>
+        <dealDay>29</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 해운대구</estateAgentSggNm>
+        <excluUseAr>36.5555</excluUseAr>
+        <floor>20</floor>
+        <jibun>1757</jibun>
+        <offiNm>하모니타워마브러스</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>중동</umdNm>
+      </item>
+      <item>
+        <buildYear>2006</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>154,000</dealAmount>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 해운대구</estateAgentSggNm>
+        <excluUseAr>188.4295</excluUseAr>
+        <floor>32</floor>
+        <jibun>1434-2</jibun>
+        <offiNm>해운대현대하이페리온</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>우동</umdNm>
+      </item>
+      <item>
+        <buildYear>2018</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>53,000</dealAmount>
+        <dealDay>27</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 해운대구</estateAgentSggNm>
+        <excluUseAr>81.52</excluUseAr>
+        <floor>27</floor>
+        <jibun>1757</jibun>
+        <offiNm>하모니타워마브러스</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>중동</umdNm>
+      </item>
+      <item>
+        <buildYear>1993</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>43,500</dealAmount>
+        <dealDay>18</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 해운대구</estateAgentSggNm>
+        <excluUseAr>78.12</excluUseAr>
+        <floor>9</floor>
+        <jibun>760-3</jibun>
+        <offiNm>오션타워</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>우동</umdNm>
+      </item>
+      <item>
+        <buildYear>2005</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>10,000</dealAmount>
+        <dealDay>8</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>39.2863</excluUseAr>
+        <floor>19</floor>
+        <jibun>1435-3</jibun>
+        <offiNm>한일오르듀</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>우동</umdNm>
+      </item>
+      <item>
+        <buildYear>2008</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay>25.10.31</cdealDay>
+        <cdealType>O</cdealType>
+        <dealAmount>110,000</dealAmount>
+        <dealDay>28</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 해운대구</estateAgentSggNm>
+        <excluUseAr>169.54</excluUseAr>
+        <floor>27</floor>
+        <jibun>1520</jibun>
+        <offiNm>롯데갤러리움센텀</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>우동</umdNm>
+      </item>
+      <item>
+        <buildYear>2005</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay>25.10.16</cdealDay>
+        <cdealType>O</cdealType>
+        <dealAmount>10,000</dealAmount>
+        <dealDay>8</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>39.2863</excluUseAr>
+        <floor>19</floor>
+        <jibun>1435-3</jibun>
+        <offiNm>한일오르듀</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>우동</umdNm>
+      </item>
+      <item>
+        <buildYear>2005</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay>25.10.10</cdealDay>
+        <cdealType>O</cdealType>
+        <dealAmount>6,900</dealAmount>
+        <dealDay>29</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 해운대구</estateAgentSggNm>
+        <excluUseAr>32.83</excluUseAr>
+        <floor>5</floor>
+        <jibun>1460-2</jibun>
+        <offiNm>해운대 쌍용 플래티넘트윈</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>좌동</umdNm>
+      </item>
+      <item>
+        <buildYear>2023</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>20,200</dealAmount>
+        <dealDay>13</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>25.6964</excluUseAr>
+        <floor>6</floor>
+        <jibun>1512</jibun>
+        <offiNm>센텀 마치 오피스텔</offiNm>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>우동</umdNm>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>10</totalCount>
+  </body>
+</response>

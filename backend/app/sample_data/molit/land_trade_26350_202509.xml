@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>443,000</dealAmount>
+        <dealArea>542</dealArea>
+        <dealDay>25</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 부산진구</estateAgentSggNm>
+        <jibun>8**</jibun>
+        <jimok>대</jimok>
+        <landUse>제1종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType> </shareDealingType>
+        <umdNm>송정동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>64,500</dealAmount>
+        <dealArea>377</dealArea>
+        <dealDay>25</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 부산진구</estateAgentSggNm>
+        <jibun>8**</jibun>
+        <jimok>전</jimok>
+        <landUse>제1종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType> </shareDealingType>
+        <umdNm>송정동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>30,500</dealAmount>
+        <dealArea>56.7</dealArea>
+        <dealDay>25</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 부산진구</estateAgentSggNm>
+        <jibun>8**</jibun>
+        <jimok>대</jimok>
+        <landUse>제1종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType>지분</shareDealingType>
+        <umdNm>송정동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>2,300</dealAmount>
+        <dealArea>33.4</dealArea>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <jibun>1***</jibun>
+        <jimok>도로</jimok>
+        <landUse>제2종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType>지분</shareDealingType>
+        <umdNm>재송동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>1,150</dealAmount>
+        <dealArea>16.6</dealArea>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <jibun>1***</jibun>
+        <jimok>도로</jimok>
+        <landUse>제2종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType>지분</shareDealingType>
+        <umdNm>재송동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>1,150</dealAmount>
+        <dealArea>16.6</dealArea>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <jibun>1***</jibun>
+        <jimok>도로</jimok>
+        <landUse>제2종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType>지분</shareDealingType>
+        <umdNm>재송동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>4,140</dealAmount>
+        <dealArea>60</dealArea>
+        <dealDay>30</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <jibun>1***</jibun>
+        <jimok>도로</jimok>
+        <landUse>제2종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType>지분</shareDealingType>
+        <umdNm>재송동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>460</dealAmount>
+        <dealArea>6.7</dealArea>
+        <dealDay>18</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <jibun>1***</jibun>
+        <jimok>도로</jimok>
+        <landUse>제2종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType>지분</shareDealingType>
+        <umdNm>재송동</umdNm>
+      </item>
+      <item>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>1,145</dealAmount>
+        <dealArea>16.6</dealArea>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <jibun>1***</jibun>
+        <jimok>도로</jimok>
+        <landUse>제2종일반주거지역</landUse>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <shareDealingType>지분</shareDealingType>
+        <umdNm>재송동</umdNm>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>9</totalCount>
+  </body>
+</response>

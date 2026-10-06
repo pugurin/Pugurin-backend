@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <aptDong>301</aptDong>
+        <aptNm>삼익비치</aptNm>
+        <aptSeq>26500-29</aptSeq>
+        <bonbun>0148</bonbun>
+        <bubun>0004</bubun>
+        <buildYear>1979</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>124,000</dealAmount>
+        <dealDay>19</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>84.83</excluUseAr>
+        <floor>12</floor>
+        <jibun>148-4</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate>26.02.02</rgstDate>
+        <roadNm>광안해변로</roadNm>
+        <roadNmBonbun>00100</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>3138005</roadNmCd>
+        <roadNmSeq>03</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10500</umdCd>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <aptDong>111</aptDong>
+        <aptNm>부산더샵센텀포레</aptNm>
+        <aptSeq>26500-1852</aptSeq>
+        <bonbun>0765</bonbun>
+        <bubun>0000</bubun>
+        <buildYear>2014</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>81,000</dealAmount>
+        <dealDay>14</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>84.8954</excluUseAr>
+        <floor>9</floor>
+        <jibun>765</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate>26.02.10</rgstDate>
+        <roadNm>수영로</roadNm>
+        <roadNmBonbun>00776</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>3131037</roadNmCd>
+        <roadNmSeq>00</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd> </roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10300</umdCd>
+        <umdNm>민락동</umdNm>
+      </item>
+      <item>
+        <aptDong> </aptDong>
+        <aptNm>뉴비치</aptNm>
+        <aptSeq>26500-23</aptSeq>
+        <bonbun>0556</bonbun>
+        <bubun>0003</bubun>
+        <buildYear>1986</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>108,000</dealAmount>
+        <dealDay>4</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>123.19</excluUseAr>
+        <floor>3</floor>
+        <jibun>556-3</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate> </rgstDate>
+        <roadNm>광안해변로15번길</roadNm>
+        <roadNmBonbun>00068</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>4214067</roadNmCd>
+        <roadNmSeq>01</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10500</umdCd>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <aptDong> </aptDong>
+        <aptNm>e편한세상광안비치</aptNm>
+        <aptSeq>26500-1983</aptSeq>
+        <bonbun>0773</bonbun>
+        <bubun>0000</bubun>
+        <buildYear>2016</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>58,800</dealAmount>
+        <dealDay>21</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>84.727</excluUseAr>
+        <floor>11</floor>
+        <jibun>773</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate> </rgstDate>
+        <roadNm>민락수변로7번길</roadNm>
+        <roadNmBonbun>00060</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>4214219</roadNmCd>
+        <roadNmSeq>00</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10300</umdCd>
+        <umdNm>민락동</umdNm>
+      </item>
+      <item>
+        <aptDong> </aptDong>
+        <aptNm>산호비치</aptNm>
+        <aptSeq>26500-9</aptSeq>
+        <bonbun>0170</bonbun>
+        <bubun>0004</bubun>
+        <buildYear>1989</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>68,000</dealAmount>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구, 부산 연제구</estateAgentSggNm>
+        <excluUseAr>141.1</excluUseAr>
+        <floor>6</floor>
+        <jibun>170-4</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate>26.01.12</rgstDate>
+        <roadNm>수영로536번길</roadNm>
+        <roadNmBonbun>00065</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>4214264</roadNmCd>
+        <roadNmSeq>01</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10400</umdCd>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <aptDong>108</aptDong>
+        <aptNm>광안자이</aptNm>
+        <aptSeq>26500-2281</aptSeq>
+        <bonbun>1334</bonbun>
+        <bubun>0000</bubun>
+        <buildYear>2020</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>69,000</dealAmount>
+        <dealDay>21</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>73.67</excluUseAr>
+        <floor>1</floor>
+        <jibun>1334</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate>26.01.30</rgstDate>
+        <roadNm>호암로29번길</roadNm>
+        <roadNmBonbun>00050</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>4214378</roadNmCd>
+        <roadNmSeq>01</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10400</umdCd>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <aptDong>104</aptDong>
+        <aptNm>남천자이</aptNm>
+        <aptSeq>26500-2456</aptSeq>
+        <bonbun>0613</bonbun>
+        <bubun>0000</bubun>
+        <buildYear>2023</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>150,000</dealAmount>
+        <dealDay>19</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>84.9919</excluUseAr>
+        <floor>28</floor>
+        <jibun>613</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate>26.01.07</rgstDate>
+        <roadNm>남천동로</roadNm>
+        <roadNmBonbun>00046</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>3138008</roadNmCd>
+        <roadNmSeq>01</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10500</umdCd>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <aptDong>505</aptDong>
+        <aptNm>뉴비치</aptNm>
+        <aptSeq>26500-23</aptSeq>
+        <bonbun>0556</bonbun>
+        <bubun>0003</bubun>
+        <buildYear>1986</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>130,000</dealAmount>
+        <dealDay>13</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>145.05</excluUseAr>
+        <floor>5</floor>
+        <jibun>556-3</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate>25.12.12</rgstDate>
+        <roadNm>광안해변로15번길</roadNm>
+        <roadNmBonbun>00068</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>4214067</roadNmCd>
+        <roadNmSeq>01</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10500</umdCd>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <aptDong> </aptDong>
+        <aptNm>삼익비치</aptNm>
+        <aptSeq>26500-29</aptSeq>
+        <bonbun>0148</bonbun>
+        <bubun>0004</bubun>
+        <buildYear>1979</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay>25.10.26</cdealDay>
+        <cdealType>O</cdealType>
+        <dealAmount>98,000</dealAmount>
+        <dealDay>27</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>73.92</excluUseAr>
+        <floor>3</floor>
+        <jibun>148-4</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate> </rgstDate>
+        <roadNm>광안해변로</roadNm>
+        <roadNmBonbun>00100</roadNmBonbun>
+        <roadNmBubun>00000</roadNmBubun>
+        <roadNmCd>3138005</roadNmCd>
+        <roadNmSeq>03</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10500</umdCd>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <aptDong> </aptDong>
+        <aptNm>화인아트</aptNm>
+        <aptSeq>26500-63</aptSeq>
+        <bonbun>0001</bonbun>
+        <bubun>0004</bubun>
+        <buildYear>1990</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>45,000</dealAmount>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>179.87</excluUseAr>
+        <floor>4</floor>
+        <jibun>1-4</jibun>
+        <landCd>1</landCd>
+        <landLeaseholdGbn>N</landLeaseholdGbn>
+        <rgstDate>25.10.23</rgstDate>
+        <roadNm>광안해변로</roadNm>
+        <roadNmBonbun>00459</roadNmBonbun>
+        <roadNmBubun>00005</roadNmBubun>
+        <roadNmCd>3138005</roadNmCd>
+        <roadNmSeq>01</roadNmSeq>
+        <roadNmSggCd>26500</roadNmSggCd>
+        <roadNmbCd>0</roadNmbCd>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdCd>10300</umdCd>
+        <umdNm>민락동</umdNm>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>10</totalCount>
+  </body>
+</response>

@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <aptNm>센텀이편한세상</aptNm>
+        <aptSeq>26350-2108</aptSeq>
+        <buildYear>2006</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>27</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>26,000</deposit>
+        <excluUseAr>84.842</excluUseAr>
+        <floor>8</floor>
+        <jibun>939-2</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>해운대로76번길 55</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00055</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>4199284</roadnmcd>
+        <roadnmseq>2</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>재송동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>삼한그린맨션</aptNm>
+        <aptSeq>26350-183</aptSeq>
+        <buildYear>1990</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>10</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>8,500</deposit>
+        <excluUseAr>59.93</excluUseAr>
+        <floor>2</floor>
+        <jibun>401</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>반송로877번길 91</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00091</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>4199043</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>반송동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>해운대경보이리스힐아파트</aptNm>
+        <aptSeq>26350-2335</aptSeq>
+        <buildYear>2018</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>2,000</deposit>
+        <excluUseAr>84.988</excluUseAr>
+        <floor>3</floor>
+        <jibun>949</jibun>
+        <monthlyRent>110</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>송정광어골로82번길 85-11</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00085</roadnmbonbun>
+        <roadnmbubun>00011</roadnmbubun>
+        <roadnmcd>4199090</roadnmcd>
+        <roadnmseq>0</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>송정동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>더샵센텀파크2차</aptNm>
+        <aptSeq>26350-2092</aptSeq>
+        <buildYear>2005</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>30</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>3,000</deposit>
+        <excluUseAr>84.6389</excluUseAr>
+        <floor>21</floor>
+        <jibun>1197</jibun>
+        <monthlyRent>170</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>센텀중앙로 142</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00142</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3133020</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>재송동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>벽산1</aptNm>
+        <aptSeq>26350-125</aptSeq>
+        <buildYear>1996</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>13</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>10,000</deposit>
+        <excluUseAr>59.73</excluUseAr>
+        <floor>11</floor>
+        <jibun>1321</jibun>
+        <monthlyRent>30</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>대천로 205</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00205</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3133001</roadnmcd>
+        <roadnmseq>2</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>좌동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>더샵센텀파크1차</aptNm>
+        <aptSeq>26350-2093</aptSeq>
+        <buildYear>2005</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>13</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>5,000</deposit>
+        <excluUseAr>84.6528</excluUseAr>
+        <floor>18</floor>
+        <jibun>1200</jibun>
+        <monthlyRent>190</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>센텀중앙로 145</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00145</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3133020</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>재송동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>한일</aptNm>
+        <aptSeq>26350-137</aptSeq>
+        <buildYear>1996</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>16</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>2,500</deposit>
+        <excluUseAr>58.2</excluUseAr>
+        <floor>5</floor>
+        <jibun>1274</jibun>
+        <monthlyRent>78</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>대천로 56</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00056</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3133001</roadnmcd>
+        <roadnmseq>2</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>좌동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>경남마리나</aptNm>
+        <aptSeq>26350-1</aptSeq>
+        <buildYear>1996</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>1</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>21,000</deposit>
+        <excluUseAr>59.83</excluUseAr>
+        <floor>11</floor>
+        <jibun>1388-1</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>해운대해변로 99</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00099</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3133043</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>우동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>해운대두산위브더제니스</aptNm>
+        <aptSeq>26350-2166</aptSeq>
+        <buildYear>2011</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>13</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>30,000</deposit>
+        <excluUseAr>127.6584</excluUseAr>
+        <floor>17</floor>
+        <jibun>1407</jibun>
+        <monthlyRent>190</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>마린시티2로 33</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00033</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3133004</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>우동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>센텀마리나</aptNm>
+        <aptSeq>26350-12</aptSeq>
+        <buildYear>1993</buildYear>
+        <contractTerm>25.10~27.10</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>29</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>10,000</deposit>
+        <excluUseAr>84.14</excluUseAr>
+        <floor>14</floor>
+        <jibun>930-20</jibun>
+        <monthlyRent>7</monthlyRent>
+        <preDeposit>10,000</preDeposit>
+        <preMonthlyRent>7</preMonthlyRent>
+        <roadnm>해운대로469번가길 91</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00091</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>4199270</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26350</roadnmsggcd>
+        <sggCd>26350</sggCd>
+        <umdNm>우동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>10</totalCount>
+  </body>
+</response>

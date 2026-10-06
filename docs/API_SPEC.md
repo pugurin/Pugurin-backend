@@ -5,6 +5,11 @@
 
 각 섹션 제목의 **[1차]/[2차]/[3차]** 는 구현 단계입니다.
 
+### v0.4 보충 (1차 mock 구현 중 확인)
+- MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
+- `/map/markers` 필터 조합 검증 규칙 명시, 토지의 줌 14 이상 동작 명시
+- `price_per_pyeong`은 매매만 채움
+
 ### v0.3 → v0.4 주요 변경 (프론트 피드백 반영)
 - 지도 마커 `latest`에 `deposit`, `monthly_rent`, `supply_area_pyeong` 추가 — 전·월세 마커 빈칸 문제 해결
 - 구·동 집계 마커의 대표값을 거래유형별로 정의 (`summary`)
@@ -78,7 +83,7 @@
 - 면적 이름 규칙: `exclusive_area_*`(전용면적), `supply_area_*`(공급면적, 아파트 평형), `land_area_*`(토지 면적). 이름 없는 `area_*`는 쓰지 않는다
 - 좌표: WGS84(EPSG:4326). `bbox`는 `min_lng,min_lat,max_lng,max_lat`
 - 도형: GeoJSON (`Polygon` / `MultiPolygon`, 좌표 순서 `[lng, lat]`)
-- 줌: **표준 웹 메르카토르 줌 레벨(0~22, 숫자가 클수록 확대)**. 지도 SDK 레벨 체계가 다르면(예: 카카오맵 level) 앱이 변환해서 보낸다
+- 줌: **표준 웹 메르카토르 줌 레벨(0~22, 숫자가 클수록 확대)**. 지도 SDK 레벨 체계가 다르면(예: 카카오맵 level) 앱이 변환해서 보낸다. **MapLibre 계열 SDK는 타일 512px 기준이라 줌이 1 작게 나오므로 `Math.floor(zoom + 1)`로 변환한 정수**를 보낸다
 - 지역 코드: **법정동 코드**(시군구 5자리 / 법정동 10자리)
 - 필지: **PNU** 19자리
 - 시각: ISO8601 + 오프셋(`2026-09-29T10:00:00+09:00`), 계약일은 `YYYY-MM-DD`
@@ -191,6 +196,9 @@
 - 해제거래는 항상 제외
 - 토지 중 지번 비공개 거래(`location_precision=dong`)는 `parcel` 마커로 내리지 않고 `region` 집계에만 포함
 - 서버는 한 응답의 마커 수를 최대 500개로 제한하며, 초과 시 한 단계 상위 레벨로 집계
+- `level`은 서버가 줌으로 정한다. 기본 임계치는 **줌 12 미만 `sigungu` / 12~13 `dong` / 14 이상 `complex`** (설정값, 정책 #4 확정 전 기본값)
+- 토지는 줌 14 이상에서도 `dong` 집계 마커를 유지하고 공개된 필지 거래만 `parcel` 마커로 더한다 (응답 `level`은 `complex`)
+- 가격·면적 필터는 거래유형·매물유형에 맞는 것만 허용한다. 맞지 않으면 `400 VALIDATION_ERROR` (예: 전세에 `price_min`, 토지에 `exclusive_area_pyeong_min`, `*_min > *_max`)
 
 ---
 
@@ -263,6 +271,7 @@
 
 `id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct), is_cancelled, cancelled_at`
 
+- `price_per_pyeong`은 매매(`sale`)만 채우고 전·월세는 null
 - `/transactions`는 기본 해제거래 제외, `include_cancelled=true`일 때만 포함(해제 표시 필수)
 - 정렬 `sort`: `contract_date_desc`(기본) `|price_asc|price_desc`
 - `bbox`와 `region_code` 둘 다 없으면 `400 VALIDATION_ERROR`

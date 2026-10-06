@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <buildYear>2005</buildYear>
+        <buyerGbn>법인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>14,900</dealAmount>
+        <dealDay>29</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>35.325</excluUseAr>
+        <floor>10</floor>
+        <jibun>193-4</jibun>
+        <offiNm>부산광안대우아이빌</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>2020</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>11,400</dealAmount>
+        <dealDay>29</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>24.899</excluUseAr>
+        <floor>10</floor>
+        <jibun>98-1</jibun>
+        <offiNm>수영역 삼정그린코아 더시티</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>4,800</dealAmount>
+        <dealDay>30</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>23.1</excluUseAr>
+        <floor>2</floor>
+        <jibun>135</jibun>
+        <offiNm>서희스타힐스 센텀프리모</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>민락동</umdNm>
+      </item>
+      <item>
+        <buildYear>2016</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>15,400</dealAmount>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 부산진구, 부산 수영구</estateAgentSggNm>
+        <excluUseAr>47.63</excluUseAr>
+        <floor>13</floor>
+        <jibun>158-9</jibun>
+        <offiNm>광안센텀누리</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>2012</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>8,500</dealAmount>
+        <dealDay>4</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>24.82</excluUseAr>
+        <floor>3</floor>
+        <jibun>176-2</jibun>
+        <offiNm>이즈타운</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>민락동</umdNm>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>6,000</dealAmount>
+        <dealDay>26</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>23.1</excluUseAr>
+        <floor>17</floor>
+        <jibun>135</jibun>
+        <offiNm>서희스타힐스 센텀프리모</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>민락동</umdNm>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>20,000</dealAmount>
+        <dealDay>22</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>58.88</excluUseAr>
+        <floor>9</floor>
+        <jibun>35-9</jibun>
+        <offiNm>이린타워빌5</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>16,500</dealAmount>
+        <dealDay>1</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>42.79</excluUseAr>
+        <floor>13</floor>
+        <jibun>135</jibun>
+        <offiNm>서희스타힐스 센텀프리모</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>개인</slerGbn>
+        <umdNm>민락동</umdNm>
+      </item>
+      <item>
+        <buildYear>2023</buildYear>
+        <buyerGbn>법인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>15,000</dealAmount>
+        <dealDay>22</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>29.8219</excluUseAr>
+        <floor>5</floor>
+        <jibun>442-39</jibun>
+        <offiNm>오티플러스</offiNm>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <slerGbn>법인</slerGbn>
+        <umdNm>망미동</umdNm>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>9</totalCount>
+  </body>
+</response>

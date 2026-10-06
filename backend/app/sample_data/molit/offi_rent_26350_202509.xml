@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <buildYear>2013</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>5</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>5,700</deposit>
+        <excluUseAr>24.27</excluUseAr>
+        <floor>8</floor>
+        <jibun>1459-4</jibun>
+        <monthlyRent>0</monthlyRent>
+        <offiNm>신화 하니엘 타워</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>좌동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2008</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>5</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>2,000</deposit>
+        <excluUseAr>96.27</excluUseAr>
+        <floor>10</floor>
+        <jibun>1196</jibun>
+        <monthlyRent>150</monthlyRent>
+        <offiNm>더샾 센텀스타</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>재송동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2019</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>6</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>1,000</deposit>
+        <excluUseAr>16.38</excluUseAr>
+        <floor>7</floor>
+        <jibun>1073-7</jibun>
+        <monthlyRent>35</monthlyRent>
+        <offiNm>브라운맨션</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>재송동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2005</buildYear>
+        <contractTerm>25.09~27.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>500</deposit>
+        <excluUseAr>31.69</excluUseAr>
+        <floor>26</floor>
+        <jibun>1435-3</jibun>
+        <monthlyRent>45</monthlyRent>
+        <offiNm>한일오르듀</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>우동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <contractTerm>25.10~26.10</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>19</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>2,000</deposit>
+        <excluUseAr>46.32</excluUseAr>
+        <floor>12</floor>
+        <jibun>1459-2</jibun>
+        <monthlyRent>65</monthlyRent>
+        <offiNm>파밀리에 펄시티</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>좌동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear> </buildYear>
+        <contractTerm>25.10~26.10</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>25</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>500</deposit>
+        <excluUseAr>29.98</excluUseAr>
+        <floor>4</floor>
+        <jibun>1433-2</jibun>
+        <monthlyRent>46</monthlyRent>
+        <offiNm>에이스센텀스퀘어</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>좌동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2009</buildYear>
+        <contractTerm>25.10~27.10</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>27</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>36,750</deposit>
+        <excluUseAr>122.92</excluUseAr>
+        <floor>3</floor>
+        <jibun>1484</jibun>
+        <monthlyRent>0</monthlyRent>
+        <offiNm>포레나 센텀시티</offiNm>
+        <preDeposit>35,000</preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>우동</umdNm>
+        <useRRRight>사용</useRRRight>
+      </item>
+      <item>
+        <buildYear>2013</buildYear>
+        <contractTerm>25.10~26.10</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>22</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>500</deposit>
+        <excluUseAr>26.17</excluUseAr>
+        <floor>6</floor>
+        <jibun>643-1</jibun>
+        <monthlyRent>45</monthlyRent>
+        <offiNm>한양수자인 마린 오피스텔</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>우동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2018</buildYear>
+        <contractTerm>25.10~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>500</deposit>
+        <excluUseAr>24.34</excluUseAr>
+        <floor>19</floor>
+        <jibun>587-2</jibun>
+        <monthlyRent>50</monthlyRent>
+        <offiNm>해운대 U-시티오피스텔</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>우동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2024</buildYear>
+        <contractTerm>25.10~26.10</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>12</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>3,000</deposit>
+        <excluUseAr>70.99</excluUseAr>
+        <floor>6</floor>
+        <jibun>1566</jibun>
+        <monthlyRent>130</monthlyRent>
+        <offiNm>해운대역 푸르지오 더원</offiNm>
+        <preDeposit>3,000</preDeposit>
+        <preMonthlyRent>130</preMonthlyRent>
+        <sggCd>26350</sggCd>
+        <sggNm>해운대구</sggNm>
+        <umdNm>우동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>10</totalCount>
+  </body>
+</response>

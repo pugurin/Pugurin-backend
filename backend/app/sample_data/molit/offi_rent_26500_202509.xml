@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <buildYear>2024</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>4</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>2,000</deposit>
+        <excluUseAr>38.3</excluUseAr>
+        <floor>14</floor>
+        <jibun>157-9</jibun>
+        <monthlyRent>120</monthlyRent>
+        <offiNm>트레비앙광안</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>광안동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>19</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>200</deposit>
+        <excluUseAr>19.8</excluUseAr>
+        <floor>11</floor>
+        <jibun>135</jibun>
+        <monthlyRent>33</monthlyRent>
+        <offiNm>서희스타힐스 센텀프리모</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>민락동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2020</buildYear>
+        <contractTerm>25.09~25.12</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>26</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>100</deposit>
+        <excluUseAr>42.65</excluUseAr>
+        <floor>6</floor>
+        <jibun>802-7</jibun>
+        <monthlyRent>75</monthlyRent>
+        <offiNm>퍼스트씨지브이</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>망미동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2017</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>11</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>500</deposit>
+        <excluUseAr>24.26</excluUseAr>
+        <floor>4</floor>
+        <jibun>451-16</jibun>
+        <monthlyRent>32</monthlyRent>
+        <offiNm>센텀스위트</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>수영동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2002</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>10</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>300</deposit>
+        <excluUseAr>26.92</excluUseAr>
+        <floor>9</floor>
+        <jibun>181-97</jibun>
+        <monthlyRent>38</monthlyRent>
+        <offiNm>마린랜드</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>민락동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <contractTerm>25.10~26.10</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>18</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>3,000</deposit>
+        <excluUseAr>30.46</excluUseAr>
+        <floor>13</floor>
+        <jibun>490-1</jibun>
+        <monthlyRent>40</monthlyRent>
+        <offiNm>파스텔라 스튜디오</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>광안동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2016</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>26</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>1,000</deposit>
+        <excluUseAr>36.43</excluUseAr>
+        <floor>2</floor>
+        <jibun>57-3</jibun>
+        <monthlyRent>55</monthlyRent>
+        <offiNm>헤리티지 남천</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>남천동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2023</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>19</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>2,000</deposit>
+        <excluUseAr>25.49</excluUseAr>
+        <floor>8</floor>
+        <jibun>52-19</jibun>
+        <monthlyRent>65</monthlyRent>
+        <offiNm>WAVE HILL 101</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>남천동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2014</buildYear>
+        <contractTerm>25.09~26.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>5</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>500</deposit>
+        <excluUseAr>29.39</excluUseAr>
+        <floor>8</floor>
+        <jibun>506-32</jibun>
+        <monthlyRent>45</monthlyRent>
+        <offiNm>이든바인하츠</offiNm>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>광안동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <buildYear>2022</buildYear>
+        <contractTerm>25.11~27.11</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>25</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>1,300</deposit>
+        <excluUseAr>47.72</excluUseAr>
+        <floor>15</floor>
+        <jibun>664-6</jibun>
+        <monthlyRent>74</monthlyRent>
+        <offiNm>HanaStay 광안</offiNm>
+        <preDeposit>1,300</preDeposit>
+        <preMonthlyRent>71</preMonthlyRent>
+        <sggCd>26500</sggCd>
+        <sggNm>수영구</sggNm>
+        <umdNm>광안동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>10</totalCount>
+  </body>
+</response>

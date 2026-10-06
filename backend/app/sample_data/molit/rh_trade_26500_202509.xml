@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <buildYear>1981</buildYear>
+        <buyerGbn>법인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>23,000</dealAmount>
+        <dealDay>22</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>36.5</excluUseAr>
+        <floor>4</floor>
+        <houseType>연립</houseType>
+        <jibun>5-1</jibun>
+        <landAr>88.6084</landAr>
+        <mhouseNm>태광</mhouseNm>
+        <rgstDate>25.11.04</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <buildYear>2022</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>13,500</dealAmount>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 금정구</estateAgentSggNm>
+        <excluUseAr>17.33</excluUseAr>
+        <floor>5</floor>
+        <houseType>다세대</houseType>
+        <jibun>124-40</jibun>
+        <landAr>10.6379</landAr>
+        <mhouseNm>베스테이N60</mhouseNm>
+        <rgstDate>25.11.03</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>법인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>1981</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>44,500</dealAmount>
+        <dealDay>28</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>51.6</excluUseAr>
+        <floor>2</floor>
+        <houseType>연립</houseType>
+        <jibun>1030-2</jibun>
+        <landAr>36.33</landAr>
+        <mhouseNm>광성맨션</mhouseNm>
+        <rgstDate>25.10.31</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>2021</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>19,300</dealAmount>
+        <dealDay>26</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구, 부산 연제구</estateAgentSggNm>
+        <excluUseAr>21.12</excluUseAr>
+        <floor>4</floor>
+        <houseType>다세대</houseType>
+        <jibun>131-24</jibun>
+        <landAr>15.5388</landAr>
+        <mhouseNm>한다더포레스트</mhouseNm>
+        <rgstDate>26.06.02</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>2021</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>16,600</dealAmount>
+        <dealDay>28</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구, 부산 연제구</estateAgentSggNm>
+        <excluUseAr>16.44</excluUseAr>
+        <floor>3</floor>
+        <houseType>다세대</houseType>
+        <jibun>131-24</jibun>
+        <landAr>12.0955</landAr>
+        <mhouseNm>한다더포레스트</mhouseNm>
+        <rgstDate>26.01.30</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>1981</buildYear>
+        <buyerGbn>법인</buyerGbn>
+        <cdealDay>25.11.04</cdealDay>
+        <cdealType>O</cdealType>
+        <dealAmount>23,000</dealAmount>
+        <dealDay>22</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>36.5</excluUseAr>
+        <floor>4</floor>
+        <houseType>연립</houseType>
+        <jibun>5-1</jibun>
+        <landAr>11.6084</landAr>
+        <mhouseNm>태광</mhouseNm>
+        <rgstDate> </rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>남천동</umdNm>
+      </item>
+      <item>
+        <buildYear>2015</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>14,500</dealAmount>
+        <dealDay>30</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 연제구</estateAgentSggNm>
+        <excluUseAr>24.61</excluUseAr>
+        <floor>5</floor>
+        <houseType>다세대</houseType>
+        <jibun>1039-7</jibun>
+        <landAr>16.6</landAr>
+        <mhouseNm>명성프리미엄</mhouseNm>
+        <rgstDate>25.10.15</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>법인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>1979</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>10,200</dealAmount>
+        <dealDay>24</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>56.5</excluUseAr>
+        <floor>1</floor>
+        <houseType>다세대</houseType>
+        <jibun>117</jibun>
+        <landAr>46.83</landAr>
+        <mhouseNm>성안</mhouseNm>
+        <rgstDate>25.11.19</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>수영동</umdNm>
+      </item>
+      <item>
+        <buildYear>2018</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay>26.06.25</cdealDay>
+        <cdealType>O</cdealType>
+        <dealAmount>19,000</dealAmount>
+        <dealDay>25</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>중개거래</dealingGbn>
+        <estateAgentSggNm>부산 수영구</estateAgentSggNm>
+        <excluUseAr>15.03</excluUseAr>
+        <floor>3</floor>
+        <houseType>다세대</houseType>
+        <jibun>177-9</jibun>
+        <landAr>10.02</landAr>
+        <mhouseNm>트라움하우스17차</mhouseNm>
+        <rgstDate> </rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+      <item>
+        <buildYear>1978</buildYear>
+        <buyerGbn>개인</buyerGbn>
+        <cdealDay> </cdealDay>
+        <cdealType> </cdealType>
+        <dealAmount>22,500</dealAmount>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <dealingGbn>직거래</dealingGbn>
+        <estateAgentSggNm> </estateAgentSggNm>
+        <excluUseAr>56.66</excluUseAr>
+        <floor>2</floor>
+        <houseType>다세대</houseType>
+        <jibun>173-5</jibun>
+        <landAr>34.9</landAr>
+        <mhouseNm>은하</mhouseNm>
+        <rgstDate>25.09.30</rgstDate>
+        <sggCd>26500</sggCd>
+        <slerGbn>개인</slerGbn>
+        <umdNm>광안동</umdNm>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>10</totalCount>
+  </body>
+</response>

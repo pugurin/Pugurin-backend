@@ -14,6 +14,12 @@ class Settings(BaseSettings):
     zoom_complex_min: int = 14
     max_markers: int = 500
 
+    # 공공데이터포털 실거래가 키. 매매 API용과 전월세 API용이 따로 발급될 수 있다. 둘 다 있어야 실제 API를 쓴다
+    data_go_kr_trade_key: str = ""
+    data_go_kr_rent_key: str = ""
+    molit_base_url: str = "https://apis.data.go.kr/1613000"
+    molit_daily_call_limit: int | None = None
+
     cache_max_age_seconds: int = 300
     parcel_cache_ttl_days: int = 30
     parcel_negative_cache_ttl_days: int = 1

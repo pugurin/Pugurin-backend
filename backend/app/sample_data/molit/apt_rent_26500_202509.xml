@@ -1,0 +1,284 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<response>
+  <header>
+    <resultCode>000</resultCode>
+    <resultMsg>OK</resultMsg>
+  </header>
+  <body>
+    <items>
+      <item>
+        <aptNm>삼익비치</aptNm>
+        <aptSeq>26500-29</aptSeq>
+        <buildYear>1979</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>18</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>9,000</deposit>
+        <excluUseAr>61.09</excluUseAr>
+        <floor>10</floor>
+        <jibun>148-4</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>광안해변로 100</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00100</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3138005</roadnmcd>
+        <roadnmseq>3</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>남천동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>힐탑더블시티</aptNm>
+        <aptSeq>26500-1892</aptSeq>
+        <buildYear>2015</buildYear>
+        <contractTerm> </contractTerm>
+        <contractType> </contractType>
+        <dealDay>23</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>6,000</deposit>
+        <excluUseAr>49.9174</excluUseAr>
+        <floor>21</floor>
+        <jibun>662-1</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>수영로 641</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00641</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3131037</roadnmcd>
+        <roadnmseq>3</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>광안동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>삼익비치</aptNm>
+        <aptSeq>26500-29</aptSeq>
+        <buildYear>1979</buildYear>
+        <contractTerm>25.09~27.09</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>4</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>1,000</deposit>
+        <excluUseAr>60.83</excluUseAr>
+        <floor>11</floor>
+        <jibun>148-4</jibun>
+        <monthlyRent>40</monthlyRent>
+        <preDeposit>1,000</preDeposit>
+        <preMonthlyRent>50</preMonthlyRent>
+        <roadnm>광안해변로 100</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00100</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3138005</roadnmcd>
+        <roadnmseq>3</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>남천동</umdNm>
+        <useRRRight>사용</useRRRight>
+      </item>
+      <item>
+        <aptNm>망미이진캐스빌</aptNm>
+        <aptSeq>26500-2068</aptSeq>
+        <buildYear>2017</buildYear>
+        <contractTerm>25.09~27.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>5</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>26,000</deposit>
+        <excluUseAr>79.9965</excluUseAr>
+        <floor>3</floor>
+        <jibun>1159</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>망미로30번길 51</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00051</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>4214150</roadnmcd>
+        <roadnmseq>0</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>망미동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>센텀비치푸르지오</aptNm>
+        <aptSeq>26500-74</aptSeq>
+        <buildYear>2003</buildYear>
+        <contractTerm>25.11~27.11</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>9</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>28,000</deposit>
+        <excluUseAr>98.94</excluUseAr>
+        <floor>7</floor>
+        <jibun>108-1</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit>28,000</preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>광안해변로 418</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00418</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3138005</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>민락동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>금수하이빌</aptNm>
+        <aptSeq>26500-79</aptSeq>
+        <buildYear>2003</buildYear>
+        <contractTerm>25.09~27.09</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>19</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>2,000</deposit>
+        <excluUseAr>81.91</excluUseAr>
+        <floor>7</floor>
+        <jibun>148-3</jibun>
+        <monthlyRent>90</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>수영로582번길 49</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00049</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>4214274</roadnmcd>
+        <roadnmseq>1</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>광안동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>수영SKVIEW2단지</aptNm>
+        <aptSeq>26500-2224</aptSeq>
+        <buildYear>2019</buildYear>
+        <contractTerm>26.01~28.01</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>23,100</deposit>
+        <excluUseAr>59.6016</excluUseAr>
+        <floor>7</floor>
+        <jibun>1168</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit>22,000</preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>망미배산로70번라길 8</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00008</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>4214164</roadnmcd>
+        <roadnmseq>0</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>망미동</umdNm>
+        <useRRRight>사용</useRRRight>
+      </item>
+      <item>
+        <aptNm>삼익비치</aptNm>
+        <aptSeq>26500-29</aptSeq>
+        <buildYear>1979</buildYear>
+        <contractTerm>25.09~27.09</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>15</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>0</deposit>
+        <excluUseAr>73.92</excluUseAr>
+        <floor>2</floor>
+        <jibun>148-4</jibun>
+        <monthlyRent>30</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent>20</preMonthlyRent>
+        <roadnm>광안해변로 100</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00100</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3138005</roadnmcd>
+        <roadnmseq>3</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>남천동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>롯데골드로즈</aptNm>
+        <aptSeq>26500-1387</aptSeq>
+        <buildYear>2006</buildYear>
+        <contractTerm>25.10~26.10</contractTerm>
+        <contractType>신규</contractType>
+        <dealDay>22</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>1,000</deposit>
+        <excluUseAr>33.06</excluUseAr>
+        <floor>10</floor>
+        <jibun>99-5</jibun>
+        <monthlyRent>47</monthlyRent>
+        <preDeposit> </preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>수영로 648</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00648</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>3131037</roadnmcd>
+        <roadnmseq>3</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>광안동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+      <item>
+        <aptNm>센텀비스타동원2차</aptNm>
+        <aptSeq>26500-2023</aptSeq>
+        <buildYear>2017</buildYear>
+        <contractTerm>25.11~26.11</contractTerm>
+        <contractType>갱신</contractType>
+        <dealDay>19</dealDay>
+        <dealMonth>9</dealMonth>
+        <dealYear>2025</dealYear>
+        <deposit>48,000</deposit>
+        <excluUseAr>84.9414</excluUseAr>
+        <floor>7</floor>
+        <jibun>774</jibun>
+        <monthlyRent>0</monthlyRent>
+        <preDeposit>40,000</preDeposit>
+        <preMonthlyRent> </preMonthlyRent>
+        <roadnm>무학로63번길 142</roadnm>
+        <roadnmbcd>0</roadnmbcd>
+        <roadnmbonbun>00142</roadnmbonbun>
+        <roadnmbubun>00000</roadnmbubun>
+        <roadnmcd>4214200</roadnmcd>
+        <roadnmseq>0</roadnmseq>
+        <roadnmsggcd>26500</roadnmsggcd>
+        <sggCd>26500</sggCd>
+        <umdNm>민락동</umdNm>
+        <useRRRight> </useRRRight>
+      </item>
+    </items>
+    <numOfRows>1000</numOfRows>
+    <pageNo>1</pageNo>
+    <totalCount>10</totalCount>
+  </body>
+</response>

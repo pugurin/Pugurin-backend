@@ -119,6 +119,8 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 - [ ] 부산시 도시계획 조례 기준 `zoning_rules` 시드 데이터
 - [ ] 신고 신뢰도 점수 모델
 - [ ] Alembic 초기 세팅, Docker Compose
+- [x] 실거래가 어댑터 7종 + mock(`adapters/molit/`, 이슈 #6): 페이징·재시도·호출 수 계측·한도 예외, 실제 응답 샘플은 `sample_data/molit/`(해운대구·수영구 2025-09)
+- [ ] 이슈 #7(ETL): `RawTrade.source_key`로 upsert, 매매·전월세 키를 `adapters/molit`의 `create_trade_source`로 주입
 - [x] `.env.example`, mock 샘플 데이터(16개 구·군 집계 + 동 37곳·단지 190곳·거래 약 10만 건, 모두 가짜)
 - [x] 1차 mock API: `/map/markers`, `/complexes/{id}`(+`/transactions`), `/parcels/lookup`·`/parcels/{pnu}`, `/glossary`
 

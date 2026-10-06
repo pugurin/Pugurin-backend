@@ -44,6 +44,8 @@ auth/          OAuth 연동, JWT 발급·검증, role 기반 의존성.
 models/        SQLAlchemy 모델.
 schemas/       Pydantic 요청/응답 스키마. (models와 섞지 않는다)
 core/          설정(config), DB·Redis 세션, 에러 핸들러, 공통 유틸.
+sample_data/   mock 모드 전용 가짜 데이터(지역·거래·용어). 운영 경로에서 import 금지.
+wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/실 어댑터)를 services에 주입.
 ```
 
 호출 방향: `routers → services → repositories / adapters`. 역방향 의존 금지.
@@ -110,8 +112,27 @@ core/          설정(config), DB·Redis 세션, 에러 핸들러, 공통 유틸
 
 - [ ] DB 스키마 초안 (transactions, complexes, parcels_cache, zoning_rules, users, agents, chat, notifications, reports)
 - [ ] 거래 유형별 복합 자연키 확정 (실제 응답 확인 후)
-- [ ] 줌 레벨별 집계 단위 임계치 (구 / 동 / 단지)
+- [ ] 줌 레벨별 집계 단위 임계치 확정 (현재 기본값 12 / 14, `PUGURIN_ZOOM_*` 설정)
+- [ ] PostGIS 저장소 구현 시 `repositories/memory/*` 대체 + testcontainers 공간 쿼리 테스트
+- [ ] 필지 어댑터를 VWorld 실구현으로 교체(`adapters/mock/parcel_source.py` 대체), 캐시를 Redis로
+- [ ] 부산 여부 판별을 bbox 근사 → PostGIS/PNU 기준으로 교체
 - [ ] 부산시 도시계획 조례 기준 `zoning_rules` 시드 데이터
 - [ ] 신고 신뢰도 점수 모델
-- [ ] Alembic 초기 세팅, Docker Compose, `.env.example`
-- [ ] 어댑터 mock 샘플 데이터 (부산 2~3개 구 분량)
+- [ ] Alembic 초기 세팅, Docker Compose
+- [x] `.env.example`, mock 샘플 데이터(16개 구·군 집계 + 동 37곳·단지 190곳·거래 약 10만 건, 모두 가짜)
+- [x] 1차 mock API: `/map/markers`, `/complexes/{id}`(+`/transactions`), `/parcels/lookup`·`/parcels/{pnu}`, `/glossary`
+
+## 6. 실행·테스트
+
+mock 모드는 키·DB 없이 바로 실행된다. 모든 데이터는 가짜이며 `/parcels` 응답의 `ratio_source`에도 샘플임을 표시한다.
+
+```bash
+cd backend
+uv sync
+uv run uvicorn --factory app.main:create_app --reload   # http://localhost:8000/docs
+uv run pytest
+uv run ruff check . && uv run ruff format --check .
+```
+
+- 모든 `/api/v1` 조회 API(헬스 제외)는 `X-Device-Id`(UUID) 헤더가 필수다.
+- 서버 시작 시 샘플 데이터를 만드느라 1~2초 걸린다.

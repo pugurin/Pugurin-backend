@@ -1,0 +1,40 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "backend/**"
+      - "compose.yaml"
+      - ".github/workflows/backend-ci.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 이미지 빌드
+        run: docker build -t pugurin-backend ./backend
+      - name: 컨테이너 기동 후 /health 확인
+        run: |
+          docker run -d --name api -p 8000:8000 pugurin-backend
+          for i in $(seq 1 30); do
+            curl -fs http://localhost:8000/api/v1/health && exit 0
+            sleep 1
+          done
+          docker logs api
+          exit 1

@@ -20,7 +20,7 @@ from app.repositories.types import (
 
 
 class SourceUnavailable(Exception):
-    """외부 데이터 소스(VWorld 등) 장애."""
+    """외부 데이터 소스 장애."""
 
 
 class MarketRepository(Protocol):

@@ -37,7 +37,7 @@
 routers/       HTTP/WS 진입점. 요청 검증·직렬화만. 외부 API 직접 호출 금지.
 services/      도메인 로직(지도 집계, 통계, 분석 조합, 채팅 라우팅, 알림 생성).
 repositories/  DB 접근(PostGIS 공간 쿼리 포함).
-adapters/      외부 API 어댑터(실거래가 / VWorld / 국세청 / OAuth / FCM / 스토리지) + mock 구현.
+adapters/      외부 API 어댑터(실거래가 / 카카오 지오코딩 / 국세청 / OAuth / FCM / 스토리지) + mock 구현.
 ingestion/     ETL 잡(수집·정제·지오코딩·단지 매칭·적재). API 서버 프로세스에서 실행하지 않는다.
 realtime/      WebSocket 연결 관리 + Redis pub/sub 브리지. 도메인 로직 없음.
 auth/          OAuth 연동, JWT 발급·검증, role 기반 의존성.
@@ -62,7 +62,7 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 ### 4.2 공간 데이터
 1. 좌표는 `geometry(Point, 4326)` + GiST 인덱스로 저장. 영역 조회는 `ST_Intersects`/`ST_MakeEnvelope`.
 2. **거리 조회는 반드시 미터 단위로.** 4326 geometry에 `ST_DWithin`을 쓰면 단위가 도(degree)다. `geom::geography`로 캐스팅하거나(`ST_DWithin(geom::geography, :pt::geography, :meters)`), 필요 시 EPSG:5186 컬럼을 별도로 둔다.
-3. **좌표는 서버가 만든다.** 매물·중개사무소·실거래가 모두 주소/지번을 받아 VWorld 지오코딩으로 좌표를 산출한다. 클라이언트가 보낸 좌표는 신뢰하지 않는다.
+3. **좌표는 서버가 만든다.** 매물·중개사무소·실거래가 모두 주소/지번을 받아 카카오 로컬 지오코딩으로 좌표를 산출한다. 클라이언트가 보낸 좌표는 신뢰하지 않는다.
 4. 필지 식별은 **PNU(19자리)** 로 통일한다.
 
 ### 4.3 실거래가 ETL
@@ -83,9 +83,9 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 1. 공개 조회 API는 `Cache-Control` + `ETag`를 붙인다(실거래가는 일 1회 갱신).
 2. 토지이용계획·토지특성 캐시 키는 **PNU**, TTL 30일. 좌표 조회는 `좌표 → PNU` 변환 후 캐시를 조회한다.
    - 캐시에는 필지 **경계 도형**(연속지적도)도 함께 저장한다. 응답 `geometry`는 표시용으로 단순화(`ST_SimplifyPreserveTopology`, 오차 0.5m 이내)해서 내린다.
-   - 용도지역 **면적 비율**(`zonings[].area_ratio`)은 필지 도형과 VWorld 용도지역 레이어(`LT_C_UQ111` 등) 도형의 교차 면적(`ST_Area(ST_Intersection(...)::geography)`)으로 계산해 함께 캐시한다.
+   - 용도지역 **면적 비율**(`zonings[].area_ratio`)은 필지 도형과 용도지역 도형의 교차 면적(`ST_Area(ST_Intersection(...)::geography)`)으로 계산해 함께 캐시한다. (토지 정보 공급처가 정해진 뒤의 설계)
    - 좌표에 필지가 없거나(도로·바다) 부산 밖이면 예외가 아니라 `unavailable_reason`(`no_parcel`/`out_of_service_area`)으로 반환한다. `no_parcel` 결과도 좌표 격자 단위로 짧게(1일) 캐시해 반복 호출을 막는다.
-3. **건폐율·용적률 한도**는 VWorld가 아니라 `zoning_rules`(부산시 도시계획 조례 기준 용도지역별 한도) 테이블에서 산출한다. (VWorld 제공 여부 확인 전까지 이 방식 기준)
+3. **건폐율·용적률 한도**는 외부 API가 아니라 `zoning_rules`(부산시 도시계획 조례 기준 용도지역별 한도) 테이블에서 산출한다.
 4. 통계는 **중위값** 기준, `property_type`은 단일 값 필수, 해제거래 제외.
 5. 조회수 등 카운터는 Redis에서 증가시키고 주기적으로 DB에 반영한다(읽기 요청마다 DB 쓰기 금지).
 
@@ -93,7 +93,7 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 1. 로그인은 **카카오·네이버 OAuth만** 제공한다. 이메일/비밀번호 가입·재설정은 만들지 않는다.
 2. refresh token은 **body로 발급·수신**(앱 보안 저장소 보관, 쿠키 미사용). 서버에 해시 저장, **사용 시마다 rotation**, 폐기된 토큰 재사용 감지 시 해당 사용자의 전체 세션 폐기.
 3. role 기반 의존성(`require_role("agent", approved=True)`)으로 권한을 분리한다. 중개사는 `buyer` 계정에서 **검증 신청으로 승격**된다.
-4. 중개사 검증은 **자동 우선**: 국세청 사업자 상태조회 + VWorld 중개업자 조회로 등록번호·상호·대표자 일치 확인. 실패/불일치 건만 관리자 수동 심사.
+4. 중개사 검증: 국세청 사업자 상태조회로 계속사업자 여부를 확인한다. 중개업자 등록번호·상호·대표자 일치 확인은 조회 공급처가 없어 관리자 수동 심사로 한다(공급처가 생기면 자동화).
 
 ### 4.6 채팅
 1. **구매자 ↔ 승인된 중개사**만 채팅방을 가진다. 동일 (구매자, 중개사, 매물) 조합은 기존 방을 반환한다.
@@ -114,7 +114,7 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 - [ ] 거래 유형별 복합 자연키 확정 (실제 응답 확인 후)
 - [ ] 줌 레벨별 집계 단위 임계치 확정 (현재 기본값 12 / 14, `PUGURIN_ZOOM_*` 설정)
 - [ ] PostGIS 저장소 구현 시 `repositories/memory/*` 대체 + testcontainers 공간 쿼리 테스트
-- [ ] 필지 어댑터를 VWorld 실구현으로 교체(`adapters/mock/parcel_source.py` 대체), 캐시를 Redis로
+- [ ] 토지 정보 공급처가 정해지면 필지 어댑터 구현(`adapters/mock/parcel_source.py` 대체), 캐시를 Redis로 (VWorld는 쓰지 않기로 함)
 - [ ] 부산 여부 판별을 bbox 근사 → PostGIS/PNU 기준으로 교체
 - [ ] 부산시 도시계획 조례 기준 `zoning_rules` 시드 데이터
 - [ ] 신고 신뢰도 점수 모델
@@ -138,7 +138,7 @@ PUGURIN_DATA_MODE=real uv run uvicorn --factory app.main:create_app
 ```
 
 - 3개월 수집은 실거래가 API 약 340회, 카카오 약 5,000회 호출이다. `--months 12`는 약 1,350회, 60개월은 약 6,800회다.
-- **토지이용계획·필지(`/parcels`)는 VWorld 키가 없어 실데이터가 아니다.** 실데이터 모드에서는 가짜 필지 대신 `source_unavailable`로 응답한다.
+- **토지이용계획·필지(`/parcels`)는 공급처가 없어 실데이터가 아니다.** 실데이터 모드에서는 가짜 필지 대신 `source_unavailable`로 응답한다.
 - 세대수·공급면적은 원천에 없어 `null`이다. 토지는 지분거래·지목 '도로'를 집계에서 제외한다(`PUGURIN_EXCLUDE_SHARE_DEALS`, `PUGURIN_EXCLUDE_ROAD_LAND`).
 - 카카오 지오코딩 결과(`.cache/geocode.json`)는 약관 확인 전이라 커밋하거나 배포하지 않는다.
 

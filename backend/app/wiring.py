@@ -36,7 +36,7 @@ def build_container(
     if market_repo is None and settings.data_mode == "real":
         real = load_real_data(settings)
         market_repo = InMemoryMarketRepository(real.as_of, real.dataset, real.regions)
-        # VWorld 연동 전에는 가짜 필지를 실제처럼 내려보내지 않고 '불러올 수 없음'으로 응답한다
+        # 토지 정보 공급처가 정해지기 전에는 가짜 필지를 실제처럼 내려보내지 않고 '불러올 수 없음'으로 응답한다
         parcel_source = parcel_source or UnconfiguredParcelSource()
     market_repo = market_repo or InMemoryMarketRepository(as_of)
     glossary_repo = glossary_repo or InMemoryGlossaryRepository()

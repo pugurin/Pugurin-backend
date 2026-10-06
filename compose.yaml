@@ -1,0 +1,15 @@
+# 현재는 mock 모드라 api 하나면 충분하다. db(PostGIS)·redis·worker는 실제 저장소를 붙일 때 추가한다.
+services:
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: ./backend/.env
+        required: false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s

@@ -118,7 +118,9 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 - [ ] 부산 여부 판별을 bbox 근사 → PostGIS/PNU 기준으로 교체
 - [ ] 부산시 도시계획 조례 기준 `zoning_rules` 시드 데이터
 - [ ] 신고 신뢰도 점수 모델
-- [ ] Alembic 초기 세팅, Docker Compose
+- [ ] Alembic 초기 세팅
+- [x] Docker Compose(`api`만 — db·redis·worker는 실제 저장소를 붙일 때 추가), GitHub Actions CI(ruff·pytest·도커 기동 확인)
+- [ ] 이슈 #5 나머지: SQLAlchemy/GeoAlchemy2, `/internal/health/ready`, testcontainers
 - [x] `.env.example`, mock 샘플 데이터(16개 구·군 집계 + 동 37곳·단지 190곳·거래 약 10만 건, 모두 가짜)
 - [x] 1차 mock API: `/map/markers`, `/complexes/{id}`(+`/transactions`), `/parcels/lookup`·`/parcels/{pnu}`, `/glossary`
 
@@ -132,6 +134,12 @@ uv sync
 uv run uvicorn --factory app.main:create_app --reload   # http://localhost:8000/docs
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
+```
+
+Docker로 실행하면 Python·uv 설치가 필요 없다(저장소 루트에서 실행, http://localhost:8000/docs).
+
+```bash
+docker compose up --build
 ```
 
 - 모든 `/api/v1` 조회 API(헬스 제외)는 `X-Device-Id`(UUID) 헤더가 필수다.

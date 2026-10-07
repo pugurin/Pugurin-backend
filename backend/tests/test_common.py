@@ -47,6 +47,7 @@ def test_openapi_schema_builds_for_all_endpoints(client):
     assert set(r.json()["paths"]) == {
         f"{API}/health",
         f"{API}/map/markers",
+        f"{API}/search",
         f"{API}/complexes/{{complex_id}}",
         f"{API}/complexes/{{complex_id}}/transactions",
         f"{API}/parcels/lookup",

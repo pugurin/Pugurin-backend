@@ -3,17 +3,9 @@ import json
 import httpx
 import pytest
 
+from app.adapters.kakao import GeoResult, KakaoGeocoder, make_pnu, parse_documents
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError
-from app.ingestion.geocode import (
-    GeocodeCache,
-    GeoResult,
-    KakaoGeocoder,
-    address_key,
-    geocode_missing,
-    make_pnu,
-    parse_documents,
-    region_key,
-)
+from app.ingestion.geocode import GeocodeCache, address_key, geocode_missing, region_key
 from app.repositories.ports import SourceUnavailable
 
 pytestmark = pytest.mark.anyio

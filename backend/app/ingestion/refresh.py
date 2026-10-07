@@ -2,11 +2,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.adapters.kakao import Geocoder
 from app.adapters.molit.types import SourceKind, TradeSource
 from app.core.busan import SIGUNGU
 from app.ingestion.build import needed_lookups
 from app.ingestion.collect import CollectReport, collect, recent_months
-from app.ingestion.geocode import GeocodeCache, Geocoder, geocode_missing
+from app.ingestion.geocode import GeocodeCache, geocode_missing
 from app.ingestion.rawcache import RawCache
 
 

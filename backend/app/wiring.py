@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass
 
+from app.adapters.kakao import KakaoGeocoder
 from app.adapters.mock.parcel_source import MockParcelSource
 from app.adapters.unconfigured import UnconfiguredParcelSource
 from app.core.config import Settings
@@ -9,11 +10,18 @@ from app.ingestion.real import load_real_data, resolve_data_mode
 from app.repositories.memory.glossary import InMemoryGlossaryRepository
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.memory.zoning import SampleZoningRules
-from app.repositories.ports import GlossaryRepository, MarketRepository, ParcelSource, ZoningRuleRepository
+from app.repositories.ports import (
+    AddressSearch,
+    GlossaryRepository,
+    MarketRepository,
+    ParcelSource,
+    ZoningRuleRepository,
+)
 from app.services.complex_service import ComplexService
 from app.services.glossary_service import GlossaryService
 from app.services.map_service import MapService
 from app.services.parcel_service import ParcelService
+from app.services.search_service import SearchService
 
 # uvicorn이 기본으로 출력하는 로거에 남겨야 서버 로그에서 보인다
 logger = logging.getLogger("uvicorn.error")
@@ -27,6 +35,13 @@ class Container:
     complex_service: ComplexService
     parcel_service: ParcelService
     glossary_service: GlossaryService
+    search_service: SearchService
+    address_search: AddressSearch | None = None
+
+    async def aclose(self) -> None:
+        close = getattr(self.address_search, "aclose", None)
+        if close is not None:
+            await close()
 
 
 def build_container(
@@ -36,6 +51,7 @@ def build_container(
     glossary_repo: GlossaryRepository | None = None,
     parcel_source: ParcelSource | None = None,
     zoning_rules: ZoningRuleRepository | None = None,
+    address_search: AddressSearch | None = None,
 ) -> Container:
     as_of = latest_etl_time(clock())
     mode = resolve_data_mode(settings)
@@ -49,6 +65,9 @@ def build_container(
     glossary_repo = glossary_repo or InMemoryGlossaryRepository()
     parcel_source = parcel_source or MockParcelSource(land_price_year=as_of.year)
     zoning_rules = zoning_rules or SampleZoningRules()
+    # 주소 검색은 카카오 REST 키가 있을 때만 켠다
+    if address_search is None and settings.kakao_rest_key:
+        address_search = KakaoGeocoder(settings.kakao_rest_key)
     return Container(
         settings=settings,
         data_mode="real" if isinstance(market_repo, InMemoryMarketRepository) and mode == "real" else "sample",
@@ -56,4 +75,6 @@ def build_container(
         complex_service=ComplexService(market_repo),
         parcel_service=ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock),
         glossary_service=GlossaryService(glossary_repo),
+        search_service=SearchService(market_repo, address_search),
+        address_search=address_search,
     )

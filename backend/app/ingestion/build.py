@@ -1,4 +1,3 @@
-import re
 import statistics
 from collections import Counter, defaultdict
 from collections.abc import Iterable
@@ -6,10 +5,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, time
 from uuid import NAMESPACE_URL, uuid5
 
+from app.adapters.kakao import GeoResult
 from app.adapters.molit.types import RawTrade, SourceKind
 from app.core.busan import SIGUNGU, SIGUNGU_BY_CODE
 from app.core.dates import KST
-from app.ingestion.geocode import GeocodeCache, GeoResult, address_key, region_key
+from app.core.text import normalize
+from app.ingestion.geocode import GeocodeCache, address_key, region_key
 from app.repositories.memory.dataset import MarketDataset, RegionDirectory
 from app.repositories.types import (
     AreaType,
@@ -20,8 +21,6 @@ from app.repositories.types import (
     RegionRef,
     Transaction,
 )
-
-NAME_KEY_STRIP = re.compile(r"[\s\W_]+")
 
 
 @dataclass(frozen=True)
@@ -68,10 +67,6 @@ def needed_lookups(trades: Iterable[RawTrade]) -> tuple[set[tuple[str, str, str]
         if "*" not in t.jibun and t.jibun:
             addresses.add((name, t.umd_nm, t.jibun))
     return addresses, regions
-
-
-def _name_key(name: str) -> str:
-    return NAME_KEY_STRIP.sub("", name).lower()
 
 
 def _kst_midnight(d) -> datetime | None:
@@ -138,7 +133,7 @@ def build_dataset(
             key = (
                 ("seq", t.complex_seq)
                 if t.complex_seq
-                else (t.property_type.value, t.sgg_cd, t.umd_nm, t.jibun, _name_key(t.name or ""))
+                else (t.property_type.value, t.sgg_cd, t.umd_nm, t.jibun, normalize(t.name or ""))
             )
             if key not in complexes:
                 hit = geo.address(t.sgg_cd, t.umd_nm, t.jibun) if t.jibun else None

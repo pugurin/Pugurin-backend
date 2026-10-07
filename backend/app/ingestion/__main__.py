@@ -3,11 +3,11 @@ import asyncio
 import sys
 from datetime import datetime
 
+from app.adapters.kakao import KakaoGeocoder
 from app.adapters.molit.client import MolitClient
 from app.adapters.molit.types import SourceKind
 from app.core.config import Settings
 from app.core.dates import KST
-from app.ingestion.geocode import KakaoGeocoder
 from app.ingestion.real import RealDataMissing, load_real_data
 from app.ingestion.refresh import refresh
 

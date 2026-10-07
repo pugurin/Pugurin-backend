@@ -202,6 +202,32 @@ class ParcelData:
 
 
 @dataclass(frozen=True)
+class AddressHit:
+    address: str
+    lat: float
+    lng: float
+    pnu: str | None
+
+
+@dataclass(frozen=True)
+class ComplexSearchHit:
+    complex: Complex
+    score: int
+    popularity: int
+
+
+@dataclass(frozen=True)
+class RegionSearchHit:
+    code: str
+    level: str  # sigungu | dong
+    name: str  # 예: "해운대구 우동"
+    lat: float
+    lng: float
+    bbox: tuple[float, float, float, float]  # min_lng, min_lat, max_lng, max_lat
+    score: int
+
+
+@dataclass(frozen=True)
 class ZoningLimits:
     max_building_coverage_ratio: int
     max_floor_area_ratio: int

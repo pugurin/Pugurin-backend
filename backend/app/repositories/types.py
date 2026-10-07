@@ -202,6 +202,40 @@ class ParcelData:
 
 
 @dataclass(frozen=True)
+class StatsMetrics:
+    median_price_per_pyeong: int | None = None
+    median_deposit_per_pyeong: int | None = None
+    median_deposit: int | None = None
+    median_monthly_rent: int | None = None
+
+
+@dataclass(frozen=True)
+class MonthStats:
+    month: str  # YYYY-MM
+    count: int
+    metrics: StatsMetrics  # 표본이 모자란 달은 모두 None
+
+
+@dataclass(frozen=True)
+class StatsSeries:
+    count: int
+    metrics: StatsMetrics
+    trend: tuple[MonthStats, ...]
+
+
+@dataclass(frozen=True)
+class AreaStats:
+    area_type: AreaType
+    series: StatsSeries
+
+
+@dataclass(frozen=True)
+class StatsResult:
+    overall: StatsSeries
+    by_area: tuple[AreaStats, ...] = ()
+
+
+@dataclass(frozen=True)
 class AddressHit:
     address: str
     lat: float

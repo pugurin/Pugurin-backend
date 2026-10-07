@@ -334,11 +334,18 @@
   "meta": { "data_as_of": "...", "reporting_lag_notice": true, "method": "median, 해제거래 제외" }
 }
 ```
-- 통계는 **중위값**. 월별 표본 3건 미만인 달은 `median_price_per_pyeong: null`
-- **거래가 적은 단지 대체 규칙** (`/complexes/{id}/stats`만)
-  - 기간 중 값이 있는 달이 절반 미만이면 **분기 단위**로 다시 계산한다 → `meta.granularity: "quarter"`, `trend[].month` 대신 `trend[].quarter: "2026-Q1"`
+- 통계는 **중위값**. 월별 표본 3건 미만인 달은 `median_price_per_pyeong: null`(건수 `count`는 그대로 내린다)
+- **지표 이름은 `deal_type`을 따른다**: `sale` → `median_price_per_pyeong`, `jeonse` → `median_deposit_per_pyeong`, `monthly` → `median_deposit` + `median_monthly_rent`(절대 금액). 최상위와 `trend` 각 항목에 같은 이름이 쓰인다
+- `trend`는 **기간 안의 모든 달**을 오래된 달부터 하나씩 내린다(거래가 없는 달은 `count: 0`, 값 `null`). 기간은 **달 단위**이고 데이터 기준월로 끝난다(`period_months=3`, 기준월 10월 → 8·9·10월). 최상위 값과 `transaction_count`는 이 기간 전체 기준이며 월 표본 3건 미만 규칙을 적용하지 않는다
+- **마지막 달은 신고 지연으로 거래가 덜 모여 값이 튈 수 있다**(`reporting_lag_notice`). 앱은 그래프에서 마지막 달을 흐리게 표시하는 것을 권한다
+- `/complexes/{id}/stats` 응답에는 `area_types`가 추가된다. 단지의 **평형(전용면적)별** `exclusive_area_m2`, `exclusive_area_pyeong`, `supply_area_pyeong`, `transaction_count`, 지표, `trend`이며 기간 안에 거래가 있는 평형만 전용면적 순으로 나온다. 같은 평형은 전용면적을 반올림한 정수(㎡)로 묶는다
+- `property_type`이 단지의 유형과 다르면 `400`(`field: property_type`), 토지는 `deal_type=sale`만 허용(`400`, `field: deal_type`), 모르는 단지·지역은 `404`, `region_code`는 5자리 또는 10자리 숫자가 아니면 `400`
+- `meta.method`: `중위값, 해제거래 제외` (`exclude_direct=true`면 `, 직거래 제외` 추가). 토지는 지분거래·지목 '도로'가 이미 제외되어 있다
+- **거래가 적은 단지 대체 규칙** (`/complexes/{id}/stats`만, v0.5 추가 — 미구현)
+  - 기간 중 값이 있는(월 표본 3건 이상) 달이 절반 미만이면 **분기 단위**로 다시 계산한다 → `meta.granularity: "quarter"`, `trend[].month` 대신 `trend[].quarter: "2026-Q1"`. 분기에도 표본 3건 미만 규칙을 적용한다
   - 분기로도 절반 미만이면 단지 대신 **소속 법정동·같은 유형** 추이를 준다 → `meta.fallback: { "type": "region", "region_code": "2635010500", "name": "우동" }`. 앱은 "이 단지는 거래가 적어 동네 추이를 보여드려요"를 표시한다
   - 대체하지 않았으면 `meta.granularity: "month"`, `meta.fallback: null`
+  - 대체는 최상위 `trend`에만 적용한다. 최상위 값·`transaction_count`·`area_types`는 단지 기준 그대로 둔다
 
 ---
 

@@ -14,8 +14,10 @@ from app.repositories.types import (
     Level,
     ParcelData,
     ParcelMarkerRow,
+    PropertyType,
     RegionAggregate,
     RegionSearchHit,
+    StatsResult,
     TransactionFilter,
     TransactionPage,
     ZoningLimits,
@@ -37,6 +39,21 @@ class MarketRepository(Protocol):
     async def parcel_markers(self, bbox: BBox, flt: TransactionFilter) -> list[ParcelMarkerRow]: ...
 
     async def get_complex(self, complex_id: UUID) -> Complex | None: ...
+
+    async def region_stats(
+        self,
+        region_code: str,
+        property_type: PropertyType,
+        deal_type: DealType,
+        period_months: int,
+        exclude_direct: bool,
+    ) -> StatsResult | None:
+        """시군구(5자리)·법정동(10자리) 통계. 모르는 지역이면 None."""
+        ...
+
+    async def complex_stats(
+        self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
+    ) -> StatsResult | None: ...
 
     async def search_complexes(self, query: str, limit: int) -> list[ComplexSearchHit]: ...
 

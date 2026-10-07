@@ -1,6 +1,6 @@
 import statistics
 from collections import defaultdict
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from app.core.dates import months_ago
@@ -8,16 +8,21 @@ from app.core.geo import BBox, pyeong_exact
 from app.core.text import normalize
 from app.repositories.memory.dataset import MarketData, RegionDirectory, sample_regions
 from app.repositories.types import (
+    AreaStats,
     Complex,
     ComplexMarkerRow,
     ComplexSearchHit,
     DealType,
     Level,
     LocationPrecision,
+    MonthStats,
     ParcelMarkerRow,
     PropertyType,
     RegionAggregate,
     RegionSearchHit,
+    StatsMetrics,
+    StatsResult,
+    StatsSeries,
     TradeMethod,
     Transaction,
     TransactionFilter,
@@ -25,6 +30,7 @@ from app.repositories.types import (
 )
 from app.sample_data.market import build_sample_market
 
+MIN_MONTH_SAMPLE = 3  # 월 표본이 이보다 적으면 중위값을 내지 않는다
 BBOX_PADDING = 0.003  # 약 300m
 MIN_BOX_HALF = 0.004
 
@@ -57,6 +63,37 @@ def _padded(box: list[float], center: tuple[float, float]) -> tuple[float, float
 
 def _median_int(values: list[float]) -> int | None:
     return int(round(statistics.median(values))) if values else None
+
+
+def _metrics(deal_type: DealType, txs: list[Transaction]) -> StatsMetrics:
+    if not txs:
+        return StatsMetrics()
+    if deal_type == DealType.sale:
+        return StatsMetrics(
+            median_price_per_pyeong=_median_int([t.price / pyeong_exact(t.basis_area_m2) for t in txs if t.price])
+        )
+    if deal_type == DealType.jeonse:
+        return StatsMetrics(
+            median_deposit_per_pyeong=_median_int(
+                [t.deposit / pyeong_exact(t.basis_area_m2) for t in txs if t.deposit is not None]
+            )
+        )
+    return StatsMetrics(
+        median_deposit=_median_int([t.deposit for t in txs if t.deposit is not None]),
+        median_monthly_rent=_median_int([t.monthly_rent for t in txs if t.monthly_rent is not None]),
+    )
+
+
+def _series(deal_type: DealType, txs: list[Transaction], months: list[date]) -> StatsSeries:
+    by_month: dict[tuple[int, int], list[Transaction]] = defaultdict(list)
+    for t in txs:
+        by_month[(t.contract_date.year, t.contract_date.month)].append(t)
+    trend = []
+    for first in months:
+        bucket = by_month.get((first.year, first.month), [])
+        metrics = _metrics(deal_type, bucket) if len(bucket) >= MIN_MONTH_SAMPLE else StatsMetrics()
+        trend.append(MonthStats(first.strftime("%Y-%m"), len(bucket), metrics))
+    return StatsSeries(len(txs), _metrics(deal_type, txs), tuple(trend))
 
 
 class InMemoryMarketRepository:
@@ -108,6 +145,53 @@ class InMemoryMarketRepository:
                 else:
                     boxes[code] = _padded([ref.lng, ref.lat, ref.lng, ref.lat], (ref.lat, ref.lng))
         return boxes
+
+    def _stats_window(self, period_months: int) -> list[date]:
+        """데이터 기준월로 끝나는 period_months개월(달 단위)의 첫째 날 목록, 오래된 달이 먼저다."""
+        last = self._as_of.date().replace(day=1)
+        return [months_ago(last, n) for n in range(period_months - 1, -1, -1)]
+
+    @staticmethod
+    def _stats_filter(txs, deal_type: DealType, exclude_direct: bool, start: date) -> list[Transaction]:
+        return [
+            t
+            for t in txs
+            if t.deal_type == deal_type
+            and not t.is_cancelled
+            and t.contract_date >= start
+            and not (exclude_direct and t.trade_method == TradeMethod.direct)
+        ]
+
+    async def region_stats(
+        self,
+        region_code: str,
+        property_type: PropertyType,
+        deal_type: DealType,
+        period_months: int,
+        exclude_direct: bool,
+    ) -> StatsResult | None:
+        if region_code not in self._regions:
+            return None
+        months = self._stats_window(period_months)
+        candidates = (t for t in self._by_kind[(property_type, deal_type)] if t.region_code.startswith(region_code))
+        txs = self._stats_filter(candidates, deal_type, exclude_direct, months[0])
+        return StatsResult(_series(deal_type, txs, months))
+
+    async def complex_stats(
+        self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
+    ) -> StatsResult | None:
+        found = self._complexes.get(complex_id)
+        if found is None:
+            return None
+        months = self._stats_window(period_months)
+        txs = self._stats_filter(self._by_complex.get(complex_id, []), deal_type, exclude_direct, months[0])
+        by_area = []
+        for area in sorted(found.area_types, key=lambda a: a.exclusive_area_m2):
+            bucket = round(area.exclusive_area_m2)
+            inside = [t for t in txs if t.exclusive_area_m2 is not None and round(t.exclusive_area_m2) == bucket]
+            if inside:
+                by_area.append(AreaStats(area, _series(deal_type, inside, months)))
+        return StatsResult(_series(deal_type, txs, months), tuple(by_area))
 
     async def search_complexes(self, query: str, limit: int) -> list[ComplexSearchHit]:
         q = normalize(query)
@@ -177,19 +261,15 @@ class InMemoryMarketRepository:
             region = self._regions[code]
             if not bbox.contains(region.lat, region.lng):
                 continue
-            per_pyeong = [(tx.price or tx.deposit or 0) / pyeong_exact(tx.basis_area_m2) for tx in txs]
+            m = _metrics(flt.deal_type, txs)
             out.append(
                 RegionAggregate(
                     region=region,
                     transaction_count=len(txs),
-                    median_price_per_pyeong=_median_int(per_pyeong) if flt.deal_type == DealType.sale else None,
-                    median_deposit_per_pyeong=_median_int(per_pyeong) if flt.deal_type == DealType.jeonse else None,
-                    median_deposit=_median_int([tx.deposit for tx in txs if tx.deposit])
-                    if flt.deal_type == DealType.monthly
-                    else None,
-                    median_monthly_rent=_median_int([tx.monthly_rent for tx in txs if tx.monthly_rent])
-                    if flt.deal_type == DealType.monthly
-                    else None,
+                    median_price_per_pyeong=m.median_price_per_pyeong,
+                    median_deposit_per_pyeong=m.median_deposit_per_pyeong,
+                    median_deposit=m.median_deposit,
+                    median_monthly_rent=m.median_monthly_rent,
                 )
             )
         return sorted(out, key=lambda a: a.region.code)

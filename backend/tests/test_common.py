@@ -48,6 +48,8 @@ def test_openapi_schema_builds_for_all_endpoints(client):
         f"{API}/health",
         f"{API}/map/markers",
         f"{API}/search",
+        f"{API}/stats/regions/{{region_code}}",
+        f"{API}/complexes/{{complex_id}}/stats",
         f"{API}/complexes/{{complex_id}}",
         f"{API}/complexes/{{complex_id}}/transactions",
         f"{API}/parcels/lookup",

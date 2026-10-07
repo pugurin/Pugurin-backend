@@ -13,7 +13,7 @@ from app.repositories.ports import (
     ParcelSource,
     ZoningRuleRepository,
 )
-from app.routers import complexes, glossary, health, map, parcels, search
+from app.routers import complexes, glossary, health, map, parcels, search, stats
 from app.routers.deps import require_device_id
 from app.wiring import build_container
 
@@ -55,7 +55,7 @@ def create_app(
     app.include_router(health.router, prefix=API_PREFIX)
     public = APIRouter(prefix=API_PREFIX, dependencies=[Depends(require_device_id)])
     # 고정 경로(/parcels/lookup)는 경로 변수(/parcels/{pnu})보다 먼저 등록되도록 각 라우터 안에서 선언 순서를 지켰다
-    for module in (map, search, complexes, parcels, glossary):
+    for module in (map, search, stats, complexes, parcels, glossary):
         public.include_router(module.router)
     app.include_router(public)
     return app

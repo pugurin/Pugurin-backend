@@ -361,3 +361,34 @@ async def test_refresh_collects_then_geocodes_only_what_is_missing(tmp_path):
         CountingSource(), geocoder, tmp_path, now=FIXED_NOW, months=1, sgg_codes=DISTRICTS, out=lines.append
     )
     assert second.geocoded == 0 and geocoder.calls == calls
+
+
+async def test_auto_mode_follows_whether_a_cache_exists(tmp_path):
+    from app.ingestion.real import resolve_data_mode
+
+    settings = Settings(data_mode="auto", data_dir=tmp_path)
+    assert resolve_data_mode(settings) == "sample"
+    with TestClient(create_app(settings=settings, clock=lambda: FIXED_NOW), headers=HEADERS) as client:
+        assert client.get(f"{API}/parcels/lookup", params={"lat": 35.164, "lng": 129.161}).status_code == 200
+
+    await prepare_cache(tmp_path)
+    assert resolve_data_mode(settings) == "real"
+    with TestClient(create_app(settings=settings, clock=lambda: FIXED_NOW), headers=HEADERS) as client:
+        body = client.get(f"{API}/parcels/lookup", params={"lat": 35.164, "lng": 129.161}).json()
+        assert body["meta"]["unavailable_reason"] == "source_unavailable"
+    assert resolve_data_mode(Settings(data_mode="sample", data_dir=tmp_path)) == "sample"
+
+
+async def test_every_response_says_which_data_mode_is_served(tmp_path):
+    with TestClient(create_app(settings=Settings(), clock=lambda: FIXED_NOW), headers=HEADERS) as client:
+        assert client.get(f"{API}/health").headers["x-data-mode"] == "sample"
+        assert client.get(f"{API}/glossary").headers["x-data-mode"] == "sample"
+        assert client.get(f"{API}/nope").headers["x-data-mode"] == "sample"
+
+    await prepare_cache(tmp_path)
+    app = create_app(settings=Settings(data_mode="real", data_dir=tmp_path), clock=lambda: FIXED_NOW)
+    with TestClient(app, headers=HEADERS) as client:
+        assert client.get(f"{API}/health").headers["x-data-mode"] == "real"
+        first = client.get(f"{API}/glossary")
+        again = client.get(f"{API}/glossary", headers={"If-None-Match": first.headers["etag"]})
+        assert again.status_code == 304 and again.headers["x-data-mode"] == "real"

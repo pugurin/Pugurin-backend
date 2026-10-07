@@ -1,11 +1,18 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Literal
 
 from app.core.config import Settings
 from app.ingestion.build import BuildOptions, BuildReport, GeoIndex, build_dataset
 from app.ingestion.geocode import GeocodeCache
 from app.ingestion.rawcache import RawCache
 from app.repositories.memory.dataset import MarketDataset, RegionDirectory
+
+
+def resolve_data_mode(settings: Settings) -> Literal["sample", "real"]:
+    if settings.data_mode == "auto":
+        return "real" if RawCache(settings.data_dir).latest_fetch() is not None else "sample"
+    return settings.data_mode
 
 
 class RealDataMissing(RuntimeError):

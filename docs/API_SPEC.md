@@ -47,6 +47,7 @@
 **인증**: `Authorization: Bearer <access_token>` (JWT, exp 30분). refresh token(exp 14일)은 **응답 body로 발급**, 앱 보안 저장소에 보관. 쿠키 미사용.
 
 **공통 헤더**
+- 응답 헤더 `X-Data-Mode: real|sample` — 지금 가짜 샘플(`sample`)인지 수집한 실데이터(`real`)인지 알려 준다(개발·점검용).
 - `X-Device-Id`: 앱 설치 단위 UUID (필수). 비로그인 rate limit·푸시 토큰 매핑에 사용.
 - `If-None-Match`: 공개 조회 API는 `ETag` 지원 → 변경 없으면 `304`.
 

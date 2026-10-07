@@ -1,10 +1,11 @@
+import logging
 from dataclasses import dataclass
 
 from app.adapters.mock.parcel_source import MockParcelSource
 from app.adapters.unconfigured import UnconfiguredParcelSource
 from app.core.config import Settings
 from app.core.dates import Clock, latest_etl_time
-from app.ingestion.real import load_real_data
+from app.ingestion.real import load_real_data, resolve_data_mode
 from app.repositories.memory.glossary import InMemoryGlossaryRepository
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.memory.zoning import SampleZoningRules
@@ -14,10 +15,14 @@ from app.services.glossary_service import GlossaryService
 from app.services.map_service import MapService
 from app.services.parcel_service import ParcelService
 
+# uvicorn이 기본으로 출력하는 로거에 남겨야 서버 로그에서 보인다
+logger = logging.getLogger("uvicorn.error")
+
 
 @dataclass
 class Container:
     settings: Settings
+    data_mode: str
     map_service: MapService
     complex_service: ComplexService
     parcel_service: ParcelService
@@ -33,7 +38,9 @@ def build_container(
     zoning_rules: ZoningRuleRepository | None = None,
 ) -> Container:
     as_of = latest_etl_time(clock())
-    if market_repo is None and settings.data_mode == "real":
+    mode = resolve_data_mode(settings)
+    logger.info("데이터 모드: %s", mode)
+    if market_repo is None and mode == "real":
         real = load_real_data(settings)
         market_repo = InMemoryMarketRepository(real.as_of, real.dataset, real.regions)
         # 토지 정보 공급처가 정해지기 전에는 가짜 필지를 실제처럼 내려보내지 않고 '불러올 수 없음'으로 응답한다
@@ -44,6 +51,7 @@ def build_container(
     zoning_rules = zoning_rules or SampleZoningRules()
     return Container(
         settings=settings,
+        data_mode="real" if isinstance(market_repo, InMemoryMarketRepository) and mode == "real" else "sample",
         map_service=MapService(market_repo, settings),
         complex_service=ComplexService(market_repo),
         parcel_service=ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock),

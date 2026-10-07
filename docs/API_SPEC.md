@@ -1,9 +1,20 @@
-# API 명세서 (Pugurin Backend) — v0.4
+# API 명세서 (Pugurin Backend) — v0.5
 
 부산 부동산 지도 서비스 백엔드 API 명세입니다.
 전체 개요·단계별 범위는 [`../AGENTS.md`](../AGENTS.md), 기능 규칙은 [`FEATURE_SPEC.md`](./FEATURE_SPEC.md), 백엔드 구현 규칙은 [`../backend/AGENTS.md`](../backend/AGENTS.md) 참고.
 
-각 섹션 제목의 **[1차]/[2차]/[3차]** 는 구현 단계입니다.
+각 섹션 제목의 **[1차]/[2차]/[보류]** 는 구현 단계입니다. 기준 기능명세서는 **v1.5**입니다.
+
+### v0.4 → v0.5 주요 변경 (기능명세서 v1.3~v1.5 반영)
+- **거래 흐름 변경:** `거래 희망자 → 소유자` 직거래. 매물(§16)·문의 채팅(§11)을 2차로 옮기고, 매물 등록·문의 응대는 **소유 확인을 마친 일반 사용자(소유자)** 가 한다
+- **중개사 API(§9)와 중개사 심사·자격 서류는 보류**. 내용은 재개 대비로 남긴다
+- **소유 확인 API 추가(§16.1):** 외부 휴대폰 본인인증 + 등기 조회 대행 API로 자동 대조, 서버에는 결과만 저장. 매물 연장 때 등기 재조회
+- **웹 지원:** CORS 허용 목록, 웹 로그인(인가 코드 + HttpOnly 쿠키), 웹도 `X-Device-Id`를 브라우저 단위로 보냄
+- 지도에 **매물 레이어**(`layer=listings`) 추가, 매물 상세에 **호가 vs 실거래 비교**·**직거래 안전 안내** 추가
+- 단지 시세 추이에 **분기·동네 대체 규칙** 추가, 토지 분석을 **반경 500m → 같은 법정동** 기준으로 변경
+- 채팅: 매물 소유자에게만 문의, **차단**, 메시지 **주의 표시(`warnings`)**
+- 신고 사유 `not_owner` 추가, **이의제기 API** 추가
+- **용어 학습 API** 추가: 로딩 팁, 오늘의 용어, 퀴즈, 내 용어장, 학습 기록. 학습 알림 수신 설정 추가
 
 ### v0.4 보충 (1차 mock 구현 중 확인)
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
@@ -44,12 +55,21 @@
 
 **Base URL**: `/api/v1`
 
-**인증**: `Authorization: Bearer <access_token>` (JWT, exp 30분). refresh token(exp 14일)은 **응답 body로 발급**, 앱 보안 저장소에 보관. 쿠키 미사용.
+**인증**: `Authorization: Bearer <access_token>` (JWT, exp 30분). refresh token(exp 14일) 전달 방식은 클라이언트에 따라 다르다.
+- **앱**: 응답 body로 발급, 앱 보안 저장소에 보관.
+- **웹**: `Set-Cookie: refresh_token=...; HttpOnly; Secure; SameSite=None; Path=/api/v1/auth`로 발급하고 body에는 넣지 않는다. access token은 메모리에만 둔다.
+- 클라이언트 구분은 요청 헤더 `X-Client: app|web`(기본 `app`)로 한다.
 
 **공통 헤더**
 - 응답 헤더 `X-Data-Mode: real|sample` — 지금 가짜 샘플(`sample`)인지 수집한 실데이터(`real`)인지 알려 준다(개발·점검용).
-- `X-Device-Id`: 앱 설치 단위 UUID (필수). 비로그인 rate limit·푸시 토큰 매핑에 사용.
+- `X-Device-Id`: 앱 설치 단위 UUID (필수). **웹은 브라우저에서 만든 UUID를 로컬 저장소에 두고 같은 헤더로 보낸다.** 비로그인 rate limit·푸시 토큰 매핑에 사용.
+- `X-Client`: `app|web` (선택, 기본 `app`). 로그인·토큰 갱신에서 refresh token 전달 방식을 정한다.
 - `If-None-Match`: 공개 조회 API는 `ETag` 지원 → 변경 없으면 `304`.
+
+**CORS (웹)**
+- 허용 Origin은 환경변수 목록으로 관리한다. 목록 밖 Origin은 CORS 헤더를 주지 않는다.
+- `Access-Control-Allow-Credentials: true` (refresh 쿠키 때문). 허용 헤더: `Authorization, Content-Type, X-Device-Id, X-Client, If-None-Match`
+- 쿠키를 쓰는 `/auth/refresh`, `/auth/logout`은 `X-Client: web` 헤더가 있어야 쿠키를 읽는다(사용자 지정 헤더라 사전 요청이 생겨 CSRF를 막는다).
 
 **공통 응답 포맷 (성공)**
 ```json
@@ -67,10 +87,10 @@
 |---|---|---|
 | `VALIDATION_ERROR` | 400 | 요청 필드 검증 실패 (`field`에 실패한 필드명) |
 | `UNAUTHORIZED` | 401 | 토큰 없음/만료 |
-| `FORBIDDEN` | 403 | 권한 없음 (예: 미승인 중개사가 중개사 전용 API 호출) |
+| `FORBIDDEN` | 403 | 권한 없음 (예: 남의 매물 수정, 소유 확인 없이 매물 등록, 차단한 상대에게 메시지) |
 | `RESOURCE_NOT_FOUND` | 404 | 대상 없음 |
-| `CONFLICT` | 409 | 중복 (예: 이미 진행 중인 중개사 신청) |
-| `RATE_LIMITED` | 429 | 요청 과다 (`Retry-After` 헤더 포함) |
+| `CONFLICT` | 409 | 중복·상태 충돌 (예: 같은 부동산·거래유형 매물 중복, 거래완료 매물에 새 문의, 같은 대상 중복 신고) |
+| `RATE_LIMITED` | 429 | 요청 과다 (`Retry-After` 헤더 포함). 소유 확인 하루 시도 횟수 초과도 이 코드 |
 | `SOURCE_UNAVAILABLE` | 503 | 외부 데이터 소스 장애 (토지 API는 200 + `unavailable_reason`으로 degrade, §5 참고) |
 | `INTERNAL_ERROR` | 500 | 서버 오류 |
 
@@ -104,7 +124,7 @@
 **데이터 기준일**: 실거래가 관련 응답 `meta`에는 항상 `data_as_of`(마지막 ETL 완료 시각)와 `reporting_lag_notice: true`(최근 30일 거래는 신고 기한으로 누락 가능)를 포함한다.
 
 **Rate limit**
-- 비로그인: `X-Device-Id` 기준 분당 300회 / 로그인: 사용자 기준 분당 600회
+- 비로그인: `X-Device-Id` 기준 분당 300회(웹은 브라우저 UUID 기준) / 로그인: 사용자 기준 분당 600회
 - IP 기준 제한은 비정상 트래픽 방어용 상한(분당 3,000회)만 둔다 (모바일 통신사 NAT로 다수 사용자가 IP 공유)
 - 초과 시 `429 RATE_LIMITED` + `Retry-After`
 
@@ -134,10 +154,11 @@
 | 파라미터 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `bbox` | `min_lng,min_lat,max_lng,max_lat` | ✅ | 지도 뷰포트 |
+| `layer` | `transactions\|listings` | - | 기본 `transactions`(실거래). `listings`는 매물 레이어 [2차] |
 | `zoom` | int (0~22) | ✅ | 표준 웹 메르카토르 줌 레벨 (§0) |
 | `property_type` | `apartment\|officetel\|villa\|land` | ✅ | **단일 선택** (유형 혼합 집계 방지) |
 | `deal_type` | `sale\|jeonse\|monthly` | - | 기본 `sale` |
-| `period_months` | int (1~60) | - | 기본 12. 최근 N개월 |
+| `period_months` | int (1~60) | - | 기본 12. 최근 N개월 (상한은 기능명세서 §7 #25에서 재검토) |
 | `price_min`, `price_max` / `deposit_min`, `deposit_max` / `rent_min`, `rent_max` | 원 | - | 거래유형별 가격 필터 |
 | `exclusive_area_pyeong_min`, `exclusive_area_pyeong_max` | 평 | - | **전용면적** 기준 (앱에서 "전용면적" 라벨 표시). 토지는 `land_area_pyeong_min/max` |
 | `exclude_direct` | bool | - | 직거래 제외 (기본 false) |
@@ -200,7 +221,26 @@
 - 서버는 한 응답의 마커 수를 최대 500개로 제한하며, 초과 시 한 단계 상위 레벨로 집계
 - `level`은 서버가 줌으로 정한다. 기본 임계치는 **줌 12 미만 `sigungu` / 12~13 `dong` / 14 이상 `complex`** (설정값, 정책 #4 확정 전 기본값)
 - 토지는 줌 14 이상에서도 `dong` 집계 마커를 유지하고 공개된 필지 거래만 `parcel` 마커로 더한다 (응답 `level`은 `complex`)
+- 직거래 거래는 기본으로 대표값에 포함한다(`exclude_direct=false`). 기본값은 기능명세서 §7 #23에서 재검토
 - 가격·면적 필터는 거래유형·매물유형에 맞는 것만 허용한다. 맞지 않으면 `400 VALIDATION_ERROR` (예: 전세에 `price_min`, 토지에 `exclusive_area_pyeong_min`, `*_min > *_max`)
+
+**매물 레이어 (`layer=listings`) [2차]**
+- 같은 엔드포인트, 같은 `level` 규칙. 대상은 게시 중(`active`, `reserved`) 매물만
+- `period_months`, `exclude_direct`는 쓰지 않는다(보내면 `400`)
+- 단지·필지 단계 마커는 `kind: "listing"`으로 내려가고 **호가**를 담는다. 구·동 단계는 `kind: "region"`에 `listing_count`와 호가 중위값을 담는다
+```json
+{
+  "kind": "listing",
+  "listing_id": "uuid", "complex_id": "uuid|null",
+  "lat": 35.15, "lng": 129.14,
+  "asking": {
+    "deal_type": "sale", "price": 1500000000, "deposit": null, "monthly_rent": null,
+    "exclusive_area_pyeong": 25.7, "supply_area_pyeong": 34.0
+  },
+  "status": "active"
+}
+```
+- 앱은 두 레이어를 따로 조회해 겹쳐 그리고, 위쪽 토글로 켜고 끈다(기본: 실거래만)
 
 ---
 
@@ -240,7 +280,7 @@
 |---|---|---|
 | `region` | `bbox`에 맞춰 fit (줌은 SDK가 계산) | 해당 영역으로 `/map/markers` 재조회 |
 | `complex` | `lat/lng` 중심, 단지 마커가 보이는 줌 | 단지 시트 열기 (`/complexes/{id}`) |
-| `address` | `lat/lng` 중심, 필지가 보이는 줌 | 토지 시트 열기 (`/parcels/{pnu}`) |
+| `address` | `lat/lng` 중심, 필지가 보이는 줌 | 토지 정보 공급처가 생긴 뒤에만 토지 시트 열기 (`/parcels/{pnu}`). 지금은 지도 이동만 |
 
 - `bbox`는 `[min_lng, min_lat, max_lng, max_lat]`. 법정동 경계 데이터가 없어서 **그 지역 단지 위치의 범위에 약 300m 여백을 준 근사값**이다(단지가 없거나 좁으면 중심점 기준 최소 크기). 시군구는 소속 법정동 `bbox`를 합친 값
 - 점 결과(`complex`, `address`)의 줌은 지도 SDK마다 체계가 달라 서버가 정하지 않는다. 앱이 고정값을 쓴다
@@ -301,10 +341,17 @@
 - `/complexes/{id}/stats` 응답에는 `area_types`가 추가된다. 단지의 **평형(전용면적)별** `exclusive_area_m2`, `exclusive_area_pyeong`, `supply_area_pyeong`, `transaction_count`, 지표, `trend`이며 기간 안에 거래가 있는 평형만 전용면적 순으로 나온다. 같은 평형은 전용면적을 반올림한 정수(㎡)로 묶는다
 - `property_type`이 단지의 유형과 다르면 `400`(`field: property_type`), 토지는 `deal_type=sale`만 허용(`400`, `field: deal_type`), 모르는 단지·지역은 `404`, `region_code`는 5자리 또는 10자리 숫자가 아니면 `400`
 - `meta.method`: `중위값, 해제거래 제외` (`exclude_direct=true`면 `, 직거래 제외` 추가). 토지는 지분거래·지목 '도로'가 이미 제외되어 있다
+- **거래가 적은 단지 대체 규칙** (`/complexes/{id}/stats`만, v0.5 추가 — 미구현)
+  - 기간 중 값이 있는(월 표본 3건 이상) 달이 절반 미만이면 **분기 단위**로 다시 계산한다 → `meta.granularity: "quarter"`, `trend[].month` 대신 `trend[].quarter: "2026-Q1"`. 분기에도 표본 3건 미만 규칙을 적용한다
+  - 분기로도 절반 미만이면 단지 대신 **소속 법정동·같은 유형** 추이를 준다 → `meta.fallback: { "type": "region", "region_code": "2635010500", "name": "우동" }`. 앱은 "이 단지는 거래가 적어 동네 추이를 보여드려요"를 표시한다
+  - 대체하지 않았으면 `meta.granularity: "month"`, `meta.fallback: null`
+  - 대체는 최상위 `trend`에만 적용한다. 최상위 값·`transaction_count`·`area_types`는 단지 기준 그대로 둔다
 
 ---
 
 ## 5. 토지 (Parcels: 토지이용계획·토지특성) [1차]
+
+> **현재 상태:** VWorld를 쓰지 않기로 해서 토지이용계획·토지특성·필지 경계·좌표 → PNU 변환의 **공급처가 없다.** 공급처가 정해지기 전까지 두 엔드포인트는 항상 `200 + data: null + unavailable_reason: source_unavailable`을 준다. 1차 토지 범위는 기능명세서 §7 #1에서 결정한다.
 
 | Method | Path | 설명 |
 |---|---|---|
@@ -396,7 +443,11 @@
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/analysis/complexes/{id}` | 단지 시세 추이 + 소속 법정동 추이 비교 + 필지 용도지역 요약 |
-| GET | `/analysis/parcels/{pnu}` | 필지 토지특성 + 주변(반경 500m) 동일 지목 토지 거래 중위 평단가 추이 + 규제 요약 |
+| GET | `/analysis/parcels/{pnu}` | 필지 토지특성 + **같은 법정동·같은 지목** 토지 거래 중위 평단가 추이 + 규제 요약 |
+
+- `/analysis/complexes/{id}`의 용도지역 요약(`zonings`)은 토지 정보 공급처가 없으면 `null`이고, 추이 비교만 준다
+- `/analysis/parcels/{pnu}`는 공급처가 없으면 §5와 같이 `source_unavailable`. 그 경우 동 단위 토지 추이는 `/stats/regions/{region_code}?property_type=land`로 본다
+- **동 단위인 이유:** 토지 거래는 지번이 100% 가려져 법정동 중심점 좌표밖에 없어 반경 기준 비교가 불가능하다
 
 **`GET /analysis/parcels/{pnu}` 응답 (요약)**
 ```json
@@ -406,9 +457,10 @@
       "pnu": "...", "land_category": "대", "official_land_price_per_m2": 5120000,
       "zonings": [ { "zone_type": "제2종일반주거지역", "area_ratio": 1.0, "max_building_coverage_ratio": 60, "max_floor_area_ratio": 250 } ]
     },
-    "nearby_land_trend": {
-      "radius_m": 500, "transaction_count": 18,
-      "trend": [ { "year": 2025, "median_price_per_pyeong": 9800000 } ]
+    "dong_land_trend": {
+      "region_code": "2635010500", "region_name": "우동", "land_category": "대",
+      "transaction_count": 18,
+      "trend": [ { "year": 2025, "median_price_per_pyeong": 9800000, "count": 7 } ]
     },
     "buildable_summary": "대지 460평 기준 건축면적 최대 약 276평, 연면적 최대 약 1,150평 (조례 한도 기준 단순 계산)",
     "disclaimer": "참고용 정보이며 실제 건축 가능 여부는 관할 구청 확인이 필요합니다."
@@ -418,6 +470,7 @@
 ```
 - 용도지역이 여러 개면 `buildable_summary`는 `area_ratio` **가중평균**으로 단순 계산한다. 국토계획법 제84조(걸친 부분이 작을 때 과반 용도지역 적용 등) 예외는 반영하지 않으며, 이 경우 문구에 "여러 용도지역에 걸친 필지로 실제와 다를 수 있음"을 덧붙인다
 - `area_ratio`가 null인 용도지역이 있으면 `buildable_summary`는 null
+- `dong_land_trend`는 지분거래·지목 '도로'를 제외한다(v0.4 구현 기본값, 기능명세서 §7 #24에서 확정). 연도별 `count`를 함께 준다
 
 ---
 
@@ -453,55 +506,149 @@
 - "자주 찾는 용어"는 `is_popular=true`인 용어 (`GET /glossary?popular=true`)
 - 관련 용어 추천 API는 두지 않는다. 필지·단지 응답의 `glossary` 맵(필드명 → 용어 ID)으로 연결한다.
 
+### 7.1 용어 학습 [1차: 팁·오늘의 용어 / 2차: 나머지]
+
+| Method | Path | Auth | 설명 |
+|---|---|---|---|
+| GET | `/glossary/tips` | - | 로딩 중 용어 팁 전체 (페이지네이션 없음, `ETag`) [1차] |
+| GET | `/glossary/today` | - | 오늘의 용어 [1차] |
+| GET | `/glossary/quiz?count=&category=&term_ids=` | - | 퀴즈 문항 (기본 3개) [2차] |
+| POST | `/glossary/quiz/answers` | 필요 | 퀴즈 결과 기록(학습 기록 동기화) [2차] |
+| PUT | `/glossary/bookmarks/{term_id}` | 필요 | 내 용어장에 추가 (멱등) [2차] |
+| DELETE | `/glossary/bookmarks/{term_id}` | 필요 | 내 용어장에서 삭제 [2차] |
+| GET | `/glossary/bookmarks` | 필요 | 내 용어장 목록 [2차] |
+| GET | `/users/me/glossary-progress` | 필요 | 학습 기록 [2차] |
+| PUT | `/users/me/glossary-progress` | 필요 | 기기에 쌓인 학습 기록 합치기 [2차] |
+
+**`GET /glossary/tips` 응답**
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "text": "전용면적은 현관문 안쪽, 우리 집만 쓰는 넓이예요.",
+      "term_id": "uuid",
+      "contexts": ["complex", "listing"],
+      "as_of": "2026-01-01|null"
+    }
+  ]
+}
+```
+- 앱은 목록 전체를 저장해 두고 `ETag`로 바뀐 경우에만 다시 받는다. **화면 전환 로딩 때 서버에 요청하지 않는다**
+- `contexts`: 이 팁을 보여줄 화면 `tab|complex|parcel|listing|analysis`. 앱은 이동하는 화면과 맞는 팁을 먼저 고른다
+- `as_of`: 세율·한도처럼 기준일이 필요한 팁만 채운다
+- `text`는 2줄 이내(한 줄 약 25자). 관리자가 검수한 팁만 내려간다
+- 최소 표시 시간(기본 1.5초)·빈도 제한(3분에 한 번)·건너뛰기·끄기는 **앱 표시 정책**이다(기능명세서 F-GLOS-03). 서버는 관여하지 않는다
+
+**`GET /glossary/today` 응답**
+```json
+{ "data": { "date": "2026-10-07", "term": { "...용어 1건": "..." } } }
+```
+- 모든 사용자에게 같은 날 같은 용어. 관리자가 정한 순서 → 없으면 `is_popular` 용어 순환
+- `Cache-Control`은 그날 자정(KST)까지
+
+**`GET /glossary/quiz` 응답**
+```json
+{
+  "data": [
+    {
+      "id": "uuid", "term_id": "uuid", "type": "ox|choice",
+      "question": "용적률은 땅 넓이 대비 건물 바닥면적을 모두 더한 비율이다",
+      "choices": null,
+      "answer": "o",
+      "explanation": "맞아요. 층마다 바닥면적을 모두 더해 땅 넓이로 나눈 값이에요."
+    }
+  ]
+}
+```
+- `type=choice`면 `choices`는 4개, `answer`는 정답 인덱스(0~3)
+- 채점은 앱이 한다(정답·해설을 함께 내려줌). 비로그인 사용자도 풀 수 있고 기록은 기기에 남는다
+- `term_ids`를 주면 그 용어로만 낸다(내 용어장 퀴즈, 틀린 용어 복습). 없으면 앱이 넘긴 복습 대상이 없을 때 무작위
+- **간격 반복은 앱이 계산**한다(틀림 → 1일 뒤, 맞힘 → 간격을 늘림). 로그인 사용자는 결과를 서버에 올려 기기 간에 맞춘다
+
+**`POST /glossary/quiz/answers` 요청**
+```json
+{ "answers": [ { "question_id": "uuid", "term_id": "uuid", "correct": true, "answered_at": "iso8601" } ] }
+```
+- 같은 `question_id` + `answered_at` 재전송은 한 번만 반영(멱등)
+
+**학습 기록 (`/users/me/glossary-progress`)**
+```json
+{
+  "seen_term_ids": ["uuid"],
+  "terms": [ { "term_id": "uuid", "correct_streak": 2, "next_review_on": "2026-10-10" } ],
+  "learned_term_count": 12,
+  "learned_by_category": { "trade": 5, "land": 4, "building": 2, "tax": 1 },
+  "study_dates": ["2026-10-06", "2026-10-07"],
+  "current_streak_days": 2,
+  "badges": [ { "code": "land_10", "earned_at": "iso8601" } ]
+}
+```
+- "익힌 용어" = `correct_streak >= 2`
+- `PUT`은 로그인 직후 기기 기록을 서버에 **합친다**: `seen_term_ids`·`study_dates`는 합집합, 용어별 상태는 `answered_at`이 더 최근인 쪽을 쓴다. `learned_*`, `current_streak_days`, `badges`는 서버가 다시 계산한다(요청에 넣어도 무시)
+- `study_dates`는 최근 400일까지만 보관
+
 ---
 
 ## 8. 인증 / 계정 (Auth & Users) [2차]
 
-모든 사용자는 소셜 계정으로 가입한다. role: `buyer`(기본), `agent`(승격), `admin`(내부 지정).
+모든 사용자는 소셜 계정으로 가입한다. role: `buyer`(기본, 소유 확인을 마치면 소유자로 매물 등록 가능), `admin`(내부 지정), `agent`(보류).
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| POST | `/auth/oauth/{provider}` | - | `provider: kakao\|naver`. 앱이 받은 OAuth 토큰/인가코드로 로그인·가입 |
+| POST | `/auth/oauth/{provider}` | - | `provider: kakao\|naver`. 로그인·가입 |
 | POST | `/auth/refresh` | - (refresh token) | access 재발급 + refresh **rotation** |
 | POST | `/auth/logout` | 필요 | 현재 refresh token 폐기 + 해당 디바이스 푸시 토큰 해제 |
 | GET | `/users/me` | 필요 | 내 정보 |
 | PATCH | `/users/me` | 필요 | 닉네임 수정 |
-| PUT | `/users/me/consents` | 필요 | 수신동의 변경 (§12) |
+| PUT | `/users/me/consents` | 필요 | 수신동의·알림 설정 변경 (§12) |
 | DELETE | `/users/me` | 필요 | 회원 탈퇴 |
 
 **`POST /auth/oauth/{provider}` 요청 / 응답**
 ```json
-// 요청
+// 앱 요청: 소셜 SDK가 준 토큰
 { "access_token": "소셜 SDK가 준 토큰" }
-// 응답
+// 웹 요청 (X-Client: web): 리다이렉트로 받은 인가 코드
+{ "code": "인가 코드", "redirect_uri": "https://허용된-웹-주소/auth/callback", "state": "string" }
+// 응답 (앱)
 { "data": { "access_token": "jwt", "refresh_token": "opaque", "is_new_user": true, "user": { } } }
+// 응답 (웹): refresh_token은 body에 없고 Set-Cookie로 내려감
+{ "data": { "access_token": "jwt", "is_new_user": true, "user": { } } }
 ```
+- 웹 `redirect_uri`는 서버 허용 목록과 정확히 같아야 한다(아니면 `400`). `state`는 웹이 만들어 검증한다
 - 신규 가입 시 필수 약관·개인정보 처리 동의 여부를 `agreements` 필드로 함께 받는다 (`{ "terms": true, "privacy": true }`) — 미동의 시 `VALIDATION_ERROR`
 - 폐기된 refresh token 재사용이 감지되면 해당 사용자의 모든 refresh token을 폐기하고 `401`
+- `/auth/refresh`: 앱은 body `{ "refresh_token": "..." }`, 웹은 쿠키(`X-Client: web` 필수)
 
 **`GET /users/me` 응답**
 ```json
 {
-  "id": "uuid", "nickname": "string", "role": "buyer|agent|admin",
-  "agent_application_status": "none|pending|auto_verified|approved|rejected",
+  "id": "uuid", "nickname": "string", "role": "buyer|admin",
+  "verified_ownership_count": 1,
+  "active_listing_count": 1,
   "consents": {
     "chat_push": true, "interest_alert_push": true,
+    "study_push": false, "study_push_time": "20:00",
     "marketing_push": false, "marketing_night_push": false,
     "marketing_consented_at": null, "marketing_reconfirm_due": null
   },
+  "settings": { "loading_tips": true, "unseen_term_dots": true },
   "created_at": "iso8601"
 }
 ```
+- `settings`는 로그인 사용자의 기기 간 동기화용. 비로그인은 앱이 기기에 저장한다. `PATCH /users/me`로 `nickname`, `settings`를 바꾼다
 
 **회원 탈퇴 (`DELETE /users/me`)**
 - 개인정보(닉네임, 소셜 식별자, 연락처 등)는 **즉시 파기(익명화)**. 법정 보관 대상만 분리 보관 테이블로 이동
+- **소유 확인 결과 기록을 즉시 파기**하고, 올린 매물은 즉시 비노출
 - 채팅 메시지는 상대방 화면에 "탈퇴한 사용자"로 표시, 보관 기간 정책(미정) 경과 후 삭제
-- 같은 소셜 계정으로 **재가입 가능** (기존 계정과 연결하지 않음)
-- 중개사가 탈퇴하면 등록 매물은 즉시 비노출
+- 같은 소셜 계정으로 **재가입 가능** (기존 계정과 연결하지 않음). 재가입 제재 우회 방지(본인인증 CI 해시 보관)는 기능명세서 §7 #16에서 결정
 
 ---
 
-## 9. 중개사 (Agents) [2차]
+## 9. 중개사 (Agents) [보류]
+
+> **보류:** 거래 흐름이 `거래 희망자 → 소유자`로 바뀌어 중개사 API는 구현하지 않는다. 아래는 재개할 때 참고하도록 v0.4 내용을 그대로 남긴다. 보류 중에는 라우트를 등록하지 않는다.
 
 ### 9.1 중개사 승격 신청
 `buyer`로 가입·로그인한 뒤 신청한다 (업로드 인증 문제 해소).
@@ -526,7 +673,7 @@
 ```
 - 사무소 좌표는 서버가 `office_address`를 지오코딩해 산출 (클라이언트 좌표 미수신)
 - **검증:** 국세청 사업자 상태조회(계속사업자 여부). 중개업자 등록번호·상호·대표자 일치 확인은 조회 공급처가 없어 **관리자 수동 심사**로 한다(공급처가 생기면 `auto_verified` 자동 승인)
-- 불일치/조회 실패 시 `pending` → 관리자 수동 심사(§14). 이때 `license_doc_file_id` 필수
+- 불일치/조회 실패 시 `pending` → 관리자 수동 심사(§15). 이때 `license_doc_file_id` 필수
 - 이미 `pending`인 신청이 있으면 `409 CONFLICT`
 - 승인/반려 시 푸시 알림(`agent_application_result`)
 
@@ -536,7 +683,6 @@
 |---|---|---|
 | GET | `/agents?lat=&lng=&radius_m=` | 주변 승인 중개사 목록 (`radius_m` 기본 1000, 최대 5000) |
 | GET | `/agents/{id}` | 프로필 |
-| GET | `/agents/{id}/listings` | 해당 중개사 매물 [3차] |
 
 **`GET /agents/{id}` 응답**
 ```json
@@ -545,17 +691,16 @@
   "brokerage_registration_no": "string", "office_address": "string",
   "office_phone": "string", "lat": 0.0, "lng": 0.0,
   "intro": "string", "photo_url": "string",
-  "active_listing_count": 0,
   "chat_response_rate": 0.92, "median_response_minutes": 14
 }
 ```
-- `office_phone`은 앱에서 **바로 전화 걸기** 버튼으로 사용 (40~50대 주 연결 수단). 공인중개사법상 공개 대상 정보
+- `office_phone`은 앱에서 **바로 전화 걸기** 버튼으로 사용. 공인중개사법상 공개 대상 정보
 - 승인되지 않은 중개사는 목록·상세 모두 `404`
 - 라우트는 `/agents/me/...`를 `/agents/{id}`보다 먼저 등록
 
 ---
 
-## 10. 관심 단지·지역 (Interests) [2차] / 매물 찜 [3차]
+## 10. 관심 단지·지역·매물 찜 (Interests) [2차]
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
@@ -565,9 +710,9 @@
 | PUT | `/interests/regions/{region_code}` | 필요 | 관심 법정동 등록 (멱등, 최대 10개) |
 | DELETE | `/interests/regions/{region_code}` | 필요 | 해제 |
 | GET | `/interests/regions` | 필요 | 목록 |
-| PUT | `/interests/listings/{listing_id}` | 필요 | 매물 찜 [3차] |
-| DELETE | `/interests/listings/{listing_id}` | 필요 | 찜 해제 [3차] |
-| GET | `/interests/listings` | 필요 | 찜 목록 [3차] |
+| PUT | `/interests/listings/{listing_id}` | 필요 | 매물 찜 |
+| DELETE | `/interests/listings/{listing_id}` | 필요 | 찜 해제 |
+| GET | `/interests/listings` | 필요 | 찜 목록 |
 
 - 등록은 `PUT`으로 멱등 처리 (중복 요청해도 결과 동일)
 - 최근 본 매물·단지는 **앱 로컬 저장** (서버 API 없음)
@@ -576,32 +721,57 @@
 
 ## 11. 채팅 (Chat) [2차]
 
-**구매자 ↔ 승인된 중개사** 전용. 사용자 간 채팅은 제공하지 않는다.
+**매물 문의 전용.** 문의자 ↔ 그 매물을 올린 소유자만 대화한다. 매물과 무관한 사용자 간 채팅은 제공하지 않는다.
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| POST | `/chat/rooms` | 필요(buyer) | 채팅방 생성 또는 기존 방 반환 |
-| GET | `/chat/rooms` | 필요 | 내 채팅방 목록 (마지막 메시지, 안읽음 수) |
-| GET | `/chat/rooms/{room_id}` | 필요(참여자) | 방 정보 (상대 프로필, 연결된 단지/매물 요약) |
+| POST | `/chat/rooms` | 필요 | 매물 문의 채팅방 생성 또는 기존 방 반환 |
+| GET | `/chat/rooms?role=` | 필요 | 내 채팅방 목록. `role=inquirer`(내가 문의한 방) `\|owner`(내 매물로 들어온 문의), 없으면 전체 |
+| GET | `/chat/rooms/{room_id}` | 필요(참여자) | 방 정보 (상대 닉네임, 내 역할, 매물 요약) |
 | GET | `/chat/rooms/{room_id}/messages` | 필요(참여자) | 히스토리 (`before_id` 커서, 기본 30개) |
 | POST | `/chat/rooms/{room_id}/messages` | 필요(참여자) | **REST 전송 폴백** (WS 불가 시) |
 | POST | `/chat/rooms/{room_id}/read` | 필요(참여자) | 읽음 처리 `{ "last_read_message_id": "uuid" }` |
 | POST | `/chat/rooms/{room_id}/leave` | 필요(참여자) | 방 나가기 (내 목록에서 숨김) |
+| PUT | `/users/me/blocks/{user_id}` | 필요 | 상대 차단 (멱등) |
+| DELETE | `/users/me/blocks/{user_id}` | 필요 | 차단 해제 |
+| GET | `/users/me/blocks` | 필요 | 차단 목록 |
 | WS | `/ws/chat` | 최초 프레임 | 실시간 송수신 (한 연결로 내 모든 방 수신) |
 
 **`POST /chat/rooms` 요청**
 ```json
-{ "agent_id": "uuid", "context": { "type": "complex|listing|parcel", "id": "string" } }
+{ "listing_id": "uuid" }
 ```
-- 같은 (구매자, 중개사, context) 조합이 있으면 **새로 만들지 않고 기존 방을 `200`으로 반환** (신규는 `201`)
-- 중개사가 미승인/탈퇴 상태면 `404`
-- 중개사는 방을 먼저 만들 수 없다 (구매자 문의로만 시작 — 스팸 방지)
+- 같은 (문의자, 매물) 조합이 있으면 **새로 만들지 않고 기존 방을 `200`으로 반환** (신규는 `201`)
+- 소유자는 방을 먼저 만들 수 없다(문의로만 시작 — 스팸 방지). 자기 매물에 문의 → `403`
+- 숨김·만료·삭제된 매물, 탈퇴한 소유자 → `404`
+- 거래완료(`sold`) 매물 → `409` (기존 방은 그대로 쓸 수 있음)
+- 소유자가 나를 차단했으면 → `403` (차단 사실은 알리지 않고 "문의할 수 없는 매물이에요"로 표시)
+- 소유자 연락처는 응답에 넣지 않는다
+
+**`GET /chat/rooms/{room_id}` 응답**
+```json
+{
+  "id": "uuid",
+  "my_role": "inquirer|owner",
+  "counterpart": { "user_id": "uuid", "nickname": "string", "is_withdrawn": false },
+  "listing": { "id": "uuid", "title": "string", "status": "active|reserved|sold|hidden|expired", "asking_summary": "매매 15억 · 34평" },
+  "can_send": true
+}
+```
+- `can_send`: 차단(어느 쪽이든)·상대 탈퇴 시 `false`. 앱은 \"메시지를 보낼 수 없어요\"만 표시한다(누가 차단했는지 알리지 않음)
 
 **`POST /chat/rooms/{room_id}/messages` 요청 (REST·WS 공통 필드)**
 ```json
 { "client_message_id": "uuid(앱 생성)", "content": "string(1~1000자)" }
 ```
 - 같은 `client_message_id` 재전송 시 **기존 메시지를 그대로 반환** (중복 저장 없음)
+- **텍스트만** 보낼 수 있다(사진 전송은 기능명세서 §7 #18에서 결정)
+
+**메시지 주의 표시 (`warnings`)**
+- 서버가 저장할 때 내용을 검사해 메시지 객체에 `warnings` 배열을 붙인다. 메시지는 막지 않는다
+- 값: `account_number`(계좌번호 형식) `|external_messenger`(카카오톡 아이디·오픈채팅 등) `|external_link`(URL)
+- 앱은 `warnings`가 있으면 보낸 쪽·받은 쪽 모두에게 주의 문구를 붙인다. 채팅방 상단 고정 안전 안내 문구는 앱이 가진다
+- 감지 규칙은 기능명세서 §7 #18에서 확정
 
 **WS 프로토콜**
 ```json
@@ -613,14 +783,14 @@
 // 전송 클라→서버
 { "type": "message", "room_id": "uuid", "client_message_id": "uuid", "content": "string" }
 // 서버→클라 (본인에게는 ack 겸용)
-{ "type": "message", "id": "uuid", "room_id": "uuid", "client_message_id": "uuid", "sender_id": "uuid", "content": "string", "sent_at": "iso8601" }
+{ "type": "message", "id": "uuid", "room_id": "uuid", "client_message_id": "uuid", "sender_id": "uuid", "content": "string", "warnings": [], "sent_at": "iso8601" }
 { "type": "read_receipt", "room_id": "uuid", "reader_id": "uuid", "last_read_message_id": "uuid" }
-{ "type": "error", "code": "ROOM_NOT_FOUND|FORBIDDEN|RATE_LIMITED", "client_message_id": "uuid|null" }
+{ "type": "error", "code": "ROOM_NOT_FOUND|FORBIDDEN|CANNOT_SEND|RATE_LIMITED", "client_message_id": "uuid|null" }
 // 연결 유지
 { "type": "ping" } / { "type": "pong" }
 ```
 - 토큰은 **쿼리 파라미터로 받지 않는다** (프록시/서버 로그 유출 방지)
-- 참여자가 아닌 방으로 전송 → `error: FORBIDDEN` (연결은 유지)
+- 참여자가 아닌 방으로 전송 → `error: FORBIDDEN` (연결은 유지). 차단·상대 탈퇴 → `error: CANNOT_SEND`
 - 메시지는 DB 저장 후 Redis pub/sub으로 전 인스턴스에 브로드캐스트
 - 수신자 미접속 시 푸시(`chat_message`, 수신동의 `chat_push` 기준)
 - 전송 제한: 사용자당 초당 5건
@@ -638,13 +808,19 @@
 | DELETE | `/devices/{device_id}` | 필요 | 푸시 토큰 해제 |
 
 - 푸시 토큰은 경로가 아니라 **body**로 받는다 (경로는 `X-Device-Id`와 같은 device_id)
+- 웹 푸시는 범위 밖이다. 웹 사용자는 `/notifications`(알림함)로 확인한다
 - 트리거:
   - `chat_message` — 새 채팅 (수신자 오프라인 시)
   - `interest_complex_new_transaction` — 관심 단지 신규 **적재** 거래 (ETL 후 1회 묶음 발송)
   - `interest_region_new_transaction` — 관심 법정동 신규 적재 거래 (ETL 후 1회 묶음 발송)
-  - `agent_application_result` — 중개사 승인/반려
-  - `listing_status_changed` — 찜한 매물 `sold` 전환 [3차]
+  - `listing_status_changed` — 찜한 매물 `sold` 전환
+  - `ownership_revoked` — 소유권 변동·관리자 조치로 소유 확인이 해제되고 매물이 숨겨짐 (사유 포함)
+  - `sanction_applied` — 매물 숨김·사용자 정지 등 제재 (사유, 이의제기용 `sanction_id` 포함)
+  - `appeal_result` — 이의제기 결과
+  - `study_reminder` — 학습 알림 (오늘의 용어, `study_push` 켠 사용자만, 21~08시 발송 안 함)
+  - ~~`agent_application_result`~~ — 중개사 보류
 - "신규 거래"는 **새로 적재된 거래**를 뜻한다 (계약일은 최대 30일 이전일 수 있음). 알림 문구에 계약일을 명시
+- **학습 알림**: `PUT /users/me/consents`의 `study_push`(기본 false), `study_push_time`(`HH:MM`, 기본 `20:00`, 08:00~20:59만 허용). 정보성 알림이라 `(광고)`를 붙이지 않는다. 광고·이벤트 내용을 섞으면 광고성 규칙을 따른다
 - **광고성 푸시 수신동의 (정보통신망법)**
   - `PUT /users/me/consents`로 `marketing_push`, `marketing_night_push`(21~08시) 별도 관리
   - 동의·철회 일시를 기록, 동의 후 **2년마다 재동의** 요청 (`marketing_reconfirm_due`)
@@ -652,19 +828,24 @@
 
 ---
 
-## 13. 신고 (Reports) [2차]
+## 13. 신고·이의제기 (Reports & Appeals) [2차]
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| POST | `/reports` | 필요 | 신고 생성 `{ "target_type": "listing\|chat_room\|user\|agent", "target_id", "reason", "detail" }` |
+| POST | `/reports` | 필요 | 신고 생성 `{ "target_type": "listing\|chat_room\|user", "target_id", "reason", "detail" }` |
 | GET | `/reports/me` | 필요 | 내 신고 처리 상태 |
+| POST | `/appeals` | 필요 | 제재 이의제기 `{ "sanction_id": "uuid", "content": "string(10~1000자)" }` |
+| GET | `/appeals/me` | 필요 | 내 이의제기 상태·결과 |
 
-- `reason`: `fake_listing|wrong_price|spam|abuse|illegal_brokerage|etc`
+- `reason`: `fake_listing|not_owner|wrong_price|spam|abuse|illegal_brokerage|etc`
+  - `not_owner`: 소유자 아님 의심 / `illegal_brokerage`: 소유자를 가장한 중개 영업
 - 같은 사용자의 같은 대상 중복 신고는 `409 CONFLICT`
-- **자동 비노출은 신고 건수가 아니라 신뢰도 가중 점수로 판단한다** (경쟁 중개사 신고 악용 방지)
+- **자동 비노출은 신고 건수가 아니라 신뢰도 가중 점수로 판단한다** (경쟁 업체 신고 악용 방지)
   - 신고자 가중치: 가입 기간, 과거 신고 인용률, 동일 기기·동일 IP 대량 가입 여부
   - 점수가 임계치(정책 미정) 이상이면 관리자 큐에 **우선순위 상향**. 비노출은 원칙적으로 관리자 판단
-  - 예외: `fake_listing`이 고신뢰 신고자 다수에게서 접수되면 **임시 비노출** 후 관리자 확정
+  - 예외: `fake_listing`·`not_owner`가 고신뢰 신고자 다수에게서 접수되면 **임시 비노출** 후 관리자 확정
+- 이의제기는 제재(`sanction_id`, `sanction_applied` 알림에 포함) 하나당 한 번. 두 번째는 `409`
+- 소유권 변동으로 자동 해제된 소유 확인은 이의제기 대상이 아니다. 소유 확인(§16.1)을 다시 받으면 된다
 
 ---
 
@@ -680,11 +861,11 @@ presigned URL 방식으로 확정.
 
 **`POST /uploads` 요청**
 ```json
-{ "purpose": "listing_image|profile_image|agent_license_doc", "content_type": "image/jpeg", "size_bytes": 1048576 }
+{ "purpose": "listing_image|profile_image", "content_type": "image/jpeg", "size_bytes": 1048576 }
 ```
-- `agent_license_doc` → `private/` prefix, **관리자만** 짧은 만료 서명 URL로 조회. 업로더 본인도 재조회 불가
 - 이미지 → `public/` prefix, 공개 CDN URL
-- 허용: 이미지 jpeg/png/webp 최대 10MB, 문서 pdf/jpeg/png 최대 10MB
+- 허용: 이미지 jpeg/png/webp 최대 10MB
+- **소유 확인 서류는 받지 않는다**(§16.1은 외부 확인). `agent_license_doc`(중개사 자격 서류)는 보류
 - `complete`되지 않았거나 24시간 내 어떤 엔티티에도 연결되지 않은 파일은 배치로 삭제
 
 ---
@@ -693,40 +874,58 @@ presigned URL 방식으로 확정.
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/admin/agent-applications?status=pending` | 수동 심사 대기 목록 (자동 검증 실패 사유 포함) |
-| POST | `/admin/agent-applications/{id}/approve` | 승인 |
-| POST | `/admin/agent-applications/{id}/reject` | 반려 `{ "reason": "string" }` |
 | GET | `/admin/reports?status=open` | 신고 큐 (신뢰도 점수 내림차순) |
-| POST | `/admin/reports/{id}/resolve` | 처리 `{ "action": "dismiss\|hide_target\|restore_target\|ban_user" }` |
+| POST | `/admin/reports/{id}/resolve` | 처리 `{ "action": "dismiss\|hide_target\|restore_target\|ban_user\|revoke_ownership", "reason": "string" }` |
+| GET | `/admin/ownerships?user_id=&listing_id=` | 소유 확인 **결과 기록** 조회 (실명·등기 내용은 저장하지 않으므로 없음) |
+| POST | `/admin/ownerships/{id}/revoke` | 소유 확인 해제 + 관련 매물 숨김 `{ "reason": "string" }` |
+| GET | `/admin/appeals?status=open` | 이의제기 큐 |
+| POST | `/admin/appeals/{id}/resolve` | `{ "decision": "uphold\|withdraw", "reason": "string" }` (유지/철회) |
 | GET | `/admin/audit-logs` | 관리자 조치 이력 |
 | PUT | `/admin/glossary/{term_id}` | 용어 해설 등록/수정 |
+| GET/POST | `/admin/glossary/tips` | 로딩 팁 목록·추가 |
+| PATCH/DELETE | `/admin/glossary/tips/{id}` | 팁 수정(`status: draft\|reviewed` 포함)·삭제 |
+| GET/POST | `/admin/glossary/quiz` | 퀴즈 문항 목록·추가 |
+| PATCH/DELETE | `/admin/glossary/quiz/{id}` | 문항 수정(`status` 포함)·삭제 |
+| PUT | `/admin/glossary/today-schedule` | 오늘의 용어 순서 `{ "items": [ { "date": "2026-10-08", "term_id": "uuid" } ] }` |
+| ~~GET/POST~~ | ~~`/admin/agent-applications...`~~ | 중개사 수동 심사 — 보류 |
 
-- 모든 관리자 조치는 감사 로그(누가·언제·무엇을·사유)에 기록
+- 모든 관리자 조치는 감사 로그(누가·언제·무엇을·사유)에 기록. `revoke_ownership`, `ban_user`, `hide_target`은 `sanction_applied` 알림을 보낸다
+- 팁·퀴즈는 `status=reviewed`만 공개 API(§7.1)에 나간다. 팁 `text`는 2줄(약 50자) 이내 검증
 
 ---
 
-## 16. 매물 (Listings) [3차] — 중개사가 등록하는 현재 판매중 매물
+## 16. 매물 (Listings) [2차] — 소유자가 직접 등록하는 현재 판매 중 매물
 
-실거래가(과거 확정 거래)와 별개. **공인중개사법 제18조의2 및 국토교통부 고시(중개대상물 표시·광고 명시사항)** 항목을 필수로 강제한다.
+실거래가(과거 확정 거래)와 별개. 등록자는 **소유 확인(§16.1)을 통과한 일반 사용자**다. 공인중개사법 제18조의2 표시·광고 명시사항을 소유자 매물에도 자체 기준으로 적용한다.
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| GET | `/listings` | - | bbox + 필터 매물 목록 (페이지네이션) |
-| GET | `/listings/{id}` | - | 매물 상세 (중개사무소 법정 표시 정보 포함) |
-| POST | `/listings` | 중개사(승인) | 매물 등록 |
-| PATCH | `/listings/{id}` | 중개사(본인) | 매물 수정 |
-| DELETE | `/listings/{id}` | 중개사(본인) | 매물 삭제 (soft delete) |
-| PATCH | `/listings/{id}/status` | 중개사(본인) | `active\|reserved\|sold` |
-| POST | `/listings/{id}/renew` | 중개사(본인) | 노출 기간 연장 (매물 유효성 재확인) |
-| GET | `/agents/me/listings` | 중개사(본인) | 내 매물 목록 (비활성·만료 포함) |
+| GET | `/listings` | - | 매물 목록 (필터, 페이지네이션) |
+| GET | `/listings/{id}` | - | 매물 상세 (실거래 비교·안전 안내 포함) |
+| POST | `/listings` | 필요(소유 확인) | 매물 등록 |
+| PATCH | `/listings/{id}` | 필요(본인) | 매물 수정 |
+| DELETE | `/listings/{id}` | 필요(본인) | 매물 삭제 (soft delete) |
+| PATCH | `/listings/{id}/status` | 필요(본인) | `active\|reserved\|sold` |
+| POST | `/listings/{id}/renew` | 필요(본인) | 노출 기간 연장 + **등기 재조회** |
+| GET | `/users/me/listings` | 필요 | 내 매물 목록 (숨김·만료 포함) |
+
+**`GET /listings` 쿼리**
+
+| 파라미터 | 설명 |
+|---|---|
+| `bbox` 또는 `region_code` | 둘 중 하나 필수 (둘 다 없으면 `400`) |
+| `property_type` | 단일, 필수 |
+| `deal_type` | `sale\|jeonse\|monthly`, 기본 `sale` |
+| `price_*` / `deposit_*` / `rent_*` | 거래유형별 가격 필터 (§0 규칙) |
+| `exclusive_area_pyeong_min/max` / `land_area_pyeong_min/max` | 면적 필터 |
+| `sort` | `created_desc`(기본) `\|price_asc\|price_desc` |
 
 **`POST /listings` 요청**
 ```json
 {
+  "ownership_id": "uuid(§16.1에서 참으로 확인된 결과)",
   "property_type": "apartment|officetel|villa|land",
   "deal_type": "sale|jeonse|monthly",
-  "address": "string(지번 또는 도로명)",
-  "unit_detail": "string(동·호, 비공개 저장)",
   "price": 0, "deposit": 0, "monthly_rent": 0,
   "exclusive_area_m2": 0.0, "supply_area_m2": 0.0,
   "floor": 0, "total_floors": 0,
@@ -742,33 +941,138 @@ presigned URL 방식으로 확정.
   "options": { "elevator": true }
 }
 ```
-- **법정 필수 항목**: 소재지, 면적, 가격, 종류, 거래 형태 / 건축물: 총층수, 사용승인일, 방향(기준 포함), 방·욕실 수, 입주가능일, 주차대수, 관리비 / 토지: 지목
-- 건축물 유형에서 위 항목 누락 → `400 VALIDATION_ERROR (field: 누락 항목)`
-- 좌표는 서버가 `address` 지오코딩으로 산출. `unit_detail`(동·호)은 공개 응답에 포함하지 않음
+- **소재지는 따로 받지 않는다.** `ownership_id`의 확인된 소재지(동·호수 포함)를 쓴다. 남의 `ownership_id`, 결과가 거짓이거나 해제된 `ownership_id` → `403`
+- 같은 부동산·같은 거래유형으로 게시 중인 매물이 있으면 `409`
+- **필수 항목**: 면적, 가격, 종류, 거래 형태 / 건축물: 총층수, 사용승인일, 방향(기준 포함), 방·욕실 수, 입주가능일, 주차대수, 관리비 / 토지: 지목. 누락 → `400 VALIDATION_ERROR (field: 누락 항목)`
+- 좌표는 서버가 소재지 지오코딩으로 산출. 동·호수는 공개 응답에 포함하지 않음
 - 거래유형별 가격 필드 규칙은 §0 표를 따른다
 - 등록 후 **30일이 지나면 자동 만료**(비노출). `renew`로 재확인해야 연장 (허위·방치 매물 방지)
 - 본인 매물이 아니면 `403 FORBIDDEN`
 
-**`GET /listings/{id}` 응답 — 중개사무소 법정 표시 정보 포함**
+**`GET /listings/{id}` 응답**
 ```json
 {
   "...매물 필드": "...",
-  "agent": {
-    "id": "uuid", "office_name": "string", "representative_name": "string",
-    "brokerage_registration_no": "string", "office_address": "string", "office_phone": "string"
+  "owner": { "nickname": "string", "ownership_verified": true, "co_owned": false, "registered_by": "owner" },
+  "market_comparison": {
+    "basis": "same_complex_area|same_dong_land_category",
+    "period_months": 12,
+    "median_price": 1420000000, "median_deposit": null, "median_monthly_rent": null,
+    "transaction_count": 6,
+    "data_as_of": "iso8601"
+  },
+  "safety": {
+    "checklist": ["registry_check", "id_match", "owner_account", "move_in_report"],
+    "jeonse_ratio_reference": { "ratio": 0.68, "basis": "same_complex_area", "sale_transaction_count": 6 },
+    "notice": "서비스는 근저당·압류를 확인해 주지 않아요. 계약 전 등기부등본을 직접 발급해 확인하세요."
   },
   "status": "active", "expires_at": "iso8601", "view_count": 0, "created_at": "iso8601"
 }
 ```
+- `owner`에 연락처·실명은 없다. 문의는 채팅(§11)으로만 한다
+- `market_comparison`: 아파트·오피스텔·빌라는 같은 단지·같은 평형, 토지는 같은 법정동·같은 지목의 최근 12개월 실거래 중위값. 해제 거래 제외. 표본이 없으면 `null`. **평가 문구는 내리지 않는다**(숫자만)
+- `safety.checklist`: 앱이 문구로 바꿔 보여주는 체크리스트 코드. 모든 매물에 내려간다
+- `safety.jeonse_ratio_reference`: **전세 매물만**. 보증금 ÷ 비교 기준 매매 중위값. 매매 표본이 없으면 `null`(앱은 \"비교할 매매 거래가 부족해요\")
 - `view_count`는 Redis 카운터 기반(근사치), 동일 디바이스 24시간 내 중복 조회는 1회로 집계
+
+**`POST /listings/{id}/renew` 응답**
+```json
+{ "data": { "expires_at": "iso8601", "ownership_status": "verified|revoked|recheck_pending" } }
+```
+- 연장할 때 **등기를 한 번 다시 조회**해 소유권 최종 변동 기준값만 비교한다(개인정보 불필요)
+- 값이 바뀌었으면 `revoked`: 연장하지 않고 매물을 숨기며 `ownership_revoked` 알림
+- 외부 장애면 `recheck_pending`: 연장은 해 주고 다음 날 배치로 다시 조회
+
+### 16.1 소유 확인 (Ownership Verifications) [2차]
+
+외부 휴대폰 본인인증 결과를 등기 조회 대행 API의 현재 소유자와 대조한다. **서버는 결과(참/거짓)만 저장**하고, 실명·생년월일·등기 내용은 대조 직후 폐기한다(DB·로그 모두).
+
+| Method | Path | Auth | 설명 |
+|---|---|---|---|
+| POST | `/ownership-verifications` | 필요 | 확인 시작 → 외부 본인인증 URL 발급 |
+| POST | `/ownership-verifications/{id}/complete` | 필요(시작한 본인) | 본인인증 결과 수신 → 등기 대조 → 결과 |
+| GET | `/users/me/ownerships` | 필요 | 내 소유 확인 결과 목록 |
+
+**흐름**
+```
+앱/웹 ── POST /ownership-verifications ──▶ 서버 (확인 건 생성, 본인인증 URL 발급)
+앱/웹 ── 외부 본인인증 화면 (앱: 인앱 브라우저, 웹: 새 창·리다이렉트) ──▶ 본인인증사
+본인인증사 ── return_url로 복귀 (identity_tx_id) ──▶ 앱/웹
+앱/웹 ── POST /ownership-verifications/{id}/complete ──▶ 서버
+서버 ── 본인인증사에 서버 간 조회 (서명 검증) → 실명·생년월일
+서버 ── 등기 조회 대행 API → 현재 소유자 이름·생년월일 앞 6자리, 소유권 최종 변동 접수번호
+서버 ── 대조 → 결과 저장 → 실명·생년월일·등기 내용 폐기
+```
+
+**`POST /ownership-verifications` 요청 / 응답**
+```json
+// 요청
+{
+  "address": "부산 해운대구 우동 1407",
+  "unit_detail": "101동 1203호",
+  "agreements": { "identity_and_registry_processing": true },
+  "return_url": "pugrin://ownership/callback | https://허용된-웹-주소/ownership/callback"
+}
+// 응답 201
+{ "data": { "id": "uuid", "identity_verification_url": "https://본인인증사/...", "expires_at": "iso8601(15분)", "remaining_attempts_today": 2 } }
+```
+- 처리 위탁 동의(`agreements.identity_and_registry_processing`)가 없으면 `400`
+- `return_url`은 서버 허용 목록과 같아야 한다
+- 소재지를 특정할 수 없으면(동·호수 누락, 등기에 없는 주소) `400 VALIDATION_ERROR`
+- **사용자당 하루 3회**(KST 자정 초기화). 초과 → `429` + `Retry-After`. 외부 장애로 끝난 시도는 횟수에서 빼 준다
+
+**`POST /ownership-verifications/{id}/complete` 요청 / 응답**
+```json
+// 요청
+{ "identity_tx_id": "본인인증사가 돌려준 거래 ID" }
+// 응답 200
+{
+  "data": {
+    "result": "verified|not_owner|unsupported_owner_type|cancelled",
+    "ownership": {
+      "id": "uuid", "address": "부산 해운대구 우동 1407", "unit_detail": "101동 1203호",
+      "co_owned": false, "verified_at": "iso8601", "status": "verified"
+    }
+  }
+}
+```
+- `verified`: 등기 현재 소유자(공유자 포함) 중 한 명과 이름·생년월일이 모두 같음. 공유자 중 한 명이면 `co_owned: true` (공동소유 허용 여부는 기능명세서 §7 #14)
+- `not_owner`: 일치하는 소유자 없음. `ownership`은 `null`, 결과 기록(거짓)만 남긴다
+- `unsupported_owner_type`: 법인 소유·신탁 등기 등 개인 소유자가 없어 자동 확인 불가. 등록 불가
+- `cancelled`: 사용자가 본인인증을 취소·실패. 아무것도 저장하지 않고 시도 횟수도 세지 않는다
+- 본인인증사·등기 조회 대행사 장애 → `503 SOURCE_UNAVAILABLE` (시도 횟수에서 빼 줌)
+- 이미 끝난 확인 건을 다시 `complete` → 처음 결과를 그대로 반환(멱등)
+
+**저장하는 결과 기록** (`ownerships`)
+
+| 필드 | 설명 |
+|---|---|
+| `user_id` | 확인받은 사용자 |
+| `registry_unique_no`, `address`, `unit_detail` | 부동산 식별값 |
+| `result` | `verified\|not_owner\|unsupported_owner_type` |
+| `co_owned` | 공유자 중 한 명으로 확인됐는지 |
+| `ownership_change_ref` | 갑구 마지막 소유권 등기 접수번호 (연장 시 재조회 비교용) |
+| `status` | `verified\|revoked` (+ `revoked_reason: ownership_changed\|admin`) |
+| `providers` | 사용한 본인인증사·등기 조회 대행사 |
+| `verified_at`, `revoked_at` | 시각 |
+
+- 이 조합도 \"이 사람이 이 집 소유자\"라는 재산 정보이므로 **본인과 관리자만** 조회한다. 공개 응답에는 `ownership_verified`, `co_owned`만 나간다
+- 탈퇴 시 즉시 파기. 관련 매물이 모두 내려간 뒤의 보관 기간은 법률 검토 후 확정(기능명세서 §7 #4)
 
 ---
 
 ## 확정 필요한 정책
 
-1. 신고 신뢰도 점수 산식과 임계치 (§13)
-2. 채팅 메시지 보관 기간 (§11, §8 탈퇴)
-3. 중개사 수동 심사 SLA (§9.1, 자동 검증 실패 건)
-4. 줌 레벨별 집계 단위 경계값 (§2)
-5. 매물 `sold` 전환 시 실거래가 자동 매칭 여부 (§16)
-6. 안심번호(050) 전화 연결 도입 여부 (§9.2, 후순위)
+전체 목록과 우선순위는 [기능명세서 §7](./FEATURE_SPEC.md)을 따른다. API 형태에 직접 영향을 주는 항목만 적는다.
+
+1. 신고 신뢰도 점수 산식과 임계치 (§13) — 기능명세서 §7 #17
+2. 채팅 메시지 보관 기간 (§11, §8 탈퇴) — #21
+3. 줌 레벨별 집계 단위 경계값 (§2) — #26
+4. 매물 `sold` 전환 시 실거래가 자동 매칭 여부 (§16) — #31
+5. 토지 정보 공급처와 1차 토지 범위 (§5, §6) — #1
+6. 외부 본인인증사·등기 조회 대행사 선정: 소유자 생년월일·소유권 변동 접수번호 제공 여부에 따라 §16.1 대조 방식이 바뀜 — #13
+7. 공동소유·법인·신탁 처리 (§16.1 `co_owned`, `unsupported_owner_type`) — #14, #15
+8. 본인인증 CI 해시 보관 여부 (§8 탈퇴·재가입, §16.1 시도 횟수) — #16
+9. 채팅 주의 표시 감지 규칙, 사진 전송 허용 여부 (§11) — #18
+10. 직거래 대표값 기본 포함 여부 (§2 `exclude_direct` 기본값) — #23
+11. 조회 기간 상한 (§2 `period_months`) — #25

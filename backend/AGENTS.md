@@ -122,6 +122,7 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 - [x] Docker Compose(`api`만 — db·redis·worker는 실제 저장소를 붙일 때 추가), GitHub Actions CI(ruff·pytest·도커 기동 확인)
 - [ ] 이슈 #5 나머지: SQLAlchemy/GeoAlchemy2, `/internal/health/ready`, testcontainers
 - [x] `.env.example`, mock 샘플 데이터(16개 구·군 집계 + 동 37곳·단지 190곳·거래 약 10만 건, 모두 가짜)
+- [x] 거래 `/transactions`(목록, 지도와 같은 필터·건수), `/transactions/{id}`(단건)
 - [x] 통계 `/stats/regions/{code}`, `/complexes/{id}/stats`(이슈 #10): 월별 중위값 추이, 단지는 평형별 분리
 - [x] `/search`: 지역·단지·주소 통합 검색(이슈 #11), 주소는 카카오 REST 키가 있을 때만
 - [x] 1차 mock API: `/map/markers`, `/complexes/{id}`(+`/transactions`), `/parcels/lookup`·`/parcels/{pnu}`, `/glossary`

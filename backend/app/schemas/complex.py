@@ -12,7 +12,7 @@ from app.repositories.types import (
     TradeMethod,
     Transaction,
 )
-from app.schemas.common import PageMeta, PlainEnvelope
+from app.schemas.common import DataMeta, PageMeta, PlainEnvelope
 
 
 class AreaTypeOut(BaseModel):
@@ -119,6 +119,11 @@ class TransactionOut(BaseModel):
 
 
 ComplexResponse = PlainEnvelope[ComplexOut]
+
+
+class TransactionResponse(BaseModel):
+    data: TransactionOut
+    meta: DataMeta
 
 
 class TransactionsResponse(BaseModel):

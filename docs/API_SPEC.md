@@ -9,6 +9,7 @@
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
 - `/map/markers` 필터 조합 검증 규칙 명시, 토지의 줌 14 이상 동작 명시
 - `price_per_pyeong`은 매매만 채움
+- 실데이터 연동: 세대수·공급면적·전·월세 `trade_method`는 원천에 없어 `null`이 될 수 있음. 토지는 지분거래·지목 '도로'를 집계에서 제외
 
 ### v0.3 → v0.4 주요 변경 (프론트 피드백 반영)
 - 지도 마커 `latest`에 `deposit`, `monthly_rent`, `supply_area_pyeong` 추가 — 전·월세 마커 빈칸 문제 해결
@@ -46,6 +47,7 @@
 **인증**: `Authorization: Bearer <access_token>` (JWT, exp 30분). refresh token(exp 14일)은 **응답 body로 발급**, 앱 보안 저장소에 보관. 쿠키 미사용.
 
 **공통 헤더**
+- 응답 헤더 `X-Data-Mode: real|sample` — 지금 가짜 샘플(`sample`)인지 수집한 실데이터(`real`)인지 알려 준다(개발·점검용).
 - `X-Device-Id`: 앱 설치 단위 UUID (필수). 비로그인 rate limit·푸시 토큰 매핑에 사용.
 - `If-None-Match`: 공개 조회 API는 `ETag` 지원 → 변경 없으면 `304`.
 
@@ -209,7 +211,7 @@
 | GET | `/search?q=&limit=` | 단지명·주소(도로명/지번)·법정동 통합 검색 |
 
 - `q`는 2자 이상. 결과 최대 `limit`(기본 10, 최대 30)
-- 단지·법정동은 자체 DB, 주소는 VWorld 검색/지오코딩 어댑터
+- 단지·법정동은 자체 DB, 주소는 지오코딩(카카오 로컬) 어댑터
 - 부산 밖 결과는 제외
 
 **응답**
@@ -266,10 +268,11 @@
 }
 ```
 - `supply_area_pyeong`(공급 평형)은 건축물대장 기반, 산출 불가 시 `null` (사용자가 흔히 말하는 "34평"은 공급면적 기준)
+- 실거래가 공공데이터에는 **세대수·공급면적이 없다**. 건축물대장 연동 전에는 `household_count`, `supply_area_pyeong`이 `null`이다. 좌표를 못 찾은 단지는 `pnu`도 `null`이고, `build_year`도 원천에 없으면 `null`이다. 앱은 `null`을 처리해야 한다
 
 **거래 1건 필드** (`/transactions`, `/complexes/{id}/transactions` 공통)
 
-`id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct), is_cancelled, cancelled_at`
+`id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct, 전·월세는 원천이 구분을 주지 않아 null), is_cancelled, cancelled_at`
 
 - `price_per_pyeong`은 매매(`sale`)만 채우고 전·월세는 null
 - `/transactions`는 기본 해제거래 제외, `include_cancelled=true`일 때만 포함(해제 표시 필수)
@@ -352,11 +355,11 @@
 ```
 
 **필드 규칙**
-- `geometry`: 필지 경계 GeoJSON. 앱은 이 도형으로 선택한 필지를 하이라이트한다 (앱에 VWorld 키 불필요). 연속지적도 기준, 앱 표시용으로 단순화(오차 0.5m 이내)
+- `geometry`: 필지 경계 GeoJSON. 앱은 이 도형으로 선택한 필지를 하이라이트한다 (앱에 별도 키 불필요). 연속지적도 기준, 앱 표시용으로 단순화(오차 0.5m 이내)
 - `zonings`: 한 필지가 여러 용도지역에 걸칠 수 있으므로 **배열**. `area_ratio` 내림차순 정렬, 합계 1.0
   - `area_ratio`는 필지 도형과 용도지역 도형의 교차 면적으로 서버가 계산. 계산 불가 시 null
   - `inclusion`: 토지이용계획의 `포함|저촉|접합` 구분 그대로
-  - 건폐율·용적률 한도는 VWorld가 아닌 **조례 매핑 테이블**에서 용도지역별로 산출
+  - 건폐율·용적률 한도는 외부 API가 아니라 **조례 매핑 테이블**에서 용도지역별로 산출
 - `glossary`: **응답 필드명 → 용어 ID** 맵. 앱은 키에 해당하는 항목 옆에 (?) 아이콘을 단다. 용어가 없는 필드는 키 자체를 생략
 - `restrictions[].glossary_term_id`: 규제 항목별 용어 ID (없으면 null). `plain_explanation`은 40~50대가 이해할 수 있는 한 문장, 해설 사전은 서버가 관리
 - 캐시 키 **PNU**, TTL 30일
@@ -369,7 +372,7 @@
 |---|---|---|
 | `no_parcel` | 도로·바다·하천 등 필지가 없는 곳 | "이곳은 토지 정보가 없어요" |
 | `out_of_service_area` | 부산 밖 | "부산 지역만 지원해요" |
-| `source_unavailable` | 캐시 미스 + VWorld 장애 | "토지 정보를 잠시 불러올 수 없어요" |
+| `source_unavailable` | 캐시 미스 + 외부 소스 장애, 또는 토지 정보 공급처 미구성 | "토지 정보를 잠시 불러올 수 없어요" |
 
 - 잘못된 형식의 좌표(범위 밖 위경도, 숫자 아님)나 PNU(19자리 아님)만 `400 VALIDATION_ERROR`
 - 형식은 맞지만 존재하지 않는 PNU → `200 + no_parcel`
@@ -512,7 +515,7 @@
 }
 ```
 - 사무소 좌표는 서버가 `office_address`를 지오코딩해 산출 (클라이언트 좌표 미수신)
-- **자동 검증:** 국세청 사업자 상태조회(계속사업자 여부) + VWorld 중개업자 조회(등록번호·상호·대표자 일치) → 모두 통과 시 `auto_verified` → 즉시 `approved`
+- **검증:** 국세청 사업자 상태조회(계속사업자 여부). 중개업자 등록번호·상호·대표자 일치 확인은 조회 공급처가 없어 **관리자 수동 심사**로 한다(공급처가 생기면 `auto_verified` 자동 승인)
 - 불일치/조회 실패 시 `pending` → 관리자 수동 심사(§14). 이때 `license_doc_file_id` 필수
 - 이미 `pending`인 신청이 있으면 `409 CONFLICT`
 - 승인/반려 시 푸시 알림(`agent_application_result`)

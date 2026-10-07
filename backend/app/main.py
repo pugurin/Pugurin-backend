@@ -28,6 +28,13 @@ def create_app(
 
     install_error_handlers(app)
     app.add_middleware(ConditionalGetMiddleware, max_age=settings.cache_max_age_seconds)
+    data_mode = app.state.container.data_mode
+
+    @app.middleware("http")
+    async def add_data_mode_header(request, call_next):
+        response = await call_next(request)
+        response.headers["X-Data-Mode"] = data_mode
+        return response
 
     app.include_router(health.router, prefix=API_PREFIX)
     public = APIRouter(prefix=API_PREFIX, dependencies=[Depends(require_device_id)])

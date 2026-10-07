@@ -27,11 +27,11 @@ class ComplexOut(BaseModel):
     name: str
     address: str
     region_code: str
-    pnu: str
+    pnu: str | None
     lat: float
     lng: float
-    build_year: int
-    household_count: int
+    build_year: int | None
+    household_count: int | None
     area_types: list[AreaTypeOut]
 
     @classmethod
@@ -79,7 +79,7 @@ class TransactionOut(BaseModel):
     floor: int | None
     contract_date: date
     build_year: int | None
-    trade_method: TradeMethod
+    trade_method: TradeMethod | None
     is_cancelled: bool
     cancelled_at: datetime | None
 

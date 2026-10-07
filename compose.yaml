@@ -1,4 +1,5 @@
-# 현재는 mock 모드라 api 하나면 충분하다. db(PostGIS)·redis·worker는 실제 저장소를 붙일 때 추가한다.
+# 현재는 파일 캐시(.cache)를 읽는 구조라 api 하나면 충분하다. db(PostGIS)·redis·worker는 실제 저장소를 붙일 때 추가한다.
+# backend/.cache(수집한 실데이터)가 있으면 실데이터로, 없으면 가짜 샘플로 응답한다.
 services:
   api:
     build: ./backend
@@ -7,6 +8,10 @@ services:
     env_file:
       - path: ./backend/.env
         required: false
+    environment:
+      PUGURIN_DATA_MODE: auto
+    volumes:
+      - ./backend/.cache:/app/.cache:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
       interval: 10s

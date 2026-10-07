@@ -83,8 +83,14 @@ def _row(kind: SourceKind, d: dict[str, str]) -> RawTrade:
         contract_term=d.get("contractTerm") or None,
         use_renewal_right=d.get("useRRRight") or None,
         land_leasehold=d.get("landLeaseholdGbn") == "Y",
+        is_share_deal=bool(d.get("shareDealingType")),
         raw=d,
     )
+
+
+def rows_from_fields(kind: SourceKind, items: list[dict[str, str]]) -> list[RawTrade]:
+    """저장해 둔 원본 필드 목록에서 행을 다시 만든다."""
+    return assign_ordinals([_row(kind, fields) for fields in items])
 
 
 def parse_page(body: bytes, kind: SourceKind) -> Page:

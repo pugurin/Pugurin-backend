@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.core.dates import months_ago
 from app.core.geo import BBox, pyeong_exact
+from app.repositories.memory.dataset import MarketData, RegionDirectory, sample_regions
 from app.repositories.types import (
     Complex,
     ComplexMarkerRow,
@@ -14,14 +15,12 @@ from app.repositories.types import (
     ParcelMarkerRow,
     PropertyType,
     RegionAggregate,
-    RegionRef,
     TradeMethod,
     Transaction,
     TransactionFilter,
     TransactionPage,
 )
-from app.sample_data.market import SampleMarket, build_sample_market
-from app.sample_data.regions import DONG_BY_CODE, SIGUNGU_BY_CODE
+from app.sample_data.market import build_sample_market
 
 
 def _median_int(values: list[float]) -> int | None:
@@ -29,11 +28,12 @@ def _median_int(values: list[float]) -> int | None:
 
 
 class InMemoryMarketRepository:
-    """샘플 거래 데이터를 메모리에서 집계하는 구현. DB 저장소로 교체해도 같은 포트를 따른다."""
+    """거래 데이터를 메모리에서 집계하는 구현(샘플 또는 수집한 실데이터). DB 저장소로 교체해도 같은 포트를 따른다."""
 
-    def __init__(self, as_of: datetime, market: SampleMarket | None = None):
+    def __init__(self, as_of: datetime, market: MarketData | None = None, regions: RegionDirectory | None = None):
         self._as_of = as_of
         self._market = market or build_sample_market(as_of.date())
+        self._regions = regions if regions is not None else sample_regions()
         self._complexes = {c.id: c for c in self._market.complexes}
         self._by_kind: dict[tuple[PropertyType, DealType], list[Transaction]] = defaultdict(list)
         self._by_complex: dict[UUID, list[Transaction]] = defaultdict(list)
@@ -72,7 +72,7 @@ class InMemoryMarketRepository:
 
         out = []
         for code, txs in groups.items():
-            region = self._region_ref(level, code)
+            region = self._regions[code]
             if not bbox.contains(region.lat, region.lng):
                 continue
             per_pyeong = [(tx.price or tx.deposit or 0) / pyeong_exact(tx.basis_area_m2) for tx in txs]
@@ -91,14 +91,6 @@ class InMemoryMarketRepository:
                 )
             )
         return sorted(out, key=lambda a: a.region.code)
-
-    @staticmethod
-    def _region_ref(level: Level, code: str) -> RegionRef:
-        if level == Level.dong:
-            d = DONG_BY_CODE[code]
-            return RegionRef(d.code, d.name, d.lat, d.lng)
-        s = SIGUNGU_BY_CODE[code]
-        return RegionRef(s.code, s.name, s.lat, s.lng)
 
     async def complex_markers(self, bbox: BBox, flt: TransactionFilter) -> list[ComplexMarkerRow]:
         groups: dict[UUID, list[Transaction]] = defaultdict(list)

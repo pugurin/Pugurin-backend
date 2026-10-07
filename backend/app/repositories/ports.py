@@ -4,8 +4,10 @@ from uuid import UUID
 
 from app.core.geo import BBox
 from app.repositories.types import (
+    AddressHit,
     Complex,
     ComplexMarkerRow,
+    ComplexSearchHit,
     DealType,
     GlossaryCategory,
     GlossaryTerm,
@@ -13,6 +15,7 @@ from app.repositories.types import (
     ParcelData,
     ParcelMarkerRow,
     RegionAggregate,
+    RegionSearchHit,
     TransactionFilter,
     TransactionPage,
     ZoningLimits,
@@ -35,6 +38,10 @@ class MarketRepository(Protocol):
 
     async def get_complex(self, complex_id: UUID) -> Complex | None: ...
 
+    async def search_complexes(self, query: str, limit: int) -> list[ComplexSearchHit]: ...
+
+    async def search_regions(self, query: str, limit: int) -> list[RegionSearchHit]: ...
+
     async def complex_transactions(
         self,
         complex_id: UUID,
@@ -46,6 +53,12 @@ class MarketRepository(Protocol):
         offset: int,
         limit: int,
     ) -> TransactionPage: ...
+
+
+class AddressSearch(Protocol):
+    async def search_addresses(self, query: str, limit: int) -> list[AddressHit]:
+        """주소(지번·도로명) 검색. 부산 밖 결과는 제외한다. 장애 시 SourceUnavailable."""
+        ...
 
 
 class GlossaryRepository(Protocol):

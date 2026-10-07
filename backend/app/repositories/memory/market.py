@@ -5,22 +5,54 @@ from uuid import UUID
 
 from app.core.dates import months_ago
 from app.core.geo import BBox, pyeong_exact
+from app.core.text import normalize
 from app.repositories.memory.dataset import MarketData, RegionDirectory, sample_regions
 from app.repositories.types import (
     Complex,
     ComplexMarkerRow,
+    ComplexSearchHit,
     DealType,
     Level,
     LocationPrecision,
     ParcelMarkerRow,
     PropertyType,
     RegionAggregate,
+    RegionSearchHit,
     TradeMethod,
     Transaction,
     TransactionFilter,
     TransactionPage,
 )
 from app.sample_data.market import build_sample_market
+
+BBOX_PADDING = 0.003  # 약 300m
+MIN_BOX_HALF = 0.004
+
+
+def _match_score(query: str, name: str) -> int:
+    if query == name:
+        return 100
+    if name.startswith(query):
+        return 80
+    if query in name:
+        return 60
+    return 0
+
+
+def _padded(box: list[float], center: tuple[float, float]) -> tuple[float, float, float, float]:
+    """단지 위치의 범위에 여백을 주고, 너무 좁으면 중심점 기준으로 최소 크기를 보장한다."""
+    min_lng, min_lat, max_lng, max_lat = box
+    min_lng, min_lat, max_lng, max_lat = (
+        min_lng - BBOX_PADDING,
+        min_lat - BBOX_PADDING,
+        max_lng + BBOX_PADDING,
+        max_lat + BBOX_PADDING,
+    )
+    if max_lng - min_lng < 2 * MIN_BOX_HALF:
+        min_lng, max_lng = center[1] - MIN_BOX_HALF, center[1] + MIN_BOX_HALF
+    if max_lat - min_lat < 2 * MIN_BOX_HALF:
+        min_lat, max_lat = center[0] - MIN_BOX_HALF, center[0] + MIN_BOX_HALF
+    return round(min_lng, 6), round(min_lat, 6), round(max_lng, 6), round(max_lat, 6)
 
 
 def _median_int(values: list[float]) -> int | None:
@@ -41,10 +73,80 @@ class InMemoryMarketRepository:
             self._by_kind[(tx.property_type, tx.deal_type)].append(tx)
             if tx.complex_id:
                 self._by_complex[tx.complex_id].append(tx)
+        self._popularity = {cid: sum(1 for t in txs if not t.is_cancelled) for cid, txs in self._by_complex.items()}
+        self._search_index = [(normalize(c.name), normalize(c.address), c) for c in self._market.complexes]
+        self._region_boxes = self._build_region_boxes()
 
     @property
     def data_as_of(self) -> datetime:
         return self._as_of
+
+    def _build_region_boxes(self) -> dict[str, tuple[float, float, float, float]]:
+        spans: dict[str, list[float]] = {}
+        for c in self._market.complexes:
+            box = spans.setdefault(c.region_code, [c.lng, c.lat, c.lng, c.lat])
+            box[0], box[1], box[2], box[3] = (
+                min(box[0], c.lng),
+                min(box[1], c.lat),
+                max(box[2], c.lng),
+                max(box[3], c.lat),
+            )
+        boxes: dict[str, tuple[float, float, float, float]] = {}
+        for code, ref in self._regions.items():
+            if len(code) == 10:
+                boxes[code] = _padded(spans.get(code, [ref.lng, ref.lat, ref.lng, ref.lat]), (ref.lat, ref.lng))
+        for code, ref in self._regions.items():
+            if len(code) == 5:
+                children = [b for c, b in boxes.items() if c.startswith(code)]
+                if children:
+                    boxes[code] = (
+                        min(b[0] for b in children),
+                        min(b[1] for b in children),
+                        max(b[2] for b in children),
+                        max(b[3] for b in children),
+                    )
+                else:
+                    boxes[code] = _padded([ref.lng, ref.lat, ref.lng, ref.lat], (ref.lat, ref.lng))
+        return boxes
+
+    async def search_complexes(self, query: str, limit: int) -> list[ComplexSearchHit]:
+        q = normalize(query)
+        hits = []
+        for name, address, complex_ in self._search_index:
+            score = _match_score(q, name) or (40 if q in address else 0)
+            if score:
+                hits.append(ComplexSearchHit(complex_, score, self._popularity.get(complex_.id, 0)))
+        hits.sort(key=lambda h: (-h.score, -h.popularity, h.complex.name))
+        return hits[:limit]
+
+    async def search_regions(self, query: str, limit: int) -> list[RegionSearchHit]:
+        q = normalize(query)
+        hits = []
+        for code, ref in self._regions.items():
+            name = normalize(ref.name)
+            score = _match_score(q, name)
+            full_name = ref.name
+            if len(code) == 10:
+                sigungu = self._regions.get(code[:5])
+                if sigungu:
+                    full_name = f"{sigungu.name} {ref.name}"
+                    prefix = normalize(sigungu.name)
+                    if q.startswith(prefix) and len(q) > len(prefix):
+                        score = max(score, _match_score(q[len(prefix) :], name))
+            if score:
+                hits.append(
+                    RegionSearchHit(
+                        code,
+                        "dong" if len(code) == 10 else "sigungu",
+                        full_name,
+                        ref.lat,
+                        ref.lng,
+                        self._region_boxes[code],
+                        score,
+                    )
+                )
+        hits.sort(key=lambda h: (-h.score, h.level != "sigungu", h.name))
+        return hits[:limit]
 
     def _matching(self, flt: TransactionFilter) -> list[Transaction]:
         cutoff = months_ago(self._as_of.date(), flt.period_months)

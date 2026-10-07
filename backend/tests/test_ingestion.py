@@ -5,13 +5,14 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from app.adapters.kakao import GeoResult, make_pnu
 from app.adapters.molit.mock import FixtureTradeSource
 from app.adapters.molit.types import QuotaExceeded, RawTrade, SourceAuthError, SourceKind
 from app.core.busan import SIGUNGU
 from app.core.config import Settings
 from app.ingestion.build import BuildOptions, GeoIndex, build_dataset, needed_lookups
 from app.ingestion.collect import collect, recent_months
-from app.ingestion.geocode import GeocodeCache, GeoResult, geocode_missing, make_pnu
+from app.ingestion.geocode import GeocodeCache, geocode_missing
 from app.ingestion.rawcache import RawCache
 from app.ingestion.real import RealDataMissing, load_real_data
 from app.ingestion.refresh import refresh

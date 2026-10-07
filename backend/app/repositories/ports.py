@@ -18,6 +18,7 @@ from app.repositories.types import (
     RegionAggregate,
     RegionSearchHit,
     StatsResult,
+    Transaction,
     TransactionFilter,
     TransactionPage,
     ZoningLimits,
@@ -54,6 +55,20 @@ class MarketRepository(Protocol):
     async def complex_stats(
         self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
     ) -> StatsResult | None: ...
+
+    async def list_transactions(
+        self,
+        flt: TransactionFilter,
+        *,
+        bbox: BBox | None,
+        region_code: str | None,
+        include_cancelled: bool,
+        sort: str,
+        offset: int,
+        limit: int,
+    ) -> TransactionPage: ...
+
+    async def get_transaction(self, transaction_id: UUID) -> Transaction | None: ...
 
     async def search_complexes(self, query: str, limit: int) -> list[ComplexSearchHit]: ...
 

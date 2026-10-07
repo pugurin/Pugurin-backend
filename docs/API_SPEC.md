@@ -281,7 +281,12 @@
 - `price_per_pyeong`은 매매(`sale`)만 채우고 전·월세는 null
 - `/transactions`는 기본 해제거래 제외, `include_cancelled=true`일 때만 포함(해제 표시 필수)
 - 정렬 `sort`: `contract_date_desc`(기본) `|price_asc|price_desc`
-- `bbox`와 `region_code` 둘 다 없으면 `400 VALIDATION_ERROR`
+- `bbox`와 `region_code` 둘 다 없으면 `400 VALIDATION_ERROR`(`field: bbox`). 둘 다 주면 둘 다 만족하는 거래만 나온다
+- `region_code`는 시군구 5자리 또는 법정동 10자리이며, 시군구 코드는 그 아래 모든 법정동을 포함한다. 형식이 맞지 않으면 `400`(`field: region_code`)
+- **`/map/markers`와 같은 필터**를 쓴다: `property_type`(필수), `deal_type`, `period_months`(기본 12), `price_*`·`deposit_*`·`rent_*`, `exclusive_area_pyeong_*`·`land_area_pyeong_*`, `exclude_direct`. 같은 필터를 주면 **목록 `meta.total`이 지도 마커의 `transaction_count`와 같다**
+- 전·월세에서 `sort=price_*`는 보증금 기준이다. `page_size`는 최대 100
+- 목록 `meta`에는 `data_as_of`, `reporting_lag_notice`와 `page`, `page_size`, `total`, `total_pages`가 들어간다
+- `GET /transactions/{id}`는 해제된 거래도 조회한다(`is_cancelled: true`). 없으면 `404`, UUID 형식이 아니면 `400`(`field: transaction_id`)
 
 **`GET /complexes/{id}/stats`, `GET /stats/regions/{region_code}` 쿼리**: `property_type`(단일, 필수), `deal_type`, `period_months`(기본 36), `exclude_direct`
 ```json

@@ -53,21 +53,21 @@ def not_found(message: str) -> AppError:
     return AppError(ErrorCode.RESOURCE_NOT_FOUND, message)
 
 
-def _body(code: ErrorCode, message: str, field: str | None = None) -> dict:
+def error_body(code: ErrorCode, message: str, field: str | None = None) -> dict:
     return {"error": {"code": code.value, "message": message, "field": field}}
 
 
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def _app_error(_: Request, exc: AppError) -> JSONResponse:
-        return JSONResponse(_body(exc.code, exc.message, exc.field), status_code=exc.status_code)
+        return JSONResponse(error_body(exc.code, exc.message, exc.field), status_code=exc.status_code)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         first = exc.errors()[0]
         field = str(first["loc"][-1]) if first["loc"] else None
         return JSONResponse(
-            _body(ErrorCode.VALIDATION_ERROR, f"요청 값이 올바르지 않습니다: {field}", field),
+            error_body(ErrorCode.VALIDATION_ERROR, f"요청 값이 올바르지 않습니다: {field}", field),
             status_code=400,
         )
 
@@ -75,9 +75,9 @@ def install_error_handlers(app: FastAPI) -> None:
     async def _http(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = _CODE_BY_STATUS.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
         message = "요청한 경로를 찾을 수 없습니다" if exc.status_code == 404 else str(exc.detail)
-        return JSONResponse(_body(code, message), status_code=exc.status_code, headers=exc.headers)
+        return JSONResponse(error_body(code, message), status_code=exc.status_code, headers=exc.headers)
 
     @app.exception_handler(Exception)
     async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
         logger.exception("처리되지 않은 오류", exc_info=exc)
-        return JSONResponse(_body(ErrorCode.INTERNAL_ERROR, "서버 오류가 발생했습니다"), status_code=500)
+        return JSONResponse(error_body(ErrorCode.INTERNAL_ERROR, "서버 오류가 발생했습니다"), status_code=500)

@@ -126,7 +126,10 @@
 **Rate limit**
 - 비로그인: `X-Device-Id` 기준 분당 300회(웹은 브라우저 UUID 기준) / 로그인: 사용자 기준 분당 600회
 - IP 기준 제한은 비정상 트래픽 방어용 상한(분당 3,000회)만 둔다 (모바일 통신사 NAT로 다수 사용자가 IP 공유)
-- 초과 시 `429 RATE_LIMITED` + `Retry-After`
+- 초과 시 `429 RATE_LIMITED` + `Retry-After`(초) + `Cache-Control: no-store`
+- 1분 고정 구간으로 센다. `Retry-After`는 다음 구간이 시작될 때까지 남은 초
+- `/health`는 세지 않는다. `X-Device-Id`가 없거나 UUID가 아니면 기기 한도는 건너뛰고(IP 상한만 적용) 기존대로 `400 VALIDATION_ERROR`
+- 구현 현황: 기기·IP 한도 적용 완료. 로그인 사용자 한도는 인증(#16) 이후. 지금은 서버 프로세스 메모리에서 세므로 인스턴스를 여러 개 띄우면 Redis로 옮긴다(#38)
 
 **버전 관리**: URL 프리픽스(`/api/v1`), breaking change는 `/api/v2` 신설.
 
@@ -346,6 +349,7 @@
 - `/complexes/{id}/stats` 응답에는 `area_types`가 추가된다. 단지의 **평형(전용면적)별** `exclusive_area_m2`, `exclusive_area_pyeong`, `supply_area_pyeong`, `transaction_count`, 지표, `trend`이며 기간 안에 거래가 있는 평형만 전용면적 순으로 나온다. 같은 평형은 전용면적을 반올림한 정수(㎡)로 묶는다
 - `property_type`이 단지의 유형과 다르면 `400`(`field: property_type`), 토지는 `deal_type=sale`만 허용(`400`, `field: deal_type`), 모르는 단지·지역은 `404`, `region_code`는 5자리 또는 10자리 숫자가 아니면 `400`
 - `meta.method`: `중위값, 해제거래 제외` (`exclude_direct=true`면 `, 직거래 제외` 추가). 토지는 지분거래·지목 '도로'가 이미 제외되어 있다
+- **예정 (#38, `docs/ERD.md` 3.6):** 전세·월세는 **갱신 계약을 기본 제외**(신규 계약만)하고 `include_renewals=true`로 포함한다. 인상률 5% 상한 때문에 갱신 계약은 현재 시세를 반영하지 않는다. 지도 마커·거래 목록·통계·분석에 같은 기본값을 적용한다. 지금 구현은 갱신 계약을 포함한다
 - **거래가 적은 단지 대체 규칙** (`/complexes/{id}/stats`만, v0.5 추가 — 미구현)
   - 기간 중 값이 있는(월 표본 3건 이상) 달이 절반 미만이면 **분기 단위**로 다시 계산한다 → `meta.granularity: "quarter"`, `trend[].month` 대신 `trend[].quarter: "2026-Q1"`. 분기에도 표본 3건 미만 규칙을 적용한다
   - 분기로도 절반 미만이면 단지 대신 **소속 법정동·같은 유형** 추이를 준다 → `meta.fallback: { "type": "region", "region_code": "2635010500", "name": "우동" }`. 앱은 "이 단지는 거래가 적어 동네 추이를 보여드려요"를 표시한다

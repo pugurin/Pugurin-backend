@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, FastAPI
 from app.core.config import Settings
 from app.core.dates import Clock, kst_now
 from app.core.errors import install_error_handlers
-from app.core.http_cache import ConditionalGetMiddleware
+from app.core.http_cache import NO_CACHE_PATHS, ConditionalGetMiddleware
+from app.core.rate_limit import MemoryRateLimiter, RateLimiter, RateLimitMiddleware
 from app.repositories.ports import (
     AddressSearch,
     GlossaryRepository,
@@ -28,6 +29,7 @@ def create_app(
     parcel_source: ParcelSource | None = None,
     zoning_rules: ZoningRuleRepository | None = None,
     address_search: AddressSearch | None = None,
+    rate_limiter: RateLimiter | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     container = build_container(
@@ -51,6 +53,16 @@ def create_app(
         response = await call_next(request)
         response.headers["X-Data-Mode"] = data_mode
         return response
+
+    # 가장 바깥에서 먼저 세어, 막힌 요청은 라우터·캐시 계산까지 가지 않게 한다
+    if settings.rate_limit_enabled:
+        app.add_middleware(
+            RateLimitMiddleware,
+            limiter=rate_limiter or MemoryRateLimiter(),
+            device_per_minute=settings.rate_limit_device_per_minute,
+            ip_per_minute=settings.rate_limit_ip_per_minute,
+            exempt_paths=frozenset(NO_CACHE_PATHS),
+        )
 
     app.include_router(health.router, prefix=API_PREFIX)
     public = APIRouter(prefix=API_PREFIX, dependencies=[Depends(require_device_id)])

@@ -34,5 +34,10 @@ class Settings(BaseSettings):
     exclude_road_land: bool = True  # 지목이 '도로'인 토지 거래도 뺀다
 
     cache_max_age_seconds: int = 300
+
+    # 분당 요청 한도. 통신사 NAT로 여러 사람이 IP를 같이 쓰므로 IP 한도는 비정상 트래픽 방어용 상한만 둔다
+    rate_limit_enabled: bool = True
+    rate_limit_device_per_minute: int = 300
+    rate_limit_ip_per_minute: int = 3000
     parcel_cache_ttl_days: int = 30
     parcel_negative_cache_ttl_days: int = 1

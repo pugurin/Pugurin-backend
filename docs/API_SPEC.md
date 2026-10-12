@@ -126,7 +126,10 @@
 **Rate limit**
 - 비로그인: `X-Device-Id` 기준 분당 300회(웹은 브라우저 UUID 기준) / 로그인: 사용자 기준 분당 600회
 - IP 기준 제한은 비정상 트래픽 방어용 상한(분당 3,000회)만 둔다 (모바일 통신사 NAT로 다수 사용자가 IP 공유)
-- 초과 시 `429 RATE_LIMITED` + `Retry-After`
+- 초과 시 `429 RATE_LIMITED` + `Retry-After`(초) + `Cache-Control: no-store`
+- 1분 고정 구간으로 센다. `Retry-After`는 다음 구간이 시작될 때까지 남은 초
+- `/health`는 세지 않는다. `X-Device-Id`가 없거나 UUID가 아니면 기기 한도는 건너뛰고(IP 상한만 적용) 기존대로 `400 VALIDATION_ERROR`
+- 구현 현황: 기기·IP 한도 적용 완료. 로그인 사용자 한도는 인증(#16) 이후. 지금은 서버 프로세스 메모리에서 세므로 인스턴스를 여러 개 띄우면 Redis로 옮긴다(#38)
 
 **버전 관리**: URL 프리픽스(`/api/v1`), breaking change는 `/api/v2` 신설.
 

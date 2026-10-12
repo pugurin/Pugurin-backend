@@ -11,14 +11,14 @@ from app.schemas.stats import (
     StatsMeta,
     complex_stats_out,
     region_stats_out,
+    stats_method,
 )
 
 router = APIRouter(tags=["stats"])
 
 
 def _meta(container, exclude_direct: bool) -> StatsMeta:
-    method = "중위값, 해제거래 제외" + (", 직거래 제외" if exclude_direct else "")
-    return StatsMeta(data_as_of=container.complex_service.data_as_of, method=method)
+    return StatsMeta(data_as_of=container.complex_service.data_as_of, method=stats_method(exclude_direct))
 
 
 @router.get("/stats/regions/{region_code}", response_model=RegionStatsResponse, summary="구·동 단위 통계")

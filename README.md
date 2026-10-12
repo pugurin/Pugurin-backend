@@ -149,8 +149,15 @@ uv run python -m app.ingestion status
 docker compose up --build
 ```
 
+- `db`(PostGIS), `redis`, `migrate`, `api` 네 개가 뜹니다. `migrate`가 DB 스키마와 부산 법정동 코드를 먼저 넣고 끝나면 `api`가 시작합니다.
+  - 지금 조회 API는 아직 DB가 아니라 `backend/.cache`(파일)를 읽습니다. DB로 옮기는 작업은 [#38](https://github.com/pugurin/Pugurin-backend/issues/38)에서 진행 중입니다.
+  - 호스트의 5432·6379 포트가 이미 쓰이고 있으면 `PUGURIN_DB_PORT=5433 PUGURIN_REDIS_PORT=6380 docker compose up --build`처럼 바꿔서 띄우세요.
 - `backend/.cache`가 있으면 **자동으로 실데이터**, 없으면 목데이터로 뜹니다.
 - `backend/.env`가 있으면 읽습니다. 없어도 실행됩니다.
+- 서버 상태 확인(readiness)은 DB·Redis 연결과 스키마 버전까지 봅니다. 내부망 전용이라 **컨테이너 안에서** 부르세요.
+  ```bash
+  docker compose exec api python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/internal/health/ready').read().decode())"
+  ```
 - `.cache`를 새로 넣거나 바꿨다면 **컨테이너를 재시작**해야 반영됩니다. 데이터는 서버가 시작할 때 한 번만 읽습니다.
   ```bash
   docker compose restart api
@@ -235,5 +242,21 @@ uv sync
 uv run pytest          # 테스트
 uv run ruff check .    # 린트
 ```
+
+- `tests/test_db.py`는 testcontainers로 **실제 PostGIS·Redis 컨테이너**를 띄워 마이그레이션·시드·readiness를 검사합니다. Docker가 없으면 자동으로 건너뜁니다.
+
+### DB 마이그레이션
+
+스키마는 [`docs/ERD.md`](./docs/ERD.md)의 DDL이 기준이고 `backend/alembic/versions/`에 있습니다. 로컬 DB에 직접 적용하려면 다음과 같이 합니다.
+
+```bash
+cd backend
+export PUGURIN_DATABASE_URL=postgresql+asyncpg://pugurin:pugurin@localhost:5432/pugurin
+uv run python -m app.db upgrade        # 최신 스키마 + 법정동 시드
+uv run python -m app.db status         # 현재 버전 확인
+uv run python -m app.db seed-regions   # 법정동 CSV를 갱신한 뒤 다시 반영
+```
+
+법정동 코드는 공공데이터포털 「[국토교통부_전국 법정동](https://www.data.go.kr/data/15063424/fileData.do)」에서 부산·현존 코드만 잘라 `backend/app/db/seed/legal_dong_busan.csv`로 둡니다. 연 1회 새 파일로 갱신합니다.
 
 개발 규칙은 [`backend/AGENTS.md`](./backend/AGENTS.md)를 따릅니다.

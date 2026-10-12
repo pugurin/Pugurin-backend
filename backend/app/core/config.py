@@ -9,6 +9,10 @@ class Settings(BaseSettings):
 
     app_env: str = "local"
 
+    # DB·Redis (#38). 비워 두면 지금처럼 파일 캐시·메모리만으로 동작한다
+    database_url: str = ""  # 예: postgresql+asyncpg://pugurin:pugurin@localhost:5432/pugurin
+    redis_url: str = ""  # 예: redis://localhost:6379/0
+
     # 부산 대략 범위(min_lng, min_lat, max_lng, max_lat). 1차 판별용, 정밀 판별은 PostGIS로 대체 예정
     busan_bbox: tuple[float, float, float, float] = (128.75, 34.85, 129.35, 35.40)
 

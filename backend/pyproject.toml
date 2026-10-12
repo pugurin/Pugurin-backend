@@ -9,6 +9,10 @@ dependencies = [
     "pydantic-settings>=2.4",
     "tzdata>=2024.1",
     "httpx>=0.28.1",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "redis>=5.2",
 ]
 
 [dependency-groups]
@@ -17,6 +21,7 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.6",
     "httpx2>=2.13.1",
+    "testcontainers[postgres,redis]>=4.9",
 ]
 
 [tool.pytest.ini_options]
@@ -30,6 +35,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
 
+[tool.ruff.lint.isort]
+# backend/alembic 폴더(마이그레이션)를 같은 이름의 라이브러리와 헷갈리지 않게 한다
+known-third-party = ["alembic"]
+
 [tool.ruff.lint.per-file-ignores]
 "app/sample_data/*" = ["E501"]
 "tests/*" = ["E501"]
+# ERD.md의 DDL을 그대로 옮긴 마이그레이션이라 주석 줄 길이를 맞추지 않는다
+"alembic/versions/*" = ["E501"]

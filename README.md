@@ -220,6 +220,7 @@ curl -H "X-Device-Id: 3f2b8c1e-0000-4000-8000-000000000001" \
 | `.cache` 위치가 맞는지 모르겠음 | 폴더가 한 단계 더 들어가 있음 (`backend/.cache/.cache/...`) | `backend/.cache/molit`이 바로 보여야 합니다 |
 | 서버 시작 시 `RealDataMissing` 오류 | `PUGURIN_DATA_MODE=real`인데 `.cache`가 없음 | `.cache`를 넣거나 `auto`로 바꾸세요 |
 | 모든 요청이 `400`, `field: X-Device-Id` | 헤더 없음 또는 UUID가 아님 | UUID 형식 `X-Device-Id` 헤더 추가 |
+| 갑자기 `429 RATE_LIMITED` | 같은 기기에서 분당 300회 초과 (또는 같은 IP에서 3,000회) | `Retry-After` 초만큼 기다리면 풀립니다. 개발 중이면 `backend/.env`에 `PUGURIN_RATE_LIMIT_ENABLED=false` |
 | `refresh`가 키가 필요하다며 종료 | `.env`에 키가 비어 있음 | 매매·전월세 키 둘 다, 카카오 키까지 입력 |
 | `refresh` 중 한도 초과로 멈춤 | 공공데이터포털·카카오 일일 한도 | 다음 날 다시 실행하면 이어서 받습니다 |
 | 지도 영역은 맞는데 마커가 하나도 없음 | 조회 영역이 부산 밖이거나 필터가 너무 좁음 | `bbox` 순서 확인: `최소경도,최소위도,최대경도,최대위도` |

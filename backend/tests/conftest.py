@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from uuid import uuid4
 
@@ -10,6 +11,8 @@ from app.main import create_app
 
 # 개발자 로컬 .env(실제 API 키)가 테스트에 섞이지 않게 한다
 Settings.model_config["env_file"] = None
+# 테스트는 한 기기·한 IP로 수백 번 호출하므로 요청 한도를 끈다. 한도 자체는 test_rate_limit.py가 켜고 검증한다
+os.environ["PUGURIN_RATE_LIMIT_ENABLED"] = "false"
 
 FIXED_NOW = datetime(2026, 10, 6, 12, 0, tzinfo=KST)
 DATA_AS_OF = "2026-10-06T04:00:00+09:00"

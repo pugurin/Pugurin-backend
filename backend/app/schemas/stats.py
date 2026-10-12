@@ -36,6 +36,10 @@ class StatsMeta(DataMeta):
     method: str
 
 
+def stats_method(exclude_direct: bool) -> str:
+    return "중위값, 해제거래 제외" + (", 직거래 제외" if exclude_direct else "")
+
+
 class RegionStatsResponse(BaseModel):
     data: RegionStatsOut
     meta: StatsMeta
@@ -64,8 +68,12 @@ def _series_fields(deal_type: DealType, series: StatsSeries) -> dict:
     }
 
 
+def series_out(deal_type: DealType, series: StatsSeries) -> RegionStatsOut:
+    return RegionStatsOut(**_series_fields(deal_type, series))
+
+
 def region_stats_out(deal_type: DealType, result: StatsResult) -> RegionStatsOut:
-    return RegionStatsOut(**_series_fields(deal_type, result.overall))
+    return series_out(deal_type, result.overall)
 
 
 def complex_stats_out(deal_type: DealType, result: StatsResult) -> ComplexStatsOut:

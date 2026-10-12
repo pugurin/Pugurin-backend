@@ -17,6 +17,7 @@ from app.repositories.ports import (
     ParcelSource,
     ZoningRuleRepository,
 )
+from app.services.analysis_service import AnalysisService
 from app.services.complex_service import ComplexService
 from app.services.glossary_service import GlossaryService
 from app.services.map_service import MapService
@@ -40,6 +41,7 @@ class Container:
     search_service: SearchService
     stats_service: StatsService
     transaction_service: TransactionService
+    analysis_service: AnalysisService
     address_search: AddressSearch | None = None
 
     async def aclose(self) -> None:
@@ -72,15 +74,17 @@ def build_container(
     # 주소 검색은 카카오 REST 키가 있을 때만 켠다
     if address_search is None and settings.kakao_rest_key:
         address_search = KakaoGeocoder(settings.kakao_rest_key)
+    parcel_service = ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock)
     return Container(
         settings=settings,
         data_mode="real" if isinstance(market_repo, InMemoryMarketRepository) and mode == "real" else "sample",
         map_service=MapService(market_repo, settings),
         complex_service=ComplexService(market_repo),
-        parcel_service=ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock),
+        parcel_service=parcel_service,
         glossary_service=GlossaryService(glossary_repo),
         search_service=SearchService(market_repo, address_search),
         stats_service=StatsService(market_repo),
         transaction_service=TransactionService(market_repo),
+        analysis_service=AnalysisService(market_repo, parcel_service),
         address_search=address_search,
     )

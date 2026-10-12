@@ -4,7 +4,7 @@ from fastapi import APIRouter, Path, Query, Response
 
 from app.core.geo import m2_to_pyeong
 from app.routers.deps import ContainerDep
-from app.schemas.parcel import ParcelMeta, ParcelOut, ParcelResponse, RestrictionOut, ZoningOut
+from app.schemas.parcel import ParcelMeta, ParcelOut, ParcelResponse, RestrictionOut, zoning_out
 from app.services.parcel_service import ParcelResult
 
 router = APIRouter(tags=["parcels"])
@@ -31,16 +31,7 @@ def _to_response(result: ParcelResult, response: Response) -> ParcelResponse:
             road_side=d.road_side,
             shape=d.shape,
             geometry=d.geometry,
-            zonings=[
-                ZoningOut(
-                    zone_type=z.part.zone_type,
-                    area_ratio=z.part.area_ratio,
-                    inclusion=z.part.inclusion,
-                    max_building_coverage_ratio=z.limits.max_building_coverage_ratio if z.limits else None,
-                    max_floor_area_ratio=z.limits.max_floor_area_ratio if z.limits else None,
-                )
-                for z in view.zonings
-            ],
+            zonings=[zoning_out(z) for z in view.zonings],
             ratio_source=view.ratio_source,
             restrictions=[
                 RestrictionOut(name=r.name, plain_explanation=r.plain_explanation, glossary_term_id=term_id)

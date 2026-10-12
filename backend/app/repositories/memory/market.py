@@ -19,6 +19,7 @@ from app.repositories.types import (
     ParcelMarkerRow,
     PropertyType,
     RegionAggregate,
+    RegionRef,
     RegionSearchHit,
     StatsMetrics,
     StatsResult,
@@ -162,6 +163,9 @@ class InMemoryMarketRepository:
             and t.contract_date >= start
             and not (exclude_direct and t.trade_method == TradeMethod.direct)
         ]
+
+    async def get_region(self, region_code: str) -> RegionRef | None:
+        return self._regions.get(region_code)
 
     async def region_stats(
         self,

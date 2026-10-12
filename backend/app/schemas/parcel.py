@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.services.parcel_service import ZoningView
+
 
 class ZoningOut(BaseModel):
     zone_type: str
@@ -11,6 +13,16 @@ class ZoningOut(BaseModel):
     inclusion: str
     max_building_coverage_ratio: int | None
     max_floor_area_ratio: int | None
+
+
+def zoning_out(z: ZoningView) -> ZoningOut:
+    return ZoningOut(
+        zone_type=z.part.zone_type,
+        area_ratio=z.part.area_ratio,
+        inclusion=z.part.inclusion,
+        max_building_coverage_ratio=z.limits.max_building_coverage_ratio if z.limits else None,
+        max_floor_area_ratio=z.limits.max_floor_area_ratio if z.limits else None,
+    )
 
 
 class RestrictionOut(BaseModel):

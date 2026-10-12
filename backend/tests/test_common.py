@@ -56,6 +56,7 @@ def test_openapi_schema_builds_for_all_endpoints(client):
         f"{API}/complexes/{{complex_id}}/transactions",
         f"{API}/parcels/lookup",
         f"{API}/parcels/{{pnu}}",
+        f"{API}/analysis/complexes/{{complex_id}}",
         f"{API}/glossary",
         f"{API}/glossary/{{term_id}}",
     }

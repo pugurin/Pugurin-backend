@@ -454,6 +454,48 @@
 - `/analysis/parcels/{pnu}`는 공급처가 없으면 §5와 같이 `source_unavailable`. 그 경우 동 단위 토지 추이는 `/stats/regions/{region_code}?property_type=land`로 본다
 - **동 단위인 이유:** 토지 거래는 지번이 100% 가려져 법정동 중심점 좌표밖에 없어 반경 기준 비교가 불가능하다
 
+**`GET /analysis/complexes/{id}` 쿼리**: `deal_type`(기본 `sale`), `period_months`(1~60, 기본 36), `exclude_direct`(기본 false). 매물 유형은 단지의 유형을 따른다.
+
+**`GET /analysis/complexes/{id}` 응답**
+```json
+{
+  "data": {
+    "complex": { "id": "uuid", "name": "동신", "property_type": "apartment", "region_code": "2635010700" },
+    "region": { "region_code": "2635010700", "name": "해운대구 좌동" },
+    "complex_stats": {
+      "transaction_count": 14, "median_price_per_pyeong": 15800000,
+      "trend": [ { "month": "2026-01", "count": 2, "median_price_per_pyeong": null } ]
+    },
+    "region_stats": {
+      "transaction_count": 1150, "median_price_per_pyeong": 15500000,
+      "trend": [ { "month": "2026-01", "count": 96, "median_price_per_pyeong": 15200000 } ]
+    },
+    "comparison": {
+      "metric": "median_price_per_pyeong",
+      "complex_value": 15800000, "region_value": 15500000,
+      "difference_percent": 1.9,
+      "summary": "이 단지의 평당 매매가 중위값은 좌동 아파트 전체보다 2% 높아요."
+    },
+    "zonings": null,
+    "disclaimer": "참고용 통계이며 실제 시세와 거래 조건은 공인중개사에게 확인이 필요합니다."
+  },
+  "meta": {
+    "data_as_of": "...", "method": "중위값, 해제거래 제외",
+    "zoning_unavailable_reason": "source_unavailable"
+  }
+}
+```
+- `complex_stats`·`region_stats`는 `/complexes/{id}/stats`, `/stats/regions/{region_code}`의 전체(overall) 값과 **같은 숫자**다. 거래유형별 지표 필드는 §4 통계와 같다
+- `region`은 단지가 속한 **법정동**, 같은 매물 유형끼리만 비교한다
+- `comparison`
+  - 매매는 평당 매매가, 전세는 평당 보증금으로 비교한다
+  - **월세는 `null`** — 보증금 조건이 제각각이라 한 숫자로 비교하지 않는다(추이는 제공)
+  - 어느 한쪽이라도 기간 내 거래가 없거나 중위값이 없으면 `null`
+  - `summary`는 차이가 1% 미만이면 "비슷해요", 아니면 "N% 높아요/낮아요". 예측·권유 문구는 쓰지 않는다
+- `zonings`: 단지 필지(`pnu`)의 용도지역(§5와 같은 형식). 받을 수 없으면 `null`이고 `meta.zoning_unavailable_reason`에 이유
+  - `no_pnu`(단지 필지번호 없음) / `no_parcel` / `out_of_service_area` / `source_unavailable`(토지 정보 공급처 없음 — 현재 실데이터 모드)
+- 없는 단지 → `404 RESOURCE_NOT_FOUND`
+
 **`GET /analysis/parcels/{pnu}` 응답 (요약)**
 ```json
 {

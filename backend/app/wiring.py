@@ -23,6 +23,7 @@ from app.services.map_service import MapService
 from app.services.parcel_service import ParcelService
 from app.services.search_service import SearchService
 from app.services.stats_service import StatsService
+from app.services.transaction_service import TransactionService
 
 # uvicorn이 기본으로 출력하는 로거에 남겨야 서버 로그에서 보인다
 logger = logging.getLogger("uvicorn.error")
@@ -38,6 +39,7 @@ class Container:
     glossary_service: GlossaryService
     search_service: SearchService
     stats_service: StatsService
+    transaction_service: TransactionService
     address_search: AddressSearch | None = None
 
     async def aclose(self) -> None:
@@ -79,5 +81,6 @@ def build_container(
         glossary_service=GlossaryService(glossary_repo),
         search_service=SearchService(market_repo, address_search),
         stats_service=StatsService(market_repo),
+        transaction_service=TransactionService(market_repo),
         address_search=address_search,
     )

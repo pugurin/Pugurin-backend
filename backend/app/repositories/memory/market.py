@@ -110,6 +110,7 @@ class InMemoryMarketRepository:
             self._by_kind[(tx.property_type, tx.deal_type)].append(tx)
             if tx.complex_id:
                 self._by_complex[tx.complex_id].append(tx)
+        self._by_id = {t.id: t for t in self._market.transactions}
         self._popularity = {cid: sum(1 for t in txs if not t.is_cancelled) for cid, txs in self._by_complex.items()}
         self._search_index = [(normalize(c.name), normalize(c.address), c) for c in self._market.complexes]
         self._region_boxes = self._build_region_boxes()
@@ -232,11 +233,11 @@ class InMemoryMarketRepository:
         hits.sort(key=lambda h: (-h.score, h.level != "sigungu", h.name))
         return hits[:limit]
 
-    def _matching(self, flt: TransactionFilter) -> list[Transaction]:
+    def _matching(self, flt: TransactionFilter, include_cancelled: bool = False) -> list[Transaction]:
         cutoff = months_ago(self._as_of.date(), flt.period_months)
         out = []
         for tx in self._by_kind[(flt.property_type, flt.deal_type)]:
-            if tx.is_cancelled or tx.contract_date < cutoff:
+            if (tx.is_cancelled and not include_cancelled) or tx.contract_date < cutoff:
                 continue
             if flt.exclude_direct and tx.trade_method == TradeMethod.direct:
                 continue
@@ -298,6 +299,41 @@ class InMemoryMarketRepository:
     async def get_complex(self, complex_id: UUID) -> Complex | None:
         return self._complexes.get(complex_id)
 
+    async def list_transactions(
+        self,
+        flt: TransactionFilter,
+        *,
+        bbox: BBox | None,
+        region_code: str | None,
+        include_cancelled: bool,
+        sort: str,
+        offset: int,
+        limit: int,
+    ) -> TransactionPage:
+        items = [
+            t
+            for t in self._matching(flt, include_cancelled)
+            if (region_code is None or t.region_code.startswith(region_code))
+            and (bbox is None or bbox.contains(t.lat, t.lng))
+        ]
+        self._sort(items, sort)
+        return TransactionPage(items[offset : offset + limit], len(items))
+
+    async def get_transaction(self, transaction_id: UUID) -> Transaction | None:
+        return self._by_id.get(transaction_id)
+
+    @staticmethod
+    def _sort(items: list[Transaction], sort: str) -> None:
+        def effective_price(t: Transaction) -> int:
+            return t.price if t.price is not None else (t.deposit or 0)
+
+        if sort == "price_asc":
+            items.sort(key=lambda t: (effective_price(t), str(t.id)))
+        elif sort == "price_desc":
+            items.sort(key=lambda t: (-effective_price(t), str(t.id)))
+        else:
+            items.sort(key=lambda t: (t.contract_date, str(t.id)), reverse=True)
+
     async def complex_transactions(
         self,
         complex_id: UUID,
@@ -316,11 +352,5 @@ class InMemoryMarketRepository:
             and (include_cancelled or not tx.is_cancelled)
             and not (exclude_direct and tx.trade_method == TradeMethod.direct)
         ]
-        effective_price = lambda t: t.price if t.price is not None else (t.deposit or 0)  # noqa: E731
-        if sort == "price_asc":
-            items.sort(key=lambda t: (effective_price(t), str(t.id)))
-        elif sort == "price_desc":
-            items.sort(key=lambda t: (-effective_price(t), str(t.id)))
-        else:
-            items.sort(key=lambda t: (t.contract_date, str(t.id)), reverse=True)
+        self._sort(items, sort)
         return TransactionPage(items[offset : offset + limit], len(items))

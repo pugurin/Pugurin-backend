@@ -166,7 +166,13 @@ erDiagram
 - 평형은 거래의 전용면적을 **반올림한 정수(㎡)** 로 묶는다(84.842와 84.97이 같은 평형). 공급 평형은 건축물대장이 확인될 때까지 NULL이다.
 
 ### 3.4 법정동 매핑
-원천은 법정동명만 주고(코드는 아파트 매매만), 기장군은 리 단위(`기장읍 교리`)까지 온다. `regions`에 법정동 코드 마스터가 있어야 (시군구, 이름) → 코드를 찾을 수 있다. **마스터 출처가 정해지지 않았다**(열린 질문 1).
+원천은 법정동명만 주고(코드는 아파트 매매만), 기장군은 리 단위(`기장읍 교리`)까지 온다. `regions`에 법정동 코드 마스터가 있어야 (시군구, 이름) → 코드를 찾을 수 있다.
+
+**결정 (열린 질문 1):**
+- **출처:** 행정안전부 **법정동 코드 전체자료**(행정표준코드관리시스템 code.go.kr, 공공데이터포털에도 같은 자료). 부산(`26`으로 시작)·**현존 코드만** 잘라 레포에 시드 CSV로 커밋하고, 마이그레이션·적재 때 `regions`에 넣는다.
+- 법정동 코드 10자리는 읍면동 + **리**까지 담으므로 기장군 `기장읍 교리`도 그대로 매칭된다. 읍면 자체(리=00)와 리는 각각 행으로 둔다.
+- **카카오는 중심점 좌표(`centroid`)용**으로만 쓰고, 매핑에 실패한 이름을 찾는 검증 보조로 둔다. 코드 매핑이 카카오 키·약관(결과 저장 가능 여부 미확인)에 의존하지 않게 하기 위해서다.
+- **갱신:** 법정동은 거의 바뀌지 않으므로 연 1회 수동으로 CSV를 갱신한다. 적재 때 매핑 실패 이름이 나오면 `etl_runs`에 남겨 갱신 시점을 알린다.
 
 ### 3.5 위치 정밀도
 - 단지가 있는 거래: 단지 좌표를 쓰고 `location_precision='parcel'`.
@@ -174,15 +180,18 @@ erDiagram
 - 지오코딩에 실패한 단지는 법정동 중심점으로 두고 `location_source='centroid'`, `geocode_cache`에 실패를 기록해 재시도한다.
 
 ### 3.6 통계에서 제외할 거래
-저장은 하되 집계에서 거른다. 근거는 `API_RESEARCH.md` 4.2.
+저장은 하되 집계에서 거른다(원칙 6). 근거는 `API_RESEARCH.md` 4.2. **결정 (열린 질문 2):** 아래 기본값을 쓴다.
 
 | 대상 | 컬럼 | 기본 집계 |
 |---|---|---|
 | 해제거래 | `is_cancelled` | **제외** (명세 확정) |
-| 토지 지분거래 | `is_share_deal` | 제외 제안 |
-| 토지 지목 '도로' | `jimok` | 제외 제안 |
-| 갱신 계약(전월세) | `contract_type='갱신'` | 포함, **결정 필요** |
-| 직거래 | `trade_method='direct'` | 요청 옵션(`exclude_direct`) |
+| 토지 지분거래 | `is_share_deal` | **제외** — 땅 일부의 가격이라 평당가가 왜곡된다(해운대·수영 1개월 45건 중 28건) |
+| 토지 지목 '도로' | `jimok` | **제외** — 도로 부지 평당가가 동네 시세를 끌어내린다 |
+| 갱신 계약(전월세) | `contract_type='갱신'` | **제외 (신규만)**, 요청 옵션으로 포함 — 인상률 5% 상한 때문에 현재 시세를 반영하지 않는다(비중 6~15%) |
+| 직거래 | `trade_method='direct'` | **포함**, 요청 옵션(`exclude_direct`)으로 제외 |
+
+- **표본 수는 항상 함께 내린다.** 월 표본 3건 미만은 중위값을 `null`로 둔다. 거르고 나면 토지 표본이 크게 줄어들기 때문이다.
+- 지금의 파일 캐시 구현은 지분거래·도로를 데이터셋을 만들 때 뺀다. DB로 옮길 때(#38) 원천 그대로 저장하고 조회·집계 단계에서 빼도록 바꾼다.
 
 ## 4. 1차 DDL 초안
 
@@ -386,7 +395,7 @@ WITH base AS (
     UNION ALL
     SELECT 'complex', complex_id::text, * FROM base WHERE complex_id IS NOT NULL
 )
-SELECT s.scope_level, s.scope_id, s.property_type, s.deal_type, s.month, d.include_direct,
+SELECT s.scope_level, s.scope_id, s.property_type, s.deal_type, s.month, d.include_direct, r.include_renewals,
        count(*) AS n,
        percentile_cont(0.5) WITHIN GROUP (ORDER BY (s.price / (s.basis_area_m2 / 3.3058))::double precision)
            FILTER (WHERE s.deal_type = 'sale') AS median_price_per_pyeong,
@@ -398,15 +407,22 @@ SELECT s.scope_level, s.scope_id, s.property_type, s.deal_type, s.month, d.inclu
            FILTER (WHERE s.deal_type = 'monthly') AS median_monthly_rent
 FROM scoped s
 CROSS JOIN LATERAL (VALUES (true), (false)) AS d(include_direct)
-WHERE d.include_direct OR s.trade_method IS DISTINCT FROM 'direct'
-GROUP BY s.scope_level, s.scope_id, s.property_type, s.deal_type, s.month, d.include_direct;
+CROSS JOIN LATERAL (VALUES (true), (false)) AS r(include_renewals)
+WHERE (d.include_direct OR s.trade_method IS DISTINCT FROM 'direct')
+  AND (r.include_renewals OR s.contract_type IS DISTINCT FROM '갱신')
+GROUP BY s.scope_level, s.scope_id, s.property_type, s.deal_type, s.month, d.include_direct, r.include_renewals;
 CREATE UNIQUE INDEX mv_monthly_stats_key
-    ON mv_monthly_stats (scope_level, scope_id, property_type, deal_type, month, include_direct);
+    ON mv_monthly_stats (scope_level, scope_id, property_type, deal_type, month, include_direct, include_renewals);
 ```
 
 **집계 갱신:** ETL 끝에 `REFRESH MATERIALIZED VIEW CONCURRENTLY mv_monthly_stats`를 실행한다(`data_as_of` 갱신 직전). 월 표본이 3건 미만이면 API가 `null`로 내린다(`n` 컬럼으로 판단).
 
 **규모 추정:** 월 약 1.3만 행, 5년 약 80만 행. 행당 인덱스 포함 1KB 안팎이면 1GB 이하라 **파티셔닝은 필요 없다**.
+
+**보존 기간 (열린 질문 6, 결정):** **5년(60개월) 백필 후 자르지 않고 계속 쌓는다.**
+- 통계 API의 `period_months` 최대값이 60이라 5년이면 API가 보여줄 수 있는 범위를 채운다.
+- 5년 백필은 약 6,800회 호출로, API마다 개발계정 일 10,000회 한도 안이라 하루면 끝난다. 이후 매일 최근 3개월 재수집은 약 340회다.
+- 용량이 작고(1GB 이하) 공개 데이터라 개인정보 보존 기한도 없으므로 지울 이유가 없다. 더 긴 추이가 필요하면 백필 기간만 늘린다.
 
 ## 5. 2·3차 테이블 윤곽
 
@@ -448,10 +464,14 @@ erDiagram
 
 ## 6. 열린 질문
 
-1. **법정동 코드 마스터** 출처(행정표준코드 파일 등)와 갱신 방법 — `regions` 적재와 거래의 법정동 매핑이 여기에 달려 있다.
-2. 통계 제외 기준의 기본값 — 지분거래·도로(토지), 갱신 계약, 직거래. 표본이 너무 줄어드는 토지는 표본 수를 같이 보여줄지.
+**결정됨**
+- ~~1. 법정동 코드 마스터 출처와 갱신 방법~~ → 행안부 법정동 코드 파일(부산·현존)을 시드 CSV로, 연 1회 갱신 (3.4)
+- ~~2. 통계 제외 기준의 기본값~~ → 해제·지분·도로·갱신 제외, 직거래는 옵션, 표본 수 항상 표시 (3.6)
+- ~~6. 보존 기간~~ → 5년 백필 후 무기한 보존 (4. 규모 추정 아래)
+
+**남은 질문** (DB 전환 #38을 하면서 정한다)
+
 3. 토지 **필지 마커** 폐기 여부 — 실거래 지번이 가려져 나오지 않는다.
 4. 오피스텔·연립다세대 단지 이름 정규화 규칙과, 갈라진 단지의 병합 방식.
 5. 공급 평형의 출처(건축물대장 API 확인 전까지 NULL).
-6. 보존 기간 — 5년으로 자를지 가능한 만큼 모을지.
 7. 일일 호출 한도 — 백필 일정이 달라진다(`API_RESEARCH.md` 5).

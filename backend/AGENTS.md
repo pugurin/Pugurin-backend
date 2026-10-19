@@ -118,9 +118,9 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 - [ ] 부산 여부 판별을 bbox 근사 → PostGIS/PNU 기준으로 교체
 - [ ] 부산시 도시계획 조례 기준 `zoning_rules` 시드 데이터
 - [ ] 신고 신뢰도 점수 모델
-- [ ] Alembic 초기 세팅
-- [x] Docker Compose(`api`만 — db·redis·worker는 실제 저장소를 붙일 때 추가), GitHub Actions CI(ruff·pytest·도커 기동 확인)
-- [ ] 이슈 #5 나머지: SQLAlchemy/GeoAlchemy2, `/internal/health/ready`, testcontainers
+- [x] Alembic 초기 세팅, 법정동 시드, `/internal/health/ready`, testcontainers (#38 1단계)
+- [x] 수집 캐시 → DB 적재(`python -m app.ingestion load`, `refresh` 뒤 자동), worker 컨테이너 (#38 2단계)
+- [x] Docker Compose(api, db, redis, migrate, worker는 `--profile worker`), GitHub Actions CI(ruff·pytest·compose 기동 확인)
 - [x] `.env.example`, mock 샘플 데이터(16개 구·군 집계 + 동 37곳·단지 190곳·거래 약 10만 건, 모두 가짜)
 - [x] 거래 `/transactions`(목록, 지도와 같은 필터·건수), `/transactions/{id}`(단건)
 - [x] 통계 `/stats/regions/{code}`, `/complexes/{id}/stats`(이슈 #10): 월별 중위값 추이, 단지는 평형별 분리
@@ -137,6 +137,7 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 # backend/.env에 PUGURIN_DATA_GO_KR_TRADE_KEY, PUGURIN_DATA_GO_KR_RENT_KEY, PUGURIN_KAKAO_REST_KEY 설정
 uv run python -m app.ingestion refresh --months 12  # 수집 + 지오코딩 (한도에 닿으면 멈추고, 다시 실행하면 이어서 받음)
 uv run python -m app.ingestion status               # 캐시로 만든 데이터셋 요약
+uv run python -m app.ingestion load                 # 캐시 → DB 적재 (PUGURIN_DATABASE_URL 필요, refresh도 끝나면 자동 적재)
 PUGURIN_DATA_MODE=real uv run uvicorn --factory app.main:create_app
 ```
 

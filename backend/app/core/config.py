@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     data_mode: Literal["sample", "real", "auto"] = "sample"
     data_dir: Path = Path(".cache")
     real_data_months: int = 12
+    worker_run_hour: int = 4  # worker가 매일 수집·적재를 시작하는 시각(KST). API 명세의 data_as_of 기준(04:00)과 맞춘다
     exclude_share_deals: bool = True  # 토지 지분거래는 가격이 왜곡되어 집계에서 뺀다
     exclude_road_land: bool = True  # 지목이 '도로'인 토지 거래도 뺀다
 

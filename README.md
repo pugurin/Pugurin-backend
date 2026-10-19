@@ -150,7 +150,8 @@ docker compose up --build
 ```
 
 - `db`(PostGIS), `redis`, `migrate`, `api` 네 개가 뜹니다. `migrate`가 DB 스키마와 부산 법정동 코드를 먼저 넣고 끝나면 `api`가 시작합니다.
-  - 지금 조회 API는 아직 DB가 아니라 `backend/.cache`(파일)를 읽습니다. DB로 옮기는 작업은 [#38](https://github.com/pugurin/Pugurin-backend/issues/38)에서 진행 중입니다.
+  - 지금 조회 API는 아직 DB가 아니라 `backend/.cache`(파일)를 읽습니다. 조회를 DB로 옮기는 작업은 [#38](https://github.com/pugurin/Pugurin-backend/issues/38)에서 진행 중입니다.
+  - 수집한 거래를 DB에 넣으려면 아래 "DB에 거래 넣기"를 보세요.
   - 호스트의 5432·6379 포트가 이미 쓰이고 있으면 `PUGURIN_DB_PORT=5433 PUGURIN_REDIS_PORT=6380 docker compose up --build`처럼 바꿔서 띄우세요.
 - `backend/.cache`가 있으면 **자동으로 실데이터**, 없으면 목데이터로 뜹니다.
 - `backend/.env`가 있으면 읽습니다. 없어도 실행됩니다.
@@ -243,7 +244,7 @@ uv run pytest          # 테스트
 uv run ruff check .    # 린트
 ```
 
-- `tests/test_db.py`는 testcontainers로 **실제 PostGIS·Redis 컨테이너**를 띄워 마이그레이션·시드·readiness를 검사합니다. Docker가 없으면 자동으로 건너뜁니다.
+- `tests/test_db.py`, `tests/test_db_ingest.py`는 testcontainers로 **실제 PostGIS·Redis 컨테이너**를 띄워 마이그레이션·시드·readiness·적재를 검사합니다. Docker가 없으면 자동으로 건너뜁니다.
 
 ### DB 마이그레이션
 
@@ -258,5 +259,25 @@ uv run python -m app.db seed-regions   # 법정동 CSV를 갱신한 뒤 다시 �
 ```
 
 법정동 코드는 공공데이터포털 「[국토교통부_전국 법정동](https://www.data.go.kr/data/15063424/fileData.do)」에서 부산·현존 코드만 잘라 `backend/app/db/seed/legal_dong_busan.csv`로 둡니다. 연 1회 새 파일로 갱신합니다.
+
+### DB에 거래 넣기
+
+`PUGURIN_DATABASE_URL`이 있으면 수집 명령이 끝날 때 DB에도 넣습니다. 이미 받아 둔 `.cache`만 넣을 때는 `load`를 씁니다(API를 부르지 않음).
+
+```bash
+cd backend
+export PUGURIN_DATABASE_URL=postgresql+asyncpg://pugurin:pugurin@localhost:5432/pugurin
+uv run python -m app.ingestion load      # .cache → DB. 이미 넣은 단위는 건너뜀 (--force면 전부 다시)
+uv run python -m app.ingestion refresh   # 수집 → 지오코딩 → DB 적재 (DB를 건너뛰려면 --no-db)
+uv run python -m app.db status           # 스키마 버전, 거래 건수, 마지막 적재 결과
+```
+
+- 처음 넣을 때는 12개월치(약 14만 건)에 2분쯤 걸립니다. 다시 실행하면 바뀐 단위만 넣습니다.
+- 같은 거래를 다시 넣어도 중복되지 않습니다. 다시 받은 달에서 사라진 거래는 지우지 않고 `deleted_at`으로 표시합니다.
+- 매일 자동으로 돌리려면 worker를 띄웁니다. `backend/.env`에 공공데이터포털 키 2개와 카카오 키가 있어야 하고, 시작할 때 한 번, 이후 매일 04시(KST)에 수집·적재합니다.
+  ```bash
+  docker compose --profile worker up -d worker
+  docker compose logs -f worker
+  ```
 
 개발 규칙은 [`backend/AGENTS.md`](./backend/AGENTS.md)를 따릅니다.

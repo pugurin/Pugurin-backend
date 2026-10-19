@@ -159,6 +159,8 @@ erDiagram
 4. 백필·한도 이월은 `source_fetch_log`에 없는 (종류, 시군구, 계약월)부터 이어서 한다.
 5. 조회는 항상 `deleted_at IS NULL`이고, 기본은 `NOT is_cancelled`다.
 
+구현은 `app/ingestion/load.py`다. 단위마다 한 트랜잭션으로 커밋하고, `source_fetch_log.fetched_at`보다 새로 받은 단위만 다시 적재한다. 다시 와도 값이 그대로인 행은 `updated_at`을 올리지 않아 `etl_runs.rows_updated`가 실제 변경 건수가 된다. 거래·단지 id는 파일 캐시 빌드와 같은 uuid5라 조회를 DB로 옮겨도 바뀌지 않는다.
+
 ### 3.3 단지 매칭
 - 아파트: `aptSeq`(100%) → `complexes.source_seq`.
 - 오피스텔·연립다세대: (시군구 → 법정동, 지번, **정규화한 건물명**) → `complexes`. 정규화는 공백·특수문자 제거 정도로 시작하고, 같은 지번에서 이름이 달라 갈라진 단지의 병합은 수동 보정 대상으로 둔다.
@@ -191,7 +193,7 @@ erDiagram
 | 직거래 | `trade_method='direct'` | **포함**, 요청 옵션(`exclude_direct`)으로 제외 |
 
 - **표본 수는 항상 함께 내린다.** 월 표본 3건 미만은 중위값을 `null`로 둔다. 거르고 나면 토지 표본이 크게 줄어들기 때문이다.
-- 지금의 파일 캐시 구현은 지분거래·도로를 데이터셋을 만들 때 뺀다. DB로 옮길 때(#38) 원천 그대로 저장하고 조회·집계 단계에서 빼도록 바꾼다.
+- DB 적재(`app/ingestion/load.py`)는 지분거래·도로·갱신 계약을 **원천 그대로 저장**하고, 월별 통계 뷰가 집계 단계에서 뺀다. 파일 캐시 구현은 아직 데이터셋을 만들 때 지분거래·도로를 빼며, 조회를 DB로 옮길 때(#38 3단계) 함께 정리한다.
 
 ## 4. 1차 DDL 초안
 
@@ -224,7 +226,8 @@ CREATE TABLE etl_runs (
     rows_cancelled int NOT NULL DEFAULT 0,
     rows_deleted  int NOT NULL DEFAULT 0,
     error         text,
-    data_as_of    timestamptz
+    data_as_of    timestamptz,
+    report        jsonb NOT NULL DEFAULT '{}'  -- 법정동을 못 찾은 이름, 실패한 단위 등 (마이그레이션 0003)
 );
 
 CREATE TABLE source_fetch_log (

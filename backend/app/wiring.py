@@ -21,6 +21,7 @@ from app.repositories.ports import (
     ParcelSource,
     ZoningRuleRepository,
 )
+from app.repositories.postgres.market import PostgresMarketRepository
 from app.services.analysis_service import AnalysisService
 from app.services.complex_service import ComplexService
 from app.services.glossary_service import GlossaryService
@@ -51,6 +52,15 @@ class Container:
     address_search: AddressSearch | None = None
     db_engine: AsyncEngine | None = None
     redis: Redis | None = None
+    market_repo: MarketRepository | None = None
+
+    async def startup(self) -> None:
+        """DB에서 조회하면 지역·단지 스냅샷을 미리 읽는다. DB가 아직 안 떠 있어도 서버는 뜨고 readiness가 알린다."""
+        if isinstance(self.market_repo, PostgresMarketRepository):
+            try:
+                await self.market_repo.refresh()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("DB 스냅샷을 읽지 못했습니다: %s: %s", type(e).__name__, e)
 
     async def aclose(self) -> None:
         close = getattr(self.address_search, "aclose", None)
@@ -73,12 +83,21 @@ def build_container(
 ) -> Container:
     as_of = latest_etl_time(clock())
     mode = resolve_data_mode(settings)
-    logger.info("데이터 모드: %s", mode)
+    db_engine = make_engine(settings.database_url) if settings.database_url else None
     if market_repo is None and mode == "real":
-        real = load_real_data(settings)
-        market_repo = InMemoryMarketRepository(real.as_of, real.dataset, real.regions)
+        if db_engine is not None:
+            market_repo = PostgresMarketRepository(
+                db_engine,
+                fallback_as_of=as_of,
+                exclude_share_deals=settings.exclude_share_deals,
+                exclude_road_land=settings.exclude_road_land,
+            )
+        else:
+            real = load_real_data(settings)
+            market_repo = InMemoryMarketRepository(real.as_of, real.dataset, real.regions)
         # 토지 정보 공급처가 정해지기 전에는 가짜 필지를 실제처럼 내려보내지 않고 '불러올 수 없음'으로 응답한다
         parcel_source = parcel_source or UnconfiguredParcelSource()
+    logger.info("데이터 모드: %s (%s)", mode, "DB" if isinstance(market_repo, PostgresMarketRepository) else "메모리")
     market_repo = market_repo or InMemoryMarketRepository(as_of)
     glossary_repo = glossary_repo or InMemoryGlossaryRepository()
     parcel_source = parcel_source or MockParcelSource(land_price_year=as_of.year)
@@ -86,13 +105,13 @@ def build_container(
     # 주소 검색은 카카오 REST 키가 있을 때만 켠다
     if address_search is None and settings.kakao_rest_key:
         address_search = KakaoGeocoder(settings.kakao_rest_key)
-    # DB·Redis는 아직 조회에 쓰지 않고 연결 상태만 확인한다(#38에서 저장소를 옮긴다)
-    db_engine = make_engine(settings.database_url) if settings.database_url else None
     redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
     parcel_service = ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock)
     return Container(
         settings=settings,
-        data_mode="real" if isinstance(market_repo, InMemoryMarketRepository) and mode == "real" else "sample",
+        data_mode="real"
+        if mode == "real" and isinstance(market_repo, (InMemoryMarketRepository, PostgresMarketRepository))
+        else "sample",
         map_service=MapService(market_repo, settings),
         complex_service=ComplexService(market_repo),
         parcel_service=parcel_service,
@@ -101,8 +120,11 @@ def build_container(
         stats_service=StatsService(market_repo),
         transaction_service=TransactionService(market_repo),
         analysis_service=AnalysisService(market_repo, parcel_service),
-        readiness_service=ReadinessService(db_engine, redis),
+        readiness_service=ReadinessService(
+            db_engine, redis, market_repo if isinstance(market_repo, PostgresMarketRepository) else None
+        ),
         address_search=address_search,
         db_engine=db_engine,
         redis=redis,
+        market_repo=market_repo,
     )

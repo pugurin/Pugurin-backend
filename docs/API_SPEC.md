@@ -16,6 +16,9 @@
 - 신고 사유 `not_owner` 추가, **이의제기 API** 추가
 - **용어 학습 API** 추가: 로딩 팁, 오늘의 용어, 퀴즈, 내 용어장, 학습 기록. 학습 알림 수신 설정 추가
 
+### v0.5 보충 (DB 전환 #38)
+- 전세·월세 **갱신 계약 기본 제외** 구현: 지도·거래 목록·단지 거래 이력·통계·분석에 `include_renewals`(기본 false) 추가, 거래 필드에 `is_renewal` 추가, `meta.method`에 `, 갱신 계약 제외` 표시
+
 ### v0.4 보충 (1차 mock 구현 중 확인)
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
 - `/map/markers` 필터 조합 검증 규칙 명시, 토지의 줌 14 이상 동작 명시
@@ -165,6 +168,7 @@
 | `price_min`, `price_max` / `deposit_min`, `deposit_max` / `rent_min`, `rent_max` | 원 | - | 거래유형별 가격 필터 |
 | `exclusive_area_pyeong_min`, `exclusive_area_pyeong_max` | 평 | - | **전용면적** 기준 (앱에서 "전용면적" 라벨 표시). 토지는 `land_area_pyeong_min/max` |
 | `exclude_direct` | bool | - | 직거래 제외 (기본 false) |
+| `include_renewals` | bool | - | 전세·월세 **갱신 계약 포함** (기본 false = 신규 계약만). 매매·토지에는 영향 없음 |
 
 **응답 — 줌에 따라 `level`이 달라진다**
 ```json
@@ -319,19 +323,22 @@
 
 **거래 1건 필드** (`/transactions`, `/complexes/{id}/transactions` 공통)
 
-`id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct, 전·월세는 원천이 구분을 주지 않아 null), is_cancelled, cancelled_at`
+`id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct, 전·월세는 원천이 구분을 주지 않아 null), is_cancelled, cancelled_at, is_renewal`
+
+- `is_renewal`: 전세·월세 **갱신 계약**이면 `true`(원천 `contractType='갱신'`). 매매는 항상 `false`
 
 - `price_per_pyeong`은 매매(`sale`)만 채우고 전·월세는 null
 - `/transactions`는 기본 해제거래 제외, `include_cancelled=true`일 때만 포함(해제 표시 필수)
 - 정렬 `sort`: `contract_date_desc`(기본) `|price_asc|price_desc`
 - `bbox`와 `region_code` 둘 다 없으면 `400 VALIDATION_ERROR`(`field: bbox`). 둘 다 주면 둘 다 만족하는 거래만 나온다
 - `region_code`는 시군구 5자리 또는 법정동 10자리이며, 시군구 코드는 그 아래 모든 법정동을 포함한다. 형식이 맞지 않으면 `400`(`field: region_code`)
-- **`/map/markers`와 같은 필터**를 쓴다: `property_type`(필수), `deal_type`, `period_months`(기본 12), `price_*`·`deposit_*`·`rent_*`, `exclusive_area_pyeong_*`·`land_area_pyeong_*`, `exclude_direct`. 같은 필터를 주면 **목록 `meta.total`이 지도 마커의 `transaction_count`와 같다**
+- **`/map/markers`와 같은 필터**를 쓴다: `property_type`(필수), `deal_type`, `period_months`(기본 12), `price_*`·`deposit_*`·`rent_*`, `exclusive_area_pyeong_*`·`land_area_pyeong_*`, `exclude_direct`, `include_renewals`. 같은 필터를 주면 **목록 `meta.total`이 지도 마커의 `transaction_count`와 같다**
 - 전·월세에서 `sort=price_*`는 보증금 기준이다. `page_size`는 최대 100
 - 목록 `meta`에는 `data_as_of`, `reporting_lag_notice`와 `page`, `page_size`, `total`, `total_pages`가 들어간다
-- `GET /transactions/{id}`는 해제된 거래도 조회한다(`is_cancelled: true`). 없으면 `404`, UUID 형식이 아니면 `400`(`field: transaction_id`)
+- `/complexes/{id}/transactions`도 갱신 계약을 기본으로 빼고 `include_renewals=true`면 넣는다
+- `GET /transactions/{id}`는 해제된 거래·갱신 계약도 조회한다(`is_cancelled: true`). 없으면 `404`, UUID 형식이 아니면 `400`(`field: transaction_id`)
 
-**`GET /complexes/{id}/stats`, `GET /stats/regions/{region_code}` 쿼리**: `property_type`(단일, 필수), `deal_type`, `period_months`(기본 36), `exclude_direct`
+**`GET /complexes/{id}/stats`, `GET /stats/regions/{region_code}` 쿼리**: `property_type`(단일, 필수), `deal_type`, `period_months`(기본 36), `exclude_direct`, `include_renewals`
 ```json
 {
   "data": {
@@ -348,8 +355,8 @@
 - **마지막 달은 신고 지연으로 거래가 덜 모여 값이 튈 수 있다**(`reporting_lag_notice`). 앱은 그래프에서 마지막 달을 흐리게 표시하는 것을 권한다
 - `/complexes/{id}/stats` 응답에는 `area_types`가 추가된다. 단지의 **평형(전용면적)별** `exclusive_area_m2`, `exclusive_area_pyeong`, `supply_area_pyeong`, `transaction_count`, 지표, `trend`이며 기간 안에 거래가 있는 평형만 전용면적 순으로 나온다. 같은 평형은 전용면적을 반올림한 정수(㎡)로 묶는다
 - `property_type`이 단지의 유형과 다르면 `400`(`field: property_type`), 토지는 `deal_type=sale`만 허용(`400`, `field: deal_type`), 모르는 단지·지역은 `404`, `region_code`는 5자리 또는 10자리 숫자가 아니면 `400`
-- `meta.method`: `중위값, 해제거래 제외` (`exclude_direct=true`면 `, 직거래 제외` 추가). 토지는 지분거래·지목 '도로'가 이미 제외되어 있다
-- **예정 (#38, `docs/ERD.md` 3.6):** 전세·월세는 **갱신 계약을 기본 제외**(신규 계약만)하고 `include_renewals=true`로 포함한다. 인상률 5% 상한 때문에 갱신 계약은 현재 시세를 반영하지 않는다. 지도 마커·거래 목록·통계·분석에 같은 기본값을 적용한다. 지금 구현은 갱신 계약을 포함한다
+- `meta.method`: `중위값, 해제거래 제외` (`exclude_direct=true`면 `, 직거래 제외`, 전세·월세에서 `include_renewals=false`(기본)면 `, 갱신 계약 제외` 추가). 토지는 지분거래·지목 '도로'가 이미 제외되어 있다
+- **갱신 계약 (`docs/ERD.md` 3.6):** 전세·월세는 **갱신 계약을 기본 제외**(신규 계약만)하고 `include_renewals=true`로 포함한다. 인상률 5% 상한 때문에 갱신 계약은 현재 시세를 반영하지 않는다. 지도 마커·거래 목록·통계·분석에 같은 기본값을 적용한다
 - **거래가 적은 단지 대체 규칙** (`/complexes/{id}/stats`만, v0.5 추가 — 미구현)
   - 기간 중 값이 있는(월 표본 3건 이상) 달이 절반 미만이면 **분기 단위**로 다시 계산한다 → `meta.granularity: "quarter"`, `trend[].month` 대신 `trend[].quarter: "2026-Q1"`. 분기에도 표본 3건 미만 규칙을 적용한다
   - 분기로도 절반 미만이면 단지 대신 **소속 법정동·같은 유형** 추이를 준다 → `meta.fallback: { "type": "region", "region_code": "2635010500", "name": "우동" }`. 앱은 "이 단지는 거래가 적어 동네 추이를 보여드려요"를 표시한다
@@ -458,7 +465,7 @@
 - `/analysis/parcels/{pnu}`는 공급처가 없으면 §5와 같이 `source_unavailable`. 그 경우 동 단위 토지 추이는 `/stats/regions/{region_code}?property_type=land`로 본다
 - **동 단위인 이유:** 토지 거래는 지번이 100% 가려져 법정동 중심점 좌표밖에 없어 반경 기준 비교가 불가능하다
 
-**`GET /analysis/complexes/{id}` 쿼리**: `deal_type`(기본 `sale`), `period_months`(1~60, 기본 36), `exclude_direct`(기본 false). 매물 유형은 단지의 유형을 따른다.
+**`GET /analysis/complexes/{id}` 쿼리**: `deal_type`(기본 `sale`), `period_months`(1~60, 기본 36), `exclude_direct`(기본 false), `include_renewals`(기본 false). 매물 유형은 단지의 유형을 따른다.
 
 **`GET /analysis/complexes/{id}` 응답**
 ```json

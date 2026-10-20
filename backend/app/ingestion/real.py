@@ -10,8 +10,10 @@ from app.repositories.memory.dataset import MarketDataset, RegionDirectory
 
 
 def resolve_data_mode(settings: Settings) -> Literal["sample", "real"]:
+    """auto: DB가 설정돼 있거나 수집 캐시(.cache)가 있으면 real. real은 DB가 있으면 DB, 없으면 .cache를 읽는다."""
     if settings.data_mode == "auto":
-        return "real" if RawCache(settings.data_dir).latest_fetch() is not None else "sample"
+        has_cache = RawCache(settings.data_dir).latest_fetch() is not None
+        return "real" if settings.database_url or has_cache else "sample"
     return settings.data_mode
 
 

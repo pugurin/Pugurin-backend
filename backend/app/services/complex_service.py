@@ -30,6 +30,7 @@ class ComplexService:
         sort: str,
         page: int,
         page_size: int,
+        include_renewals: bool = False,
     ) -> TransactionPage:
         await self.get(complex_id)
         return await self._repo.complex_transactions(
@@ -40,4 +41,5 @@ class ComplexService:
             sort=sort,
             offset=(page - 1) * page_size,
             limit=page_size,
+            include_renewals=include_renewals,
         )

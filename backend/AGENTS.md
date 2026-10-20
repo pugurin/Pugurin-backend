@@ -113,13 +113,13 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 - [ ] DB 스키마 초안 (transactions, complexes, parcels_cache, zoning_rules, users, agents, chat, notifications, reports)
 - [ ] 거래 유형별 복합 자연키 확정 (실제 응답 확인 후)
 - [ ] 줌 레벨별 집계 단위 임계치 확정 (현재 기본값 12 / 14, `PUGURIN_ZOOM_*` 설정)
-- [ ] PostGIS 저장소 구현 시 `repositories/memory/*` 대체 + testcontainers 공간 쿼리 테스트
 - [ ] 토지 정보 공급처가 정해지면 필지 어댑터 구현(`adapters/mock/parcel_source.py` 대체), 캐시를 Redis로 (VWorld는 쓰지 않기로 함)
 - [ ] 부산 여부 판별을 bbox 근사 → PostGIS/PNU 기준으로 교체
 - [ ] 부산시 도시계획 조례 기준 `zoning_rules` 시드 데이터
 - [ ] 신고 신뢰도 점수 모델
 - [x] Alembic 초기 세팅, 법정동 시드, `/internal/health/ready`, testcontainers (#38 1단계)
 - [x] 수집 캐시 → DB 적재(`python -m app.ingestion load`, `refresh` 뒤 자동), worker 컨테이너 (#38 2단계)
+- [x] DB 조회 저장소(`repositories/postgres/market.py`). `PUGURIN_DATABASE_URL`이 있으면 real·auto 모드가 DB를 읽는다 (#38 3단계)
 - [x] Docker Compose(api, db, redis, migrate, worker는 `--profile worker`), GitHub Actions CI(ruff·pytest·compose 기동 확인)
 - [x] `.env.example`, mock 샘플 데이터(16개 구·군 집계 + 동 37곳·단지 190곳·거래 약 10만 건, 모두 가짜)
 - [x] 거래 `/transactions`(목록, 지도와 같은 필터·건수), `/transactions/{id}`(단건)

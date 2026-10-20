@@ -44,6 +44,7 @@ class _Regions:
     by_name: dict[tuple[str, str], str]  # (시군구 코드, 법정동 이름) → 법정동 코드
     codes: set[str]
     centroid: dict[str, tuple[float, float]]  # 코드 → (lat, lng). 동 중심점이 없으면 시군구 중심점
+    names: dict[str, str]  # 코드 → 마스터 이름
 
     def code_for(self, t: RawTrade) -> str | None:
         # 아파트 매매는 응답의 법정동 코드를 먼저 쓴다(파일 캐시 빌드와 같은 규칙)
@@ -79,6 +80,7 @@ def _renewal_right(value: str | None) -> bool | None:
 
 # ── SQL ──────────────────────────────────────────────────────
 
+# 이름·위치는 처음 본 거래 기준이다(파일 캐시 빌드와 같음). 나중에 지오코딩이 되면 중심점만 정확한 위치로 바꾼다
 _UPSERT_COMPLEXES = text(
     """
     INSERT INTO complexes (id, property_type, name, name_key, source_seq, region_code, jibun, pnu, location,
@@ -91,12 +93,10 @@ _UPSERT_COMPLEXES = text(
                 CAST(:location_source AS text[]))
          AS u(id, property_type, name, name_key, source_seq, region_code, jibun, pnu, lat, lng, location_source)
     ON CONFLICT (id) DO UPDATE SET
-        name = excluded.name,
         pnu = excluded.pnu,
         location = excluded.location,
         location_source = excluded.location_source
-    WHERE (complexes.name, complexes.pnu, complexes.location_source, complexes.location)
-          IS DISTINCT FROM (excluded.name, excluded.pnu, excluded.location_source, excluded.location)
+    WHERE complexes.location_source = 'centroid' AND excluded.location_source = 'geocode'
     """
 )
 
@@ -164,8 +164,8 @@ _MUTABLE = (
 _STORED = [c for c, _ in _TX_COLUMNS if c not in ("lat", "lng")]
 _SELECT = {
     "location": "ST_SetSRID(ST_MakePoint(u.lng, u.lat), 4326)",
-    "exclusive_area_m2": "u.exclusive_area_m2::numeric(9, 3)",
-    "land_area_m2": "u.land_area_m2::numeric(12, 2)",
+    "exclusive_area_m2": "u.exclusive_area_m2::numeric(10, 4)",
+    "land_area_m2": "u.land_area_m2::numeric(14, 4)",
     "floor": "u.floor::smallint",
     "build_year": "u.build_year::smallint",
 }
@@ -189,6 +189,11 @@ _UPSERT_TRANSACTIONS = text(
     """
 )
 
+_STORED_COMPLEXES = text(
+    "SELECT id, ST_Y(location) AS lat, ST_X(location) AS lng, pnu, location_source FROM complexes "
+    "WHERE id = ANY(CAST(:ids AS uuid[]))"
+)
+
 _EXISTING = text("SELECT source_key, is_cancelled FROM transactions WHERE source_key = ANY(CAST(:keys AS text[]))")
 
 _MARK_DELETED = text(
@@ -210,11 +215,21 @@ _LOG_WINDOW = text(
 )
 
 _AREA_TYPES = (
+    # 나중에 지오코딩된 단지(중심점 → 정확한 위치)는 이전 단위의 거래 위치도 맞춘다
+    text(
+        """
+        UPDATE transactions t
+        SET location = c.location, pnu = c.pnu, updated_at = now(),
+            location_precision = CASE WHEN c.location_source = 'geocode' THEN 'parcel' ELSE 'dong' END
+        FROM complexes c
+        WHERE t.complex_id = c.id AND (t.location, t.pnu) IS DISTINCT FROM (c.location, c.pnu)
+        """
+    ),
     text(
         """
         INSERT INTO complex_area_types (complex_id, area_bucket, exclusive_area_m2)
-        SELECT complex_id, round(exclusive_area_m2)::smallint,
-               round(percentile_cont(0.5) WITHIN GROUP (ORDER BY exclusive_area_m2)::numeric, 3)
+        SELECT complex_id, floor(exclusive_area_m2 + 0.5)::smallint,
+               round(round(percentile_cont(0.5) WITHIN GROUP (ORDER BY exclusive_area_m2::float8)::numeric, 6), 2)
         FROM transactions
         WHERE complex_id IS NOT NULL AND deleted_at IS NULL AND exclusive_area_m2 IS NOT NULL
         GROUP BY 1, 2
@@ -227,7 +242,7 @@ _AREA_TYPES = (
         WHERE NOT EXISTS (
             SELECT 1 FROM transactions t
             WHERE t.complex_id = a.complex_id AND t.deleted_at IS NULL
-              AND round(t.exclusive_area_m2) = a.area_bucket
+              AND floor(t.exclusive_area_m2 + 0.5) = a.area_bucket
         )
         """
     ),
@@ -293,7 +308,7 @@ async def _regions(conn: AsyncConnection, geo: GeoIndex) -> _Regions:
     for code, level, parent, _ in found:
         if level == "dong" and code not in centroid and parent in centroid:
             centroid[code] = centroid[parent]
-    return _Regions(by_name, {r[0] for r in found}, centroid)
+    return _Regions(by_name, {r[0] for r in found}, centroid, {r[0]: r[3] for r in found})
 
 
 def _columns(rows: list[dict], names: Iterable[str]) -> dict[str, list]:
@@ -326,7 +341,8 @@ async def _load_window(
             if cid not in complexes:
                 hit = geo.address(t.sgg_cd, t.umd_nm, t.jibun) if t.jibun else None
                 exact = bool(hit and hit.precise)
-                address = f"부산 {SIGUNGU_BY_CODE[t.sgg_cd].name} {t.umd_nm} {t.jibun}".strip()
+                dong = regions.names.get(region_code, t.umd_nm)
+                address = f"부산 {SIGUNGU_BY_CODE[t.sgg_cd].name} {dong} {t.jibun}".strip()
                 complexes[cid] = {
                     "id": cid,
                     "property_type": t.property_type.value,
@@ -389,6 +405,17 @@ async def _load_window(
     if complexes:
         rows = list(complexes.values())
         await conn.execute(_UPSERT_COMPLEXES, _columns(rows, rows[0].keys()))
+        # 거래 위치는 단지에 저장된 위치를 따른다. 단지마다 처음 본 거래 기준이라 이번 단위에서 계산한 값과 다를 수 있다
+        stored = {r.id: r for r in (await conn.execute(_STORED_COMPLEXES, {"ids": list(complexes)})).all()}
+        for row in tx_rows:
+            c = stored.get(row["complex_id"]) if row["complex_id"] else None
+            if c is not None:
+                row |= {
+                    "lat": c.lat,
+                    "lng": c.lng,
+                    "pnu": c.pnu,
+                    "location_precision": "parcel" if c.location_source == "geocode" else "dong",
+                }
     if tx_rows:
         keys = [r["source_key"] for r in tx_rows]
         existing = dict((await conn.execute(_EXISTING, {"keys": keys})).all())

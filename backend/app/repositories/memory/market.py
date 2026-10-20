@@ -1,10 +1,11 @@
 import statistics
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import date, datetime
 from uuid import UUID
 
 from app.core.dates import months_ago
-from app.core.geo import BBox, pyeong_exact
+from app.core.geo import BBox, area_bucket, pyeong_exact
 from app.core.text import normalize
 from app.repositories.memory.dataset import MarketData, RegionDirectory, sample_regions
 from app.repositories.types import (
@@ -36,7 +37,7 @@ BBOX_PADDING = 0.003  # 약 300m
 MIN_BOX_HALF = 0.004
 
 
-def _match_score(query: str, name: str) -> int:
+def match_score(query: str, name: str) -> int:
     if query == name:
         return 100
     if name.startswith(query):
@@ -60,6 +61,78 @@ def _padded(box: list[float], center: tuple[float, float]) -> tuple[float, float
     if max_lat - min_lat < 2 * MIN_BOX_HALF:
         min_lat, max_lat = center[0] - MIN_BOX_HALF, center[0] + MIN_BOX_HALF
     return round(min_lng, 6), round(min_lat, 6), round(max_lng, 6), round(max_lat, 6)
+
+
+def region_boxes(
+    regions: RegionDirectory, complexes: Iterable[Complex]
+) -> dict[str, tuple[float, float, float, float]]:
+    """검색 결과의 지도 범위: 동은 소속 단지들을 감싸는 범위(+여백), 시군구는 소속 동 범위를 합친 것."""
+    spans: dict[str, list[float]] = {}
+    for c in complexes:
+        box = spans.setdefault(c.region_code, [c.lng, c.lat, c.lng, c.lat])
+        box[0], box[1], box[2], box[3] = (
+            min(box[0], c.lng),
+            min(box[1], c.lat),
+            max(box[2], c.lng),
+            max(box[3], c.lat),
+        )
+    boxes: dict[str, tuple[float, float, float, float]] = {}
+    for code, ref in regions.items():
+        if len(code) == 10:
+            boxes[code] = _padded(spans.get(code, [ref.lng, ref.lat, ref.lng, ref.lat]), (ref.lat, ref.lng))
+    for code, ref in regions.items():
+        if len(code) == 5:
+            children = [b for c, b in boxes.items() if c.startswith(code)]
+            if children:
+                boxes[code] = (
+                    min(b[0] for b in children),
+                    min(b[1] for b in children),
+                    max(b[2] for b in children),
+                    max(b[3] for b in children),
+                )
+            else:
+                boxes[code] = _padded([ref.lng, ref.lat, ref.lng, ref.lat], (ref.lat, ref.lng))
+    return boxes
+
+
+def search_complex_hits(
+    index: list[tuple[str, str, Complex]], popularity: dict[UUID, int], query: str, limit: int
+) -> list[ComplexSearchHit]:
+    """index: (정규화한 이름, 정규화한 주소, 단지). 이름 일치 > 접두 > 포함 > 주소 포함, 같으면 거래 많은 순."""
+    q = normalize(query)
+    hits = []
+    for name, address, complex_ in index:
+        score = match_score(q, name) or (40 if q in address else 0)
+        if score:
+            hits.append(ComplexSearchHit(complex_, score, popularity.get(complex_.id, 0)))
+    hits.sort(key=lambda h: (-h.score, -h.popularity, h.complex.name, str(h.complex.id)))
+    return hits[:limit]
+
+
+def search_region_hits(
+    regions: RegionDirectory, boxes: dict[str, tuple[float, float, float, float]], query: str, limit: int
+) -> list[RegionSearchHit]:
+    q = normalize(query)
+    hits = []
+    for code, ref in regions.items():
+        name = normalize(ref.name)
+        score = match_score(q, name)
+        full_name = ref.name
+        if len(code) == 10:
+            sigungu = regions.get(code[:5])
+            if sigungu:
+                full_name = f"{sigungu.name} {ref.name}"
+                prefix = normalize(sigungu.name)
+                if q.startswith(prefix) and len(q) > len(prefix):
+                    score = max(score, match_score(q[len(prefix) :], name))
+        if score:
+            hits.append(
+                RegionSearchHit(
+                    code, "dong" if len(code) == 10 else "sigungu", full_name, ref.lat, ref.lng, boxes[code], score
+                )
+            )
+    hits.sort(key=lambda h: (-h.score, h.level != "sigungu", h.name))
+    return hits[:limit]
 
 
 def _median_int(values: list[float]) -> int | None:
@@ -121,32 +194,7 @@ class InMemoryMarketRepository:
         return self._as_of
 
     def _build_region_boxes(self) -> dict[str, tuple[float, float, float, float]]:
-        spans: dict[str, list[float]] = {}
-        for c in self._market.complexes:
-            box = spans.setdefault(c.region_code, [c.lng, c.lat, c.lng, c.lat])
-            box[0], box[1], box[2], box[3] = (
-                min(box[0], c.lng),
-                min(box[1], c.lat),
-                max(box[2], c.lng),
-                max(box[3], c.lat),
-            )
-        boxes: dict[str, tuple[float, float, float, float]] = {}
-        for code, ref in self._regions.items():
-            if len(code) == 10:
-                boxes[code] = _padded(spans.get(code, [ref.lng, ref.lat, ref.lng, ref.lat]), (ref.lat, ref.lng))
-        for code, ref in self._regions.items():
-            if len(code) == 5:
-                children = [b for c, b in boxes.items() if c.startswith(code)]
-                if children:
-                    boxes[code] = (
-                        min(b[0] for b in children),
-                        min(b[1] for b in children),
-                        max(b[2] for b in children),
-                        max(b[3] for b in children),
-                    )
-                else:
-                    boxes[code] = _padded([ref.lng, ref.lat, ref.lng, ref.lat], (ref.lat, ref.lng))
-        return boxes
+        return region_boxes(self._regions, self._market.complexes)
 
     def _stats_window(self, period_months: int) -> list[date]:
         """데이터 기준월로 끝나는 period_months개월(달 단위)의 첫째 날 목록, 오래된 달이 먼저다."""
@@ -154,7 +202,9 @@ class InMemoryMarketRepository:
         return [months_ago(last, n) for n in range(period_months - 1, -1, -1)]
 
     @staticmethod
-    def _stats_filter(txs, deal_type: DealType, exclude_direct: bool, start: date) -> list[Transaction]:
+    def _stats_filter(
+        txs, deal_type: DealType, exclude_direct: bool, start: date, include_renewals: bool
+    ) -> list[Transaction]:
         return [
             t
             for t in txs
@@ -162,6 +212,7 @@ class InMemoryMarketRepository:
             and not t.is_cancelled
             and t.contract_date >= start
             and not (exclude_direct and t.trade_method == TradeMethod.direct)
+            and (include_renewals or not t.is_renewal)
         ]
 
     async def get_region(self, region_code: str) -> RegionRef | None:
@@ -174,68 +225,45 @@ class InMemoryMarketRepository:
         deal_type: DealType,
         period_months: int,
         exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None:
         if region_code not in self._regions:
             return None
         months = self._stats_window(period_months)
         candidates = (t for t in self._by_kind[(property_type, deal_type)] if t.region_code.startswith(region_code))
-        txs = self._stats_filter(candidates, deal_type, exclude_direct, months[0])
+        txs = self._stats_filter(candidates, deal_type, exclude_direct, months[0], include_renewals)
         return StatsResult(_series(deal_type, txs, months))
 
     async def complex_stats(
-        self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
+        self,
+        complex_id: UUID,
+        deal_type: DealType,
+        period_months: int,
+        exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None:
         found = self._complexes.get(complex_id)
         if found is None:
             return None
         months = self._stats_window(period_months)
-        txs = self._stats_filter(self._by_complex.get(complex_id, []), deal_type, exclude_direct, months[0])
+        txs = self._stats_filter(
+            self._by_complex.get(complex_id, []), deal_type, exclude_direct, months[0], include_renewals
+        )
         by_area = []
         for area in sorted(found.area_types, key=lambda a: a.exclusive_area_m2):
-            bucket = round(area.exclusive_area_m2)
-            inside = [t for t in txs if t.exclusive_area_m2 is not None and round(t.exclusive_area_m2) == bucket]
+            bucket = area_bucket(area.exclusive_area_m2)
+            inside = [t for t in txs if t.exclusive_area_m2 is not None and area_bucket(t.exclusive_area_m2) == bucket]
             if inside:
                 by_area.append(AreaStats(area, _series(deal_type, inside, months)))
         return StatsResult(_series(deal_type, txs, months), tuple(by_area))
 
     async def search_complexes(self, query: str, limit: int) -> list[ComplexSearchHit]:
-        q = normalize(query)
-        hits = []
-        for name, address, complex_ in self._search_index:
-            score = _match_score(q, name) or (40 if q in address else 0)
-            if score:
-                hits.append(ComplexSearchHit(complex_, score, self._popularity.get(complex_.id, 0)))
-        hits.sort(key=lambda h: (-h.score, -h.popularity, h.complex.name))
-        return hits[:limit]
+        return search_complex_hits(self._search_index, self._popularity, query, limit)
 
     async def search_regions(self, query: str, limit: int) -> list[RegionSearchHit]:
-        q = normalize(query)
-        hits = []
-        for code, ref in self._regions.items():
-            name = normalize(ref.name)
-            score = _match_score(q, name)
-            full_name = ref.name
-            if len(code) == 10:
-                sigungu = self._regions.get(code[:5])
-                if sigungu:
-                    full_name = f"{sigungu.name} {ref.name}"
-                    prefix = normalize(sigungu.name)
-                    if q.startswith(prefix) and len(q) > len(prefix):
-                        score = max(score, _match_score(q[len(prefix) :], name))
-            if score:
-                hits.append(
-                    RegionSearchHit(
-                        code,
-                        "dong" if len(code) == 10 else "sigungu",
-                        full_name,
-                        ref.lat,
-                        ref.lng,
-                        self._region_boxes[code],
-                        score,
-                    )
-                )
-        hits.sort(key=lambda h: (-h.score, h.level != "sigungu", h.name))
-        return hits[:limit]
+        return search_region_hits(self._regions, self._region_boxes, query, limit)
 
     def _matching(self, flt: TransactionFilter, include_cancelled: bool = False) -> list[Transaction]:
         cutoff = months_ago(self._as_of.date(), flt.period_months)
@@ -244,6 +272,8 @@ class InMemoryMarketRepository:
             if (tx.is_cancelled and not include_cancelled) or tx.contract_date < cutoff:
                 continue
             if flt.exclude_direct and tx.trade_method == TradeMethod.direct:
+                continue
+            if tx.is_renewal and not flt.include_renewals:
                 continue
             if not (
                 flt.price.accepts(tx.price) and flt.deposit.accepts(tx.deposit) and flt.rent.accepts(tx.monthly_rent)
@@ -288,7 +318,7 @@ class InMemoryMarketRepository:
             ComplexMarkerRow(self._complexes[cid], len(txs), max(txs, key=lambda t: (t.contract_date, str(t.id))))
             for cid, txs in groups.items()
         ]
-        return sorted(rows, key=lambda r: (-r.transaction_count, r.complex.name))
+        return sorted(rows, key=lambda r: (-r.transaction_count, r.complex.name, str(r.complex.id)))
 
     async def parcel_markers(self, bbox: BBox, flt: TransactionFilter) -> list[ParcelMarkerRow]:
         latest: dict[str, Transaction] = {}
@@ -348,6 +378,7 @@ class InMemoryMarketRepository:
         sort: str,
         offset: int,
         limit: int,
+        include_renewals: bool = False,
     ) -> TransactionPage:
         items = [
             tx
@@ -355,6 +386,7 @@ class InMemoryMarketRepository:
             if (deal_type is None or tx.deal_type == deal_type)
             and (include_cancelled or not tx.is_cancelled)
             and not (exclude_direct and tx.trade_method == TradeMethod.direct)
+            and (include_renewals or not tx.is_renewal)
         ]
         self._sort(items, sort)
         return TransactionPage(items[offset : offset + limit], len(items))

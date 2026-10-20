@@ -53,12 +53,20 @@ class MarketRepository(Protocol):
         deal_type: DealType,
         period_months: int,
         exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None:
         """시군구(5자리)·법정동(10자리) 통계. 모르는 지역이면 None."""
         ...
 
     async def complex_stats(
-        self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
+        self,
+        complex_id: UUID,
+        deal_type: DealType,
+        period_months: int,
+        exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None: ...
 
     async def list_transactions(
@@ -89,6 +97,7 @@ class MarketRepository(Protocol):
         sort: str,
         offset: int,
         limit: int,
+        include_renewals: bool = False,
     ) -> TransactionPage: ...
 
 

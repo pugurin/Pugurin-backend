@@ -264,3 +264,21 @@ async def test_unknown_dong_names_are_skipped_and_reported(engine, cache):
     assert report.unmapped_rows == 1
     noted = await scalar(engine, "SELECT report -> 'unmapped_regions' FROM etl_runs")
     assert noted == [["26350", "없는동"]]
+
+
+async def test_complexes_geocoded_later_move_with_all_their_trades(engine, cache, tmp_path):
+    from app.ingestion.build import GeoIndex
+    from app.ingestion.geocode import GeocodeCache
+
+    raw, geo, _ = cache
+    await load_into_db(engine, raw, GeoIndex(GeocodeCache(tmp_path / "none.json")), out=lambda _: None)
+    assert await scalar(engine, "SELECT count(*) FROM complexes WHERE location_source = 'geocode'") == 0
+
+    await load_into_db(engine, raw, geo, force=True, out=lambda _: None)
+    assert await scalar(engine, "SELECT count(*) FROM complexes WHERE location_source = 'centroid'") < 5
+    apart = await scalar(
+        engine,
+        """SELECT count(*) FROM transactions t JOIN complexes c ON c.id = t.complex_id
+           WHERE NOT ST_Equals(t.location, c.location) OR t.pnu IS DISTINCT FROM c.pnu""",
+    )
+    assert apart == 0

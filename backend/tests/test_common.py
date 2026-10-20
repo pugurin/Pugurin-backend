@@ -12,7 +12,7 @@ from tests.conftest import API, FIXED_NOW
 
 
 def test_health_needs_no_device_id():
-    from app.main import create_app
+    from tests.fakes.app import create_app
 
     with TestClient(create_app(clock=lambda: FIXED_NOW)) as c:
         r = c.get(f"{API}/health")
@@ -21,7 +21,7 @@ def test_health_needs_no_device_id():
 
 
 def test_missing_device_id_is_400():
-    from app.main import create_app
+    from tests.fakes.app import create_app
 
     with TestClient(create_app(clock=lambda: FIXED_NOW)) as c:
         r = c.get(f"{API}/glossary")
@@ -75,7 +75,7 @@ def test_unhandled_error_is_500_envelope_without_details():
         async def get_complex(self, _):
             raise RuntimeError("secret internals")
 
-    from app.main import create_app
+    from tests.fakes.app import create_app
 
     app = create_app(clock=lambda: FIXED_NOW, market_repo=Boom())
     with TestClient(app, headers={"X-Device-Id": str(uuid4())}, raise_server_exceptions=False) as c:

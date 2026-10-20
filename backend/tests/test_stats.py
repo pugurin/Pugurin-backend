@@ -5,7 +5,6 @@ from uuid import NAMESPACE_URL, uuid5
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
 from app.repositories.memory.dataset import MarketDataset
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.types import (
@@ -19,6 +18,7 @@ from app.repositories.types import (
     Transaction,
 )
 from tests.conftest import API, FIXED_NOW
+from tests.fakes.app import create_app
 
 HEADERS = {"X-Device-Id": "2f8f1d52-7b0e-4c55-9c0e-3f6f9d1c2a11"}
 BIG, SMALL = 84.97, 59.97

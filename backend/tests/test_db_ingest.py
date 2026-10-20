@@ -6,7 +6,6 @@ from uuid import NAMESPACE_URL, uuid5
 import pytest
 from sqlalchemy import text
 
-from app.adapters.molit.mock import FixtureTradeSource
 from app.adapters.molit.types import SourceKind
 from app.db import migrate
 from app.db.engine import make_engine
@@ -15,6 +14,7 @@ from app.ingestion.collect import collect
 from app.ingestion.load import load_into_db
 from app.ingestion.rawcache import RawCache
 from tests.conftest import FIXED_NOW, create_database
+from tests.fakes.molit import FixtureTradeSource
 from tests.test_ingestion import DISTRICTS, geo_for
 
 pytestmark = pytest.mark.anyio

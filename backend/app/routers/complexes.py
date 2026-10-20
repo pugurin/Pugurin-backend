@@ -2,14 +2,14 @@ import math
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.repositories.types import DealType
-from app.routers.deps import ContainerDep
+from app.routers.deps import ContainerDep, require_market_data
 from app.schemas.common import PageMeta
 from app.schemas.complex import ComplexOut, ComplexResponse, TransactionOut, TransactionsResponse
 
-router = APIRouter(tags=["complexes"])
+router = APIRouter(tags=["complexes"], dependencies=[Depends(require_market_data)])
 
 
 @router.get("/complexes/{complex_id}", response_model=ComplexResponse, summary="단지·건물 정보")

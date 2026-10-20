@@ -6,7 +6,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.adapters.kakao import GeoResult, make_pnu
-from app.adapters.molit.mock import FixtureTradeSource
 from app.adapters.molit.types import QuotaExceeded, RawTrade, SourceAuthError, SourceKind
 from app.core.busan import SIGUNGU
 from app.core.config import Settings
@@ -14,13 +13,14 @@ from app.ingestion.build import BuildOptions, GeoIndex, build_dataset, needed_lo
 from app.ingestion.collect import collect, recent_months
 from app.ingestion.geocode import GeocodeCache, geocode_missing
 from app.ingestion.rawcache import RawCache
-from app.ingestion.real import RealDataMissing, load_real_data
+from app.ingestion.real import load_real_data
 from app.ingestion.refresh import refresh
 from app.main import create_app
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.ports import SourceUnavailable
 from app.repositories.types import DealType, LocationPrecision, PropertyType
 from tests.conftest import API, FIXED_NOW
+from tests.fakes.molit import FixtureTradeSource
 
 pytestmark = pytest.mark.anyio
 
@@ -314,7 +314,7 @@ async def prepare_cache(tmp_path):
 
 async def test_real_mode_loads_from_the_cache_and_hides_fake_parcels(tmp_path):
     await prepare_cache(tmp_path)
-    settings = Settings(data_mode="real", data_dir=tmp_path)
+    settings = Settings(data_dir=tmp_path)
     data = load_real_data(settings)
     assert data.report.rows_out > 100 and data.as_of == FIXED_NOW
 
@@ -330,16 +330,27 @@ async def test_real_mode_loads_from_the_cache_and_hides_fake_parcels(tmp_path):
         assert "no-store" in parcel.headers["cache-control"]
 
 
-def test_real_mode_without_a_cache_explains_what_to_run(tmp_path):
-    with pytest.raises(RealDataMissing, match="refresh"):
-        create_app(settings=Settings(data_mode="real", data_dir=tmp_path), clock=lambda: FIXED_NOW)
-
-
-def test_sample_mode_is_the_default_and_ignores_any_cache(tmp_path):
-    assert Settings().data_mode == "sample"
-    app = create_app(settings=Settings(data_dir=tmp_path), clock=lambda: FIXED_NOW)
-    with TestClient(app, headers=HEADERS) as client:
+def test_without_any_real_data_the_api_says_so_instead_of_faking_it(tmp_path):
+    with TestClient(
+        create_app(settings=Settings(data_dir=tmp_path), clock=lambda: FIXED_NOW), headers=HEADERS
+    ) as client:
+        markers = client.get(
+            f"{API}/map/markers", params={"bbox": "128.75,34.85,129.35,35.40", "zoom": 11, "property_type": "apartment"}
+        )
+        assert markers.status_code == 503
+        assert markers.json()["error"]["code"] == "DATA_NOT_READY"
+        assert markers.headers["x-data-mode"] == "none"
+        for path in (
+            "/transactions?property_type=apartment&region_code=26350",
+            "/stats/regions/26350?property_type=land",
+        ):
+            assert client.get(f"{API}{path}").json()["error"]["code"] == "DATA_NOT_READY"
+        assert client.get(f"{API}/search", params={"q": "해운대"}).status_code == 503
+        # 실거래와 상관없는 기능은 그대로 동작한다. 필지는 가짜로 채우지 않고 '불러올 수 없음'이다
         assert client.get(f"{API}/glossary").status_code == 200
+        parcel = client.get(f"{API}/parcels/lookup", params={"lat": 35.164, "lng": 129.161}).json()
+        assert parcel["data"] is None and parcel["meta"]["unavailable_reason"] == "source_unavailable"
+        assert client.get(f"{API}/health").status_code == 200
 
 
 async def test_refresh_collects_then_geocodes_only_what_is_missing(tmp_path):
@@ -364,32 +375,16 @@ async def test_refresh_collects_then_geocodes_only_what_is_missing(tmp_path):
     assert second.geocoded == 0 and geocoder.calls == calls
 
 
-async def test_auto_mode_follows_whether_a_cache_exists(tmp_path):
-    from app.ingestion.real import resolve_data_mode
-
-    settings = Settings(data_mode="auto", data_dir=tmp_path)
-    assert resolve_data_mode(settings) == "sample"
-    with TestClient(create_app(settings=settings, clock=lambda: FIXED_NOW), headers=HEADERS) as client:
-        assert client.get(f"{API}/parcels/lookup", params={"lat": 35.164, "lng": 129.161}).status_code == 200
-
+async def test_a_collected_cache_is_served_without_any_mode_setting(tmp_path):
     await prepare_cache(tmp_path)
-    assert resolve_data_mode(settings) == "real"
-    with TestClient(create_app(settings=settings, clock=lambda: FIXED_NOW), headers=HEADERS) as client:
-        body = client.get(f"{API}/parcels/lookup", params={"lat": 35.164, "lng": 129.161}).json()
-        assert body["meta"]["unavailable_reason"] == "source_unavailable"
-    assert resolve_data_mode(Settings(data_mode="sample", data_dir=tmp_path)) == "sample"
-
-
-async def test_every_response_says_which_data_mode_is_served(tmp_path):
-    with TestClient(create_app(settings=Settings(), clock=lambda: FIXED_NOW), headers=HEADERS) as client:
-        assert client.get(f"{API}/health").headers["x-data-mode"] == "sample"
-        assert client.get(f"{API}/glossary").headers["x-data-mode"] == "sample"
-        assert client.get(f"{API}/nope").headers["x-data-mode"] == "sample"
-
-    await prepare_cache(tmp_path)
-    app = create_app(settings=Settings(data_mode="real", data_dir=tmp_path), clock=lambda: FIXED_NOW)
+    app = create_app(settings=Settings(data_dir=tmp_path), clock=lambda: FIXED_NOW)
     with TestClient(app, headers=HEADERS) as client:
         assert client.get(f"{API}/health").headers["x-data-mode"] == "real"
+        markers = client.get(
+            f"{API}/map/markers",
+            params={"bbox": "128.75,34.85,129.35,35.40", "zoom": 11, "property_type": "apartment", "period_months": 24},
+        )
+        assert markers.status_code == 200 and markers.json()["data"]["markers"]
         first = client.get(f"{API}/glossary")
         again = client.get(f"{API}/glossary", headers={"If-None-Match": first.headers["etag"]})
         assert again.status_code == 304 and again.headers["x-data-mode"] == "real"

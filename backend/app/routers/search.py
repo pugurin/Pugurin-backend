@@ -1,13 +1,13 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.core.errors import validation_error
 from app.repositories.types import AddressHit, ComplexSearchHit
-from app.routers.deps import ContainerDep
+from app.routers.deps import ContainerDep, require_market_data
 from app.schemas.search import AddressResult, ComplexResult, RegionResult, SearchResponse
 
-router = APIRouter(tags=["search"])
+router = APIRouter(tags=["search"], dependencies=[Depends(require_market_data)])
 
 
 @router.get("/search", response_model=SearchResponse, summary="단지·법정동·주소 통합 검색")

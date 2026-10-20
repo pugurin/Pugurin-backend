@@ -4,8 +4,10 @@ from app.core.dates import latest_etl_time
 from app.core.geo import BBox
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.types import DealType, Level, PropertyType, TradeMethod, TransactionFilter
-from app.sample_data.market import build_sample_market
 from tests.conftest import FIXED_NOW
+from tests.fakes.app import sample_repo
+from tests.fakes.market import build_sample_market
+from tests.fakes.regions import sample_regions
 
 pytestmark = pytest.mark.anyio
 
@@ -23,7 +25,7 @@ def flt(**kw):
 
 async def test_cancelled_transactions_are_never_aggregated():
     market = build_sample_market(AS_OF.date())
-    repo = InMemoryMarketRepository(AS_OF, market)
+    repo = InMemoryMarketRepository(AS_OF, market, sample_regions())
     from app.core.dates import months_ago
 
     cutoff = months_ago(AS_OF.date(), 60)
@@ -41,14 +43,14 @@ async def test_cancelled_transactions_are_never_aggregated():
 
 
 async def test_sigungu_and_dong_levels_cover_the_same_transactions():
-    repo = InMemoryMarketRepository(AS_OF)
+    repo = sample_repo(AS_OF)
     by_gu = await repo.aggregate_regions(Level.sigungu, BUSAN, flt())
     by_dong = await repo.aggregate_regions(Level.dong, BUSAN, flt())
     assert sum(a.transaction_count for a in by_gu) == sum(a.transaction_count for a in by_dong)
 
 
 async def test_median_resists_outliers():
-    repo = InMemoryMarketRepository(AS_OF)
+    repo = sample_repo(AS_OF)
     [haeundae] = [a for a in await repo.aggregate_regions(Level.sigungu, BUSAN, flt()) if a.region.name == "해운대구"]
     assert 20_000_000 < haeundae.median_price_per_pyeong < 40_000_000
 
@@ -56,7 +58,7 @@ async def test_median_resists_outliers():
 async def test_direct_trades_are_dropped_on_request():
     market = build_sample_market(AS_OF.date())
     assert any(t.trade_method == TradeMethod.direct for t in market.transactions)
-    repo = InMemoryMarketRepository(AS_OF, market)
+    repo = InMemoryMarketRepository(AS_OF, market, sample_regions())
     rows = await repo.complex_markers(BUSAN, flt(exclude_direct=True))
     assert rows and all(r.latest.trade_method == TradeMethod.broker for r in rows)
 
@@ -69,9 +71,9 @@ async def test_sample_data_is_deterministic():
 
 
 async def test_parcel_marker_pnus_resolve_to_real_parcels():
-    from app.adapters.mock.parcel_source import MockParcelSource
+    from tests.fakes.parcel_source import MockParcelSource
 
-    repo = InMemoryMarketRepository(AS_OF)
+    repo = sample_repo(AS_OF)
     source = MockParcelSource(2026)
     rows = await repo.parcel_markers(BUSAN, flt(property_type=PropertyType.land, period_months=60))
     assert rows
@@ -80,7 +82,7 @@ async def test_parcel_marker_pnus_resolve_to_real_parcels():
 
 
 async def test_complex_pnus_resolve_to_real_parcels():
-    from app.adapters.mock.parcel_source import MockParcelSource
+    from tests.fakes.parcel_source import MockParcelSource
 
     market = build_sample_market(AS_OF.date())
     source = MockParcelSource(2026)

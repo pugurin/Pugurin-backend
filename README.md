@@ -8,33 +8,28 @@
 
 ---
 
-## 목데이터가 뜨는 이유
+## 데이터는 실데이터만 씁니다
 
-서버는 **실데이터 캐시 폴더(`backend/.cache`)가 있을 때만 실데이터로 응답**합니다.
+서버는 **가짜 데이터를 내보내지 않습니다.** 실데이터는 아래 순서로 찾습니다.
 
-이 폴더는 공공데이터포털에서 받은 실거래가와 카카오 지오코딩 결과(약 75MB)를 담고 있는데, **용량과 API 키 문제로 Git에 올리지 않습니다**(`.gitignore`). 그래서 레포를 클론해서 바로 실행하면 폴더가 없고, 서버가 **자동으로 가짜 샘플 데이터(목데이터)로 뜹니다.**
-
-| 실행 방법 | 기본 데이터 모드 | `.cache`가 없을 때 |
+| 우선순위 | 실데이터 위치 | 언제 |
 |---|---|---|
-| `docker compose up` | `auto` | 목데이터 |
-| `uv run uvicorn ...` (직접 실행) | `sample` | 목데이터 (`.cache`가 있어도 목데이터) |
+| 1 | DB (`PUGURIN_DATABASE_URL`) | Docker로 띄우면 기본 |
+| 2 | 수집 캐시 폴더 `backend/.cache` | DB 없이 직접 실행할 때 |
+| 3 | 둘 다 없음 | 지도·거래·통계·검색·분석이 **`503 DATA_NOT_READY`**("실거래 데이터가 아직 없어요")로 응답 |
 
-### 지금 어떤 데이터로 떠 있는지 확인
+`backend/.cache`는 공공데이터포털에서 받은 실거래가와 카카오 지오코딩 결과(약 75MB)라서 **Git에 올리지 않습니다**(`.gitignore`). 레포를 클론해서 바로 실행하면 데이터가 없는 상태로 뜹니다.
 
-**방법 1. 응답 헤더 `X-Data-Mode`** (모든 응답에 붙습니다)
+### 지금 데이터가 있는지 확인
+
+모든 응답에 붙는 헤더 `X-Data-Mode`를 봅니다.
 
 ```bash
 curl -sI http://localhost:8000/api/v1/health | grep -i x-data-mode
 ```
 
-- `x-data-mode: real` → 실데이터
-- `x-data-mode: sample` → 목데이터
-
-**방법 2. 서버 시작 로그**
-
-```
-INFO:     데이터 모드: real
-```
+- `x-data-mode: real` → 실데이터로 응답 중
+- `x-data-mode: none` → 데이터 없음. 아래 방법으로 채우세요
 
 ---
 
@@ -85,13 +80,12 @@ cd backend
 cp .env.example .env
 ```
 
-`backend/.env`를 열어 키 3개를 채우고, 데이터 모드를 `real`로 바꿉니다.
+`backend/.env`를 열어 키 3개를 채웁니다.
 
 ```
 PUGURIN_DATA_GO_KR_TRADE_KEY=발급받은키
 PUGURIN_DATA_GO_KR_RENT_KEY=발급받은키
 PUGURIN_KAKAO_REST_KEY=발급받은키
-PUGURIN_DATA_MODE=real
 ```
 
 > `.env`는 Git에 올라가지 않습니다. 키를 채팅방이나 커밋에 올리지 마세요.
@@ -151,7 +145,7 @@ docker compose up --build
 
 - `db`(PostGIS), `redis`, `migrate`, `api` 네 개가 뜹니다. `migrate`가 DB 스키마와 부산 법정동 코드를 먼저 넣고 끝나면 `api`가 시작합니다.
   - 호스트의 5432·6379 포트가 이미 쓰이고 있으면 `PUGURIN_DB_PORT=5433 PUGURIN_REDIS_PORT=6380 docker compose up --build`처럼 바꿔서 띄우세요.
-- **`api`는 DB에서 조회합니다.** 처음 띄우면 DB가 비어 있어서 지도에 아무것도 안 나옵니다. 둘 중 하나로 채우세요.
+- **`api`는 DB에서 조회합니다.** 처음 띄우면 DB가 비어 있어서 지도·거래 API가 `503 DATA_NOT_READY`로 답합니다. 둘 중 하나로 채우세요.
   - 받아 둔 `backend/.cache`가 있으면 DB에 넣기 (API 호출 없음, 2분쯤):
     ```bash
     docker compose --profile worker run --rm worker python -m app.ingestion load
@@ -178,13 +172,7 @@ uv sync
 uv run uvicorn --factory app.main:create_app --reload --host 0.0.0.0 --port 8000
 ```
 
-⚠️ **직접 실행은 기본값이 목데이터(`sample`)입니다.** 실데이터를 쓰려면 `backend/.env`에 아래 줄이 있어야 합니다.
-
-```
-PUGURIN_DATA_MODE=real
-```
-
-또는 `auto`로 두면 `.cache`가 있을 때만 실데이터를 씁니다. 명령은 반드시 `backend/` 폴더 안에서 실행하세요. 다른 폴더에서 실행하면 `.env`와 `.cache`를 찾지 못합니다.
+`backend/.cache`가 있으면 그 실데이터로, 없으면 "데이터 없음"으로 뜹니다. 명령은 반드시 `backend/` 폴더 안에서 실행하세요. 다른 폴더에서 실행하면 `.env`와 `.cache`를 찾지 못합니다.
 
 ---
 
@@ -211,13 +199,13 @@ curl -H "X-Device-Id: 3f2b8c1e-0000-4000-8000-000000000001" \
 
 > Android는 기본적으로 `http://` 요청을 막습니다. 개발 중에는 `usesCleartextTraffic` 설정이 필요할 수 있습니다.
 
-### 3. 실데이터 모드에서도 실데이터가 아닌 것
+### 3. 아직 제공하지 않는 것
 
 | 기능 | 상태 | 이유 |
 |---|---|---|
-| 토지 정보 `/parcels` | 항상 `data: null`, `unavailable_reason: "source_unavailable"` | 토지이용계획·토지특성 공급처가 아직 정해지지 않았습니다 (VWorld 미사용). 목데이터 모드에서는 가짜 필지가 나옵니다 |
+| 토지 정보 `/parcels` | 항상 `data: null`, `unavailable_reason: "source_unavailable"` | 토지이용계획·토지특성 공급처가 아직 정해지지 않았습니다 (VWorld 미사용) |
 | 주소 검색 (`/search`에 번지가 있는 검색어) | 카카오 REST 키가 있을 때만 결과가 나옵니다 | 키가 없으면 단지·동네 검색만 됩니다 |
-| 용어 해설 `/glossary`, 건폐율·용적률 한도 | 직접 작성한 샘플 데이터 | 원래 서버가 관리하는 데이터입니다 |
+| 건폐율·용적률 한도 | 내지 않습니다 | 부산시 도시계획 조례 표를 확인하기 전이라 추정값을 내보내지 않습니다 |
 | 토지 실거래가 위치 | 동네(법정동) 단위로만 나옵니다 | 원천 데이터에서 지번이 가려져 있습니다 |
 
 ---
@@ -226,11 +214,9 @@ curl -H "X-Device-Id: 3f2b8c1e-0000-4000-8000-000000000001" \
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| `X-Data-Mode: sample` | `backend/.cache`가 없음 | 위 [A](#a-백엔드-담당에게-cache-폴더-받기-추천) 또는 [B](#b-직접-수집하기) |
-| `.cache`를 넣었는데도 `sample` (직접 실행) | 데이터 모드 기본값이 `sample` | `backend/.env`에 `PUGURIN_DATA_MODE=real` |
-| `.cache`를 넣었는데도 `sample` (Docker) | 컨테이너가 예전에 시작됨 | `docker compose restart api` |
+| `503 DATA_NOT_READY`, `X-Data-Mode: none` (직접 실행) | `backend/.cache`가 없음 | 위 [A](#a-백엔드-담당에게-cache-폴더-받기-추천) 또는 [B](#b-직접-수집하기) 후 서버 재시작 |
+| `503 DATA_NOT_READY` (Docker) | DB가 비어 있음 | 아래 "DB에 거래 넣기"의 `load` 실행. 서버 재시작은 필요 없음 |
 | `.cache` 위치가 맞는지 모르겠음 | 폴더가 한 단계 더 들어가 있음 (`backend/.cache/.cache/...`) | `backend/.cache/molit`이 바로 보여야 합니다 |
-| 서버 시작 시 `RealDataMissing` 오류 | `PUGURIN_DATA_MODE=real`인데 `.cache`가 없음 | `.cache`를 넣거나 `auto`로 바꾸세요 |
 | 모든 요청이 `400`, `field: X-Device-Id` | 헤더 없음 또는 UUID가 아님 | UUID 형식 `X-Device-Id` 헤더 추가 |
 | 갑자기 `429 RATE_LIMITED` | 같은 기기에서 분당 300회 초과 (또는 같은 IP에서 3,000회) | `Retry-After` 초만큼 기다리면 풀립니다. 개발 중이면 `backend/.env`에 `PUGURIN_RATE_LIMIT_ENABLED=false` |
 | `refresh`가 키가 필요하다며 종료 | `.env`에 키가 비어 있음 | 매매·전월세 키 둘 다, 카카오 키까지 입력 |

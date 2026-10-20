@@ -1,7 +1,7 @@
 from uuid import UUID
 
+from app.content.glossary import GLOSSARY_TERMS
 from app.repositories.types import GlossaryCategory, GlossaryTerm
-from app.sample_data.glossary import GLOSSARY_TERMS
 
 
 class InMemoryGlossaryRepository:

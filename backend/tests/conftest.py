@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.core.dates import KST
-from app.main import create_app
+from tests.fakes.app import create_app
 
 # 개발자 로컬 .env(실제 API 키)가 테스트에 섞이지 않게 한다
 Settings.model_config["env_file"] = None

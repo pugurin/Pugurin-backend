@@ -4,7 +4,6 @@ import itertools
 
 import pytest
 
-from app.adapters.molit.mock import FixtureTradeSource
 from app.adapters.molit.types import SourceKind
 from app.core.busan import SIGUNGU
 from app.core.geo import BBox
@@ -20,6 +19,7 @@ from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.postgres.market import PostgresMarketRepository
 from app.repositories.types import DealType, Level, PropertyType, Range, TransactionFilter
 from tests.conftest import FIXED_NOW, create_database
+from tests.fakes.molit import FixtureTradeSource
 from tests.test_ingestion import DISTRICTS, FakeGeocoder
 
 pytestmark = pytest.mark.anyio
@@ -192,13 +192,13 @@ async def test_search_matches(repos):
 # ── 서버에 붙였을 때 ─────────────────────────────────────────
 
 
-def _app(url: str, mode: str = "auto"):
+def _app(url: str):
     from fastapi.testclient import TestClient
 
     from app.core.config import Settings
     from app.main import create_app
 
-    settings = Settings(data_mode=mode, database_url=url)
+    settings = Settings(database_url=url)
     return TestClient(
         create_app(settings=settings, clock=lambda: FIXED_NOW),
         headers={"X-Device-Id": "2f8f1d52-7b0e-4c55-9c0e-3f6f9d1c2a11"},
@@ -221,14 +221,15 @@ async def test_the_api_serves_the_database_when_it_is_configured(repos, market_d
         assert ready["status"] == "ready" and ready["checks"]["data"]["status"] == "ok"
 
 
-def test_an_empty_database_is_served_but_flagged(postgis):
+def test_an_empty_database_says_there_is_no_data_yet(postgis):
     url = create_database(postgis, "empty")
     migrate.upgrade(url)
-    with _app(url, mode="real") as c:
+    with _app(url) as c:
         r = c.get(
             "/api/v1/map/markers", params={"bbox": "128.75,34.85,129.35,35.40", "zoom": 11, "property_type": "land"}
         )
-        assert r.status_code == 200 and r.json()["data"]["markers"] == []
+        assert r.status_code == 503 and r.json()["error"]["code"] == "DATA_NOT_READY"
+        assert r.headers["x-data-mode"] == "none"
         ready = c.get("/internal/health/ready")
         assert ready.status_code == 200
         assert ready.json()["checks"]["data"]["status"] == "warning"

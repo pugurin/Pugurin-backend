@@ -194,7 +194,7 @@ class SpyParcelSource:
 
 
 def spy_client(**kwargs):
-    from app.adapters.mock.parcel_source import MockParcelSource
+    from tests.fakes.parcel_source import MockParcelSource
 
     spy = SpyParcelSource(MockParcelSource(2026), **kwargs)
     return make_client(parcel_source=spy), spy
@@ -240,8 +240,8 @@ def test_cache_entries_expire_after_ttl():
     now = [datetime(2026, 10, 6, 12, 0, tzinfo=KST)]
     from fastapi.testclient import TestClient
 
-    from app.adapters.mock.parcel_source import MockParcelSource
-    from app.main import create_app
+    from tests.fakes.app import create_app
+    from tests.fakes.parcel_source import MockParcelSource
 
     spy = SpyParcelSource(MockParcelSource(2026))
     app = create_app(settings=Settings(), clock=lambda: now[0], parcel_source=spy)

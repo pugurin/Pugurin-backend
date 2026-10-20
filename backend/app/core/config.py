@@ -1,6 +1,6 @@
 from pathlib import Path
-from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     # DB·Redis (#38). 비워 두면 지금처럼 파일 캐시·메모리만으로 동작한다
     database_url: str = ""  # 예: postgresql+asyncpg://pugurin:pugurin@localhost:5432/pugurin
     redis_url: str = ""  # 예: redis://localhost:6379/0
+
+    @field_validator("database_url")
+    @classmethod
+    def _asyncpg_url(cls, url: str) -> str:
+        """호스팅이 주는 postgres(ql):// 주소를 asyncpg 형식으로 맞춘다. sslmode는 asyncpg가 ssl로 받는다."""
+        for prefix in ("postgres://", "postgresql://"):
+            if url.startswith(prefix):
+                url = "postgresql+asyncpg://" + url[len(prefix) :]
+        return url.replace("sslmode=", "ssl=")
 
     # 부산 대략 범위(min_lng, min_lat, max_lng, max_lat). 1차 판별용, 정밀 판별은 PostGIS로 대체 예정
     busan_bbox: tuple[float, float, float, float] = (128.75, 34.85, 129.35, 35.40)
@@ -30,8 +39,8 @@ class Settings(BaseSettings):
     # 카카오 로컬(REST 키): 지번 주소 → 좌표·법정동 코드. 수집 명령(refresh)에서만 쓴다
     kakao_rest_key: str = ""
 
-    # sample: 가짜 샘플 / real: `refresh`로 모은 실데이터(.cache) / auto: .cache가 있으면 real, 없으면 sample
-    data_mode: Literal["sample", "real", "auto"] = "sample"
+    # 실데이터 위치: PUGURIN_DATABASE_URL이 있으면 DB, 없으면 data_dir(.cache).
+    # 둘 다 없으면 가짜로 채우지 않고 "데이터 없음"으로 응답한다
     data_dir: Path = Path(".cache")
     real_data_months: int = 12
     worker_run_hour: int = 4  # worker가 매일 수집·적재를 시작하는 시각(KST). API 명세의 data_as_of 기준(04:00)과 맞춘다

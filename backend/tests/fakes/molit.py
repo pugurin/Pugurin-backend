@@ -3,7 +3,7 @@ from pathlib import Path
 from app.adapters.molit.parser import assign_ordinals, parse_page
 from app.adapters.molit.types import RawTrade, SourceKind
 
-SAMPLE_DIR = Path(__file__).resolve().parent.parent.parent / "sample_data" / "molit"
+SAMPLE_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "molit"
 
 
 class FixtureTradeSource:

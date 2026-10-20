@@ -37,15 +37,15 @@
 routers/       HTTP/WS 진입점. 요청 검증·직렬화만. 외부 API 직접 호출 금지.
 services/      도메인 로직(지도 집계, 통계, 분석 조합, 채팅 라우팅, 알림 생성).
 repositories/  DB 접근(PostGIS 공간 쿼리 포함).
-adapters/      외부 API 어댑터(실거래가 / 카카오 지오코딩 / 국세청 / OAuth / FCM / 스토리지) + mock 구현.
+adapters/      외부 API 어댑터(실거래가 / 카카오 지오코딩 / 국세청 / OAuth / FCM / 스토리지).
 ingestion/     ETL 잡(수집·정제·지오코딩·단지 매칭·적재). API 서버 프로세스에서 실행하지 않는다.
 realtime/      WebSocket 연결 관리 + Redis pub/sub 브리지. 도메인 로직 없음.
 auth/          OAuth 연동, JWT 발급·검증, role 기반 의존성.
 models/        SQLAlchemy 모델.
 schemas/       Pydantic 요청/응답 스키마. (models와 섞지 않는다)
 core/          설정(config), DB·Redis 세션, 에러 핸들러, 공통 유틸.
-sample_data/   mock 모드 전용 가짜 데이터(지역·거래·용어). 운영 경로에서 import 금지.
-wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/실 어댑터)를 services에 주입.
+content/       직접 작성한 서비스 콘텐츠(용어 해설). 가짜 데이터가 아니다.
+wiring.py      의존성 조립(composition root). 실데이터 구현체(DB → 수집 캐시)를 services에 주입.
 ```
 
 호출 방향: `routers → services → repositories / adapters`. 역방향 의존 금지.
@@ -53,7 +53,7 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 ## 4. 백엔드 규칙
 
 ### 4.1 공통
-1. **API 키 없이도 개발·테스트 가능해야 한다.** 외부 접근은 `adapters/` 인터페이스 뒤에 두고 mock/샘플 구현을 기본 제공. 실 키는 환경변수, 하드코딩 금지.
+1. **서버는 가짜 데이터를 내보내지 않는다.** 실데이터(DB 또는 수집 캐시)가 없으면 가짜로 채우지 않고 `503 DATA_NOT_READY`로 알린다. 외부 접근은 `adapters/` 인터페이스 뒤에 두고, 가짜 구현·가짜 데이터는 `tests/fakes/`에만 둔다(테스트는 키 없이 돈다). 실 키는 환경변수, 하드코딩 금지.
 2. **비밀값 커밋 금지.** `.env`는 `.gitignore`, `.env.example`만 커밋.
 3. **TDD.** 라우터·서비스·리포지토리는 테스트 우선. 외부 API는 mock, **공간 쿼리는 testcontainers로 띄운 실제 PostGIS에서 검증**(mock DB로는 공간 쿼리 정합성을 확인할 수 없다).
 4. 응답·주석·문서는 한국어. 에러는 명세의 공통 JSON 형식으로 반환.
@@ -113,44 +113,43 @@ wiring.py      의존성 조립(composition root). 구현체(memory/mock → DB/
 - [ ] DB 스키마 초안 (transactions, complexes, parcels_cache, zoning_rules, users, agents, chat, notifications, reports)
 - [ ] 거래 유형별 복합 자연키 확정 (실제 응답 확인 후)
 - [ ] 줌 레벨별 집계 단위 임계치 확정 (현재 기본값 12 / 14, `PUGURIN_ZOOM_*` 설정)
-- [ ] 토지 정보 공급처가 정해지면 필지 어댑터 구현(`adapters/mock/parcel_source.py` 대체), 캐시를 Redis로 (VWorld는 쓰지 않기로 함)
+- [ ] 토지 정보 공급처가 정해지면 필지 어댑터 구현(`adapters/unconfigured.py` 대체), 캐시를 Redis로 (VWorld는 쓰지 않기로 함)
 - [ ] 부산 여부 판별을 bbox 근사 → PostGIS/PNU 기준으로 교체
 - [ ] 부산시 도시계획 조례 기준 `zoning_rules` 시드 데이터
 - [ ] 신고 신뢰도 점수 모델
 - [x] Alembic 초기 세팅, 법정동 시드, `/internal/health/ready`, testcontainers (#38 1단계)
 - [x] 수집 캐시 → DB 적재(`python -m app.ingestion load`, `refresh` 뒤 자동), worker 컨테이너 (#38 2단계)
-- [x] DB 조회 저장소(`repositories/postgres/market.py`). `PUGURIN_DATABASE_URL`이 있으면 real·auto 모드가 DB를 읽는다 (#38 3단계)
+- [x] DB 조회 저장소(`repositories/postgres/market.py`). `PUGURIN_DATABASE_URL`이 있으면 DB를 읽는다 (#38 3단계)
+- [x] 가짜 데이터 제거: 샘플 모드 폐지, 데이터가 없으면 `503 DATA_NOT_READY`. 가짜 시장·필지·조례 표는 `tests/fakes/`로
 - [x] Docker Compose(api, db, redis, migrate, worker는 `--profile worker`), GitHub Actions CI(ruff·pytest·compose 기동 확인)
-- [x] `.env.example`, mock 샘플 데이터(16개 구·군 집계 + 동 37곳·단지 190곳·거래 약 10만 건, 모두 가짜)
+- [x] `.env.example`
 - [x] 거래 `/transactions`(목록, 지도와 같은 필터·건수), `/transactions/{id}`(단건)
 - [x] 통계 `/stats/regions/{code}`, `/complexes/{id}/stats`(이슈 #10): 월별 중위값 추이, 단지는 평형별 분리
 - [x] `/search`: 지역·단지·주소 통합 검색(이슈 #11), 주소는 카카오 REST 키가 있을 때만
-- [x] 1차 mock API: `/map/markers`, `/complexes/{id}`(+`/transactions`), `/parcels/lookup`·`/parcels/{pnu}`, `/glossary`
+- [x] 1차 API: `/map/markers`, `/complexes/{id}`(+`/transactions`), `/parcels/lookup`·`/parcels/{pnu}`, `/glossary`
 
 ## 6. 실행·테스트
 
-### 실데이터 모드
+### 실데이터
 
-실제 공공데이터포털 거래를 받아 와서 API가 그대로 내려주게 한다. 서버는 시작할 때 `.cache`(git 제외)만 읽고 네트워크를 쓰지 않는다.
+서버는 실데이터만 쓴다: `PUGURIN_DATABASE_URL`이 있으면 DB, 없으면 시작할 때 `.cache`(git 제외)를 읽는다. 둘 다 없으면 지도·거래·통계·검색·분석이 `503 DATA_NOT_READY`다.
 
 ```bash
 # backend/.env에 PUGURIN_DATA_GO_KR_TRADE_KEY, PUGURIN_DATA_GO_KR_RENT_KEY, PUGURIN_KAKAO_REST_KEY 설정
 uv run python -m app.ingestion refresh --months 12  # 수집 + 지오코딩 (한도에 닿으면 멈추고, 다시 실행하면 이어서 받음)
 uv run python -m app.ingestion status               # 캐시로 만든 데이터셋 요약
 uv run python -m app.ingestion load                 # 캐시 → DB 적재 (PUGURIN_DATABASE_URL 필요, refresh도 끝나면 자동 적재)
-PUGURIN_DATA_MODE=real uv run uvicorn --factory app.main:create_app
+uv run uvicorn --factory app.main:create_app
 ```
 
 - 12개월 수집은 실거래가 API 약 1,350회, 카카오 약 12,000곳 조회(캐시에 없는 주소만)다. 3개월은 약 340회, 60개월은 약 6,800회다.
-- **토지이용계획·필지(`/parcels`)는 공급처가 없어 실데이터가 아니다.** 실데이터 모드에서는 가짜 필지 대신 `source_unavailable`로 응답한다.
+- **토지이용계획·필지(`/parcels`)는 공급처가 없다.** 가짜 필지 대신 항상 `source_unavailable`로 응답한다. 건폐율·용적률도 조례 표 확인 전이라 내지 않는다.
 - 세대수·공급면적은 원천에 없어 `null`이다. 토지는 지분거래·지목 '도로'를 집계에서 제외한다(`PUGURIN_EXCLUDE_SHARE_DEALS`, `PUGURIN_EXCLUDE_ROAD_LAND`).
 - 카카오 지오코딩 결과(`.cache/geocode.json`)는 약관 확인 전이라 커밋하거나 배포하지 않는다.
 
-**Docker로 실데이터 보기:** `docker compose up --build`는 `backend/.cache`를 읽기 전용으로 연결하고 `PUGURIN_DATA_MODE=auto`로 뜬다. `.cache`가 있으면 실데이터, 없으면 샘플이다. 다른 사람에게 `.cache` 폴더를 전달하면 키 없이 실데이터를 볼 수 있다(지오코딩 약관 확인 전이라 팀 내부 전달로만 쓴다). 어느 모드로 떴는지는 서버 로그의 `데이터 모드:` 줄과 모든 응답의 `X-Data-Mode` 헤더(`real`/`sample`)에 나온다.
+**Docker:** `docker compose up --build`는 api가 DB에서 조회한다. 처음엔 DB가 비어 있으니 `.cache`를 `load`로 넣거나 worker로 수집한다(README "DB에 거래 넣기"). 데이터가 있는지는 모든 응답의 `X-Data-Mode` 헤더(`real`/`none`)와 readiness의 `data` 검사에 나온다.
 
-### 샘플 모드 (기본)
-
-mock 모드는 키·DB 없이 바로 실행된다. 모든 데이터는 가짜이며 `/parcels` 응답의 `ratio_source`에도 샘플임을 표시한다.
+### 개발
 
 ```bash
 cd backend
@@ -167,4 +166,4 @@ docker compose up --build
 ```
 
 - 모든 `/api/v1` 조회 API(헬스 제외)는 `X-Device-Id`(UUID) 헤더가 필수다.
-- 서버 시작 시 샘플 데이터를 만드느라 1~2초 걸린다.
+- 테스트는 `tests/fakes/`의 가짜 시장(단지 190곳·거래 약 10만 건)·필지·조례 표를 직접 끼워 넣는다(`tests/fakes/app.py`). 서버 코드에서는 import하지 않는다.

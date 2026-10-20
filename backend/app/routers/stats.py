@@ -1,10 +1,10 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Depends, Path, Query
 
 from app.repositories.types import DealType, PropertyType
-from app.routers.deps import ContainerDep
+from app.routers.deps import ContainerDep, require_market_data
 from app.schemas.stats import (
     ComplexStatsResponse,
     RegionStatsResponse,
@@ -14,7 +14,7 @@ from app.schemas.stats import (
     stats_method,
 )
 
-router = APIRouter(tags=["stats"])
+router = APIRouter(tags=["stats"], dependencies=[Depends(require_market_data)])
 
 
 def _meta(container, exclude_direct: bool, deal_type: DealType, include_renewals: bool) -> StatsMeta:

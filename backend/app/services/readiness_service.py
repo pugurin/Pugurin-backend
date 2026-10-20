@@ -6,7 +6,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.db import migrate
-from app.repositories.postgres.market import PostgresMarketRepository
+from app.repositories.ports import MarketRepository
 
 CHECK_TIMEOUT_SECONDS = 2.0
 CheckStatus = Literal["ok", "warning", "error", "skipped"]  # warning은 준비 상태를 막지 않는다
@@ -27,7 +27,7 @@ class Readiness:
 class ReadinessService:
     """DB·Redis가 붙어 있으면 실제로 닿는지, DB 스키마가 최신인지 본다. 설정하지 않은 것은 건너뛴다."""
 
-    def __init__(self, engine: AsyncEngine | None, redis: Redis | None, market: PostgresMarketRepository | None = None):
+    def __init__(self, engine: AsyncEngine | None, redis: Redis | None, market: MarketRepository | None = None):
         self._engine = engine
         self._redis = redis
         self._market = market
@@ -40,14 +40,16 @@ class ReadinessService:
         return Readiness(all(c.status != "error" for c in checks.values()), checks)
 
     async def _data(self) -> Check:
-        """DB에서 조회할 때만: 적재된 거래가 있는지. 비어 있어도 빈 결과는 낼 수 있으니 준비 상태는 막지 않는다."""
+        """실거래 데이터가 있는지. 없으면 API가 '데이터 없음'으로 답할 뿐 서버는 정상이라 준비 상태는 막지 않는다."""
+        refresh = getattr(self._market, "refresh", None)
         try:
-            async with asyncio.timeout(CHECK_TIMEOUT_SECONDS):
-                await self._market.refresh()
+            if refresh is not None:
+                async with asyncio.timeout(CHECK_TIMEOUT_SECONDS):
+                    await refresh()
         except Exception as e:  # noqa: BLE001
             return Check("error", f"조회 실패: {type(e).__name__}")
-        if not self._market.has_data:
-            return Check("warning", "적재된 거래 없음 → `python -m app.ingestion load` 또는 worker 실행")
+        if not getattr(self._market, "has_data", True):
+            return Check("warning", "실거래 데이터 없음 → `python -m app.ingestion load`(DB) 또는 `refresh`(수집)")
         return Check("ok", f"데이터 기준 {self._market.data_as_of.isoformat()}")
 
     async def _database(self) -> Check:

@@ -2,16 +2,16 @@ import math
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Path, Query
+from fastapi import APIRouter, Depends, Path, Query
 
 from app.core.errors import validation_error
 from app.core.geo import BBox
-from app.routers.deps import ContainerDep
+from app.routers.deps import ContainerDep, require_market_data
 from app.routers.filters import MarketFilter
 from app.schemas.common import DataMeta, PageMeta
 from app.schemas.complex import TransactionOut, TransactionResponse, TransactionsResponse
 
-router = APIRouter(tags=["transactions"])
+router = APIRouter(tags=["transactions"], dependencies=[Depends(require_market_data)])
 
 
 @router.get("/transactions", response_model=TransactionsResponse, summary="거래 목록")

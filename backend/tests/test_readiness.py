@@ -14,16 +14,18 @@ def client(addr=INTERNAL, **settings) -> TestClient:
     return TestClient(create_app(settings=Settings(**settings), clock=lambda: FIXED_NOW), client=addr)
 
 
-def test_without_database_or_redis_the_checks_are_skipped_and_ready():
-    with client() as c:
+def test_without_database_or_redis_the_checks_are_skipped_and_ready(tmp_path):
+    with client(data_dir=tmp_path) as c:
         r = c.get(READY)
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ready"
-    assert body["data_mode"] == "sample"
+    # 실데이터가 없어도 서버는 준비된 상태다. API가 '데이터 없음'으로 답할 뿐이다
+    assert body["data_mode"] == "none"
     assert {name: check["status"] for name, check in body["checks"].items()} == {
         "database": "skipped",
         "redis": "skipped",
+        "data": "warning",
     }
 
 
@@ -68,8 +70,8 @@ def test_liveness_stays_public_and_simple():
 
 
 def test_real_mode_with_an_unreachable_database_still_starts():
-    with client(data_mode="real", database_url="postgresql+asyncpg://nobody:x@127.0.0.1:1/none") as c:
+    with client(database_url="postgresql+asyncpg://nobody:x@127.0.0.1:1/none") as c:
         r = c.get(READY)
         assert r.status_code == 503
-        assert r.json()["data_mode"] == "real"
+        assert r.json()["data_mode"] == "none"
         assert r.json()["checks"]["data"]["status"] == "error"

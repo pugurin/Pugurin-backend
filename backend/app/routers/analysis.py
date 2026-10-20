@@ -1,14 +1,14 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.repositories.types import DealType
-from app.routers.deps import ContainerDep
+from app.routers.deps import ContainerDep, require_market_data
 from app.schemas.analysis import AnalysisMeta, ComplexAnalysisResponse, complex_analysis_out
 from app.schemas.stats import stats_method
 
-router = APIRouter(tags=["analysis"])
+router = APIRouter(tags=["analysis"], dependencies=[Depends(require_market_data)])
 
 
 @router.get(

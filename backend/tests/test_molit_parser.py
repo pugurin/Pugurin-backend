@@ -3,11 +3,11 @@ from datetime import date
 
 import pytest
 
-from app.adapters.molit.mock import SAMPLE_DIR, FixtureTradeSource
 from app.adapters.molit.parser import assign_ordinals, parse_float, parse_int, parse_page, parse_short_date
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError, SourceKind
 from app.repositories.ports import SourceUnavailable
 from app.repositories.types import DealType, PropertyType, TradeMethod
+from tests.fakes.molit import SAMPLE_DIR, FixtureTradeSource
 
 pytestmark = pytest.mark.anyio
 

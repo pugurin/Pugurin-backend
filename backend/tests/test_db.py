@@ -1,7 +1,6 @@
 """실제 PostGIS·Redis 컨테이너로 마이그레이션·시드·readiness를 검증한다. Docker가 없으면 건너뛴다."""
 
 import asyncio
-from collections.abc import Iterator
 from datetime import date
 
 import pytest
@@ -14,40 +13,10 @@ from app.db import migrate
 from app.db.legal_dong import load_legal_dongs
 from app.db.seed import upsert_regions
 from app.main import create_app
-from tests.conftest import FIXED_NOW
+from tests.conftest import FIXED_NOW, create_database
 
-POSTGIS_IMAGE = "imresamu/postgis:16-3.5"  # postgis/postgis는 amd64 전용이라 arm64(Apple Silicon)에서 느리다
 INTERNAL = ("127.0.0.1", 50000)
 READY = "/internal/health/ready"
-
-
-def _docker_available() -> bool:
-    try:
-        import docker
-
-        docker.from_env().ping()
-    except Exception:  # noqa: BLE001
-        return False
-    return True
-
-
-pytestmark = pytest.mark.skipif(not _docker_available(), reason="Docker가 없어 DB 테스트를 건너뜁니다")
-
-
-@pytest.fixture(scope="module")
-def postgis() -> Iterator[str]:
-    from testcontainers.community.postgres import PostgresContainer
-
-    with PostgresContainer(POSTGIS_IMAGE, driver="asyncpg") as pg:
-        yield pg.get_connection_url()
-
-
-@pytest.fixture(scope="module")
-def redis_url() -> Iterator[str]:
-    from testcontainers.community.redis import RedisContainer
-
-    with RedisContainer("redis:7-alpine") as r:
-        yield f"redis://{r.get_container_host_ip()}:{r.get_exposed_port(6379)}/0"
 
 
 @pytest.fixture(scope="module")
@@ -217,27 +186,12 @@ def test_unknown_region_is_rejected(migrated):
 
 def test_downgrade_to_base_and_back(postgis):
     # 다른 테스트와 겹치지 않게 같은 컨테이너에 DB를 하나 더 만든다
-    _run_sync_autocommit(postgis, "CREATE DATABASE roundtrip")
-    url = postgis.rsplit("/", 1)[0] + "/roundtrip"
+    url = create_database(postgis, "roundtrip")
     migrate.upgrade(url)
     migrate.downgrade(url, "base")
     assert _scalar(url, "SELECT to_regclass('public.transactions')") is None
     migrate.upgrade(url)
     assert _scalar(url, "SELECT count(*) FROM regions") == 270
-
-
-def _run_sync_autocommit(url: str, sql: str) -> None:
-    async def run():
-        from app.db.engine import make_engine
-
-        engine = make_engine(url).execution_options(isolation_level="AUTOCOMMIT")
-        try:
-            async with engine.connect() as conn:
-                await conn.execute(text(sql))
-        finally:
-            await engine.dispose()
-
-    asyncio.run(run())
 
 
 # ── readiness ────────────────────────────────────────────────
@@ -259,8 +213,7 @@ def test_ready_when_database_and_redis_are_up(migrated, redis_url):
 
 
 def test_not_ready_when_schema_is_behind(postgis):
-    _run_sync_autocommit(postgis, "CREATE DATABASE behind")
-    url = postgis.rsplit("/", 1)[0] + "/behind"
+    url = create_database(postgis, "behind")
     migrate.upgrade(url, "0001")
     with _client(database_url=url) as c:
         r = c.get(READY)

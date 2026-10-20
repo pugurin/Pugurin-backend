@@ -2,6 +2,8 @@ import argparse
 import asyncio
 import sys
 
+from sqlalchemy import text
+
 from app.core.config import Settings
 from app.db import migrate
 from app.db.engine import make_engine
@@ -24,12 +26,29 @@ async def _status(url: str) -> int:
     try:
         async with engine.connect() as conn:
             current = await conn.run_sync(migrate.current_revision)
+            head = migrate.head_revision()
+            hint = "" if current == head else "  → `python -m app.db upgrade` 필요"
+            print(f"현재 {current or '(없음)'} / 최신 {head}{hint}")
+            if current == head:
+                await _print_data(conn)
     finally:
         await engine.dispose()
-    head = migrate.head_revision()
-    hint = "" if current == head else "  → `python -m app.db upgrade` 필요"
-    print(f"현재 {current or '(없음)'} / 최신 {head}{hint}")
     return 0 if current == head else 1
+
+
+_LAST_RUN = "SELECT id, status, started_at, rows_inserted, rows_updated, data_as_of FROM etl_runs ORDER BY id DESC"
+
+
+async def _print_data(conn) -> None:
+    count = (await conn.execute(text("SELECT count(*) FROM transactions WHERE deleted_at IS NULL"))).scalar()
+    print(f"거래 {count:,}건")
+    run = (await conn.execute(text(_LAST_RUN))).first()
+    if run is None:
+        print("적재 기록 없음 → `python -m app.ingestion load`(캐시 적재) 또는 `refresh`(수집 + 적재)")
+        return
+    print(f"마지막 적재 #{run.id} {run.status} ({run.started_at:%Y-%m-%d %H:%M})", end="")
+    print(f", 새로 {run.rows_inserted:,} · 바뀜 {run.rows_updated:,}")
+    print(f"  데이터 기준 {run.data_as_of.isoformat() if run.data_as_of else '-'}")
 
 
 def main() -> int:

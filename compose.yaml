@@ -1,6 +1,6 @@
 # api(조회 서버) + db(PostGIS) + redis. migrate가 스키마·법정동 시드를 먼저 올리고 끝나면 api가 뜬다.
-# 지금 조회는 아직 backend/.cache(파일 캐시)를 읽는다. 있으면 실데이터, 없으면 가짜 샘플. DB로 옮기는 작업은 #38에서 이어진다.
-# 수집 worker는 DB 적재를 붙일 때 추가한다(#38).
+# 지금 조회는 아직 backend/.cache(파일 캐시)를 읽는다. 있으면 실데이터, 없으면 가짜 샘플. 조회를 DB로 옮기는 작업은 #38에서 이어진다.
+# worker(수집 → 지오코딩 → DB 적재, 매일 04시)는 API 키가 필요해서 `--profile worker`를 줄 때만 뜬다.
 services:
   db:
     # postgis/postgis는 amd64 전용이라 Apple Silicon에서 느리다. 같은 관리자가 내는 멀티아키 이미지를 쓴다
@@ -63,6 +63,23 @@ services:
       timeout: 3s
       retries: 5
       start_period: 15s
+
+  worker:
+    build: ./backend
+    profiles: ["worker"]
+    command: ["python", "-m", "app.ingestion", "worker"]
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      PUGURIN_DATABASE_URL: postgresql+asyncpg://pugurin:pugurin@db:5432/pugurin
+    volumes:
+      # 수집 캐시(원천 응답·지오코딩 결과)를 호스트와 같이 쓴다. 한도에 닿아 멈춰도 다음 실행이 이어서 받는다
+      - ./backend/.cache:/app/.cache
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: on-failure:5  # 키가 없으면 안내를 남기고 몇 번 뒤 멈춘다
 
 volumes:
   pgdata:

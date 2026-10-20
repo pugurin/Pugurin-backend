@@ -150,18 +150,18 @@ docker compose up --build
 ```
 
 - `db`(PostGIS), `redis`, `migrate`, `api` 네 개가 뜹니다. `migrate`가 DB 스키마와 부산 법정동 코드를 먼저 넣고 끝나면 `api`가 시작합니다.
-  - 지금 조회 API는 아직 DB가 아니라 `backend/.cache`(파일)를 읽습니다. 조회를 DB로 옮기는 작업은 [#38](https://github.com/pugurin/Pugurin-backend/issues/38)에서 진행 중입니다.
-  - 수집한 거래를 DB에 넣으려면 아래 "DB에 거래 넣기"를 보세요.
   - 호스트의 5432·6379 포트가 이미 쓰이고 있으면 `PUGURIN_DB_PORT=5433 PUGURIN_REDIS_PORT=6380 docker compose up --build`처럼 바꿔서 띄우세요.
-- `backend/.cache`가 있으면 **자동으로 실데이터**, 없으면 목데이터로 뜹니다.
+- **`api`는 DB에서 조회합니다.** 처음 띄우면 DB가 비어 있어서 지도에 아무것도 안 나옵니다. 둘 중 하나로 채우세요.
+  - 받아 둔 `backend/.cache`가 있으면 DB에 넣기 (API 호출 없음, 2분쯤):
+    ```bash
+    docker compose --profile worker run --rm worker python -m app.ingestion load
+    ```
+  - 키가 있으면 worker로 직접 수집: `docker compose --profile worker up -d worker` (아래 "DB에 거래 넣기")
+  - 넣은 뒤 서버를 재시작할 필요는 없습니다. 30초 안에 새 데이터를 읽습니다.
 - `backend/.env`가 있으면 읽습니다. 없어도 실행됩니다.
-- 서버 상태 확인(readiness)은 DB·Redis 연결과 스키마 버전까지 봅니다. 내부망 전용이라 **컨테이너 안에서** 부르세요.
+- 서버 상태 확인(readiness)은 DB·Redis 연결, 스키마 버전, 적재된 거래가 있는지까지 봅니다. 내부망 전용이라 **컨테이너 안에서** 부르세요.
   ```bash
   docker compose exec api python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/internal/health/ready').read().decode())"
-  ```
-- `.cache`를 새로 넣거나 바꿨다면 **컨테이너를 재시작**해야 반영됩니다. 데이터는 서버가 시작할 때 한 번만 읽습니다.
-  ```bash
-  docker compose restart api
   ```
 
 ### 방법 2. 직접 실행 (uv)

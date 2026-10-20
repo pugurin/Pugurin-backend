@@ -9,6 +9,7 @@ from app.adapters.kakao import GeoResult
 from app.adapters.molit.types import RawTrade, SourceKind
 from app.core.busan import SIGUNGU, SIGUNGU_BY_CODE
 from app.core.dates import KST
+from app.core.geo import area_bucket, round_area
 from app.core.text import normalize
 from app.ingestion.geocode import GeocodeCache, address_key, region_key
 from app.repositories.memory.dataset import MarketDataset, RegionDirectory
@@ -159,7 +160,7 @@ def build_dataset(
             complex_id = complexes[key].id
             lat, lng, pnu, precise = location_of[key]
             if t.exclusive_area_m2:
-                areas[key][round(t.exclusive_area_m2)].append(t.exclusive_area_m2)
+                areas[key][area_bucket(t.exclusive_area_m2)].append(t.exclusive_area_m2)
             if t.build_year:
                 builds[key][t.build_year] += 1
         elif "*" not in t.jibun and t.jibun:
@@ -199,7 +200,7 @@ def build_dataset(
 
     finished: list[Complex] = []
     for key, c in complexes.items():
-        types = tuple(AreaType(round(statistics.median(vals), 2), None) for _, vals in sorted(areas[key].items()))
+        types = tuple(AreaType(round_area(statistics.median(vals)), None) for _, vals in sorted(areas[key].items()))
         year = builds[key].most_common(1)[0][0] if builds[key] else None
         finished.append(Complex(**{**c.__dict__, "area_types": types, "build_year": year}))
     report.complexes = len(finished)

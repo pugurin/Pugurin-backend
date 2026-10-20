@@ -65,3 +65,11 @@ def test_readiness_is_hidden_from_the_public_api_docs():
 def test_liveness_stays_public_and_simple():
     with client(("8.8.8.8", 1)) as c:
         assert c.get(f"{API}/health").json() == {"status": "ok"}
+
+
+def test_real_mode_with_an_unreachable_database_still_starts():
+    with client(data_mode="real", database_url="postgresql+asyncpg://nobody:x@127.0.0.1:1/none") as c:
+        r = c.get(READY)
+        assert r.status_code == 503
+        assert r.json()["data_mode"] == "real"
+        assert r.json()["checks"]["data"]["status"] == "error"

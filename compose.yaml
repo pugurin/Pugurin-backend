@@ -1,5 +1,5 @@
 # api(조회 서버) + db(PostGIS) + redis. migrate가 스키마·법정동 시드를 먼저 올리고 끝나면 api가 뜬다.
-# 지금 조회는 아직 backend/.cache(파일 캐시)를 읽는다. 있으면 실데이터, 없으면 가짜 샘플. 조회를 DB로 옮기는 작업은 #38에서 이어진다.
+# api는 DB에서 조회한다(실데이터 모드). 처음에는 DB가 비어 있으니 `.cache`를 넣거나(load) worker로 수집한다. README 참고.
 # worker(수집 → 지오코딩 → DB 적재, 매일 04시)는 API 키가 필요해서 `--profile worker`를 줄 때만 뜬다.
 services:
   db:
@@ -49,15 +49,13 @@ services:
       PUGURIN_DATA_MODE: auto
       PUGURIN_DATABASE_URL: postgresql+asyncpg://pugurin:pugurin@db:5432/pugurin
       PUGURIN_REDIS_URL: redis://redis:6379/0
-    volumes:
-      - ./backend/.cache:/app/.cache:ro
     depends_on:
       migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
-      # readiness: DB 스키마가 최신이고 Redis가 닿아야 healthy (컨테이너 안에서 부르므로 내부망 허용)
+      # readiness: DB 스키마가 최신이고 Redis가 닿아야 healthy. 거래가 비어 있으면 data가 warning이지만 healthy다
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/internal/health/ready')"]
       interval: 10s
       timeout: 3s

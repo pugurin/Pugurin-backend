@@ -1,4 +1,6 @@
+import math
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from app.core.errors import validation_error
 
@@ -11,6 +13,16 @@ def m2_to_pyeong(m2: float) -> float:
 
 def pyeong_exact(m2: float) -> float:
     return m2 / SQM_PER_PYEONG
+
+
+def round_area(m2: float) -> float:
+    """평형 대표 면적(중위값)을 소수 2자리로. 부동소수 오차를 6자리에서 정리한 뒤 사사오입한다(DB 적재와 같은 규칙)."""
+    return float(Decimal(f"{m2:.6f}").quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def area_bucket(m2: float) -> int:
+    """평형 묶음: 전용면적을 반올림한 정수(㎡). 84.842와 84.97은 85다. DB의 floor(x + 0.5)와 같은 규칙(사사오입)."""
+    return math.floor(m2 + 0.5)
 
 
 @dataclass(frozen=True)

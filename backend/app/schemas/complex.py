@@ -82,6 +82,7 @@ class TransactionOut(BaseModel):
     trade_method: TradeMethod | None
     is_cancelled: bool
     cancelled_at: datetime | None
+    is_renewal: bool  # 전세·월세 갱신 계약. 목록·통계는 기본으로 빼고 include_renewals=true면 넣는다
 
     @classmethod
     def from_domain(cls, tx: Transaction) -> "TransactionOut":
@@ -115,6 +116,7 @@ class TransactionOut(BaseModel):
             trade_method=tx.trade_method,
             is_cancelled=tx.is_cancelled,
             cancelled_at=tx.cancelled_at,
+            is_renewal=tx.is_renewal,
         )
 
 

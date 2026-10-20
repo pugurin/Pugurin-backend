@@ -17,8 +17,11 @@ from app.schemas.stats import (
 router = APIRouter(tags=["stats"])
 
 
-def _meta(container, exclude_direct: bool) -> StatsMeta:
-    return StatsMeta(data_as_of=container.complex_service.data_as_of, method=stats_method(exclude_direct))
+def _meta(container, exclude_direct: bool, deal_type: DealType, include_renewals: bool) -> StatsMeta:
+    return StatsMeta(
+        data_as_of=container.complex_service.data_as_of,
+        method=stats_method(exclude_direct, deal_type, include_renewals),
+    )
 
 
 @router.get("/stats/regions/{region_code}", response_model=RegionStatsResponse, summary="구·동 단위 통계")
@@ -29,9 +32,14 @@ async def region_stats(
     deal_type: DealType = DealType.sale,
     period_months: Annotated[int, Query(ge=1, le=60)] = 36,
     exclude_direct: bool = False,
+    include_renewals: Annotated[bool, Query(description="전세·월세 갱신 계약 포함 (기본: 신규 계약만)")] = False,
 ) -> RegionStatsResponse:
-    result = await container.stats_service.region(region_code, property_type, deal_type, period_months, exclude_direct)
-    return RegionStatsResponse(data=region_stats_out(deal_type, result), meta=_meta(container, exclude_direct))
+    result = await container.stats_service.region(
+        region_code, property_type, deal_type, period_months, exclude_direct, include_renewals
+    )
+    return RegionStatsResponse(
+        data=region_stats_out(deal_type, result), meta=_meta(container, exclude_direct, deal_type, include_renewals)
+    )
 
 
 @router.get("/complexes/{complex_id}/stats", response_model=ComplexStatsResponse, summary="단지 평형별 시세 추이")
@@ -42,6 +50,11 @@ async def complex_stats(
     deal_type: DealType = DealType.sale,
     period_months: Annotated[int, Query(ge=1, le=60)] = 36,
     exclude_direct: bool = False,
+    include_renewals: Annotated[bool, Query(description="전세·월세 갱신 계약 포함 (기본: 신규 계약만)")] = False,
 ) -> ComplexStatsResponse:
-    result = await container.stats_service.complex(complex_id, property_type, deal_type, period_months, exclude_direct)
-    return ComplexStatsResponse(data=complex_stats_out(deal_type, result), meta=_meta(container, exclude_direct))
+    result = await container.stats_service.complex(
+        complex_id, property_type, deal_type, period_months, exclude_direct, include_renewals
+    )
+    return ComplexStatsResponse(
+        data=complex_stats_out(deal_type, result), meta=_meta(container, exclude_direct, deal_type, include_renewals)
+    )

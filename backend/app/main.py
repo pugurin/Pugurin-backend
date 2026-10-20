@@ -38,6 +38,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
+        await container.startup()
         yield
         await container.aclose()
 

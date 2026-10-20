@@ -36,8 +36,12 @@ class StatsMeta(DataMeta):
     method: str
 
 
-def stats_method(exclude_direct: bool) -> str:
-    return "중위값, 해제거래 제외" + (", 직거래 제외" if exclude_direct else "")
+def stats_method(exclude_direct: bool, deal_type: DealType = DealType.sale, include_renewals: bool = False) -> str:
+    method = "중위값, 해제거래 제외" + (", 직거래 제외" if exclude_direct else "")
+    # 갱신 계약은 전세·월세에만 있다
+    if deal_type != DealType.sale and not include_renewals:
+        method += ", 갱신 계약 제외"
+    return method
 
 
 class RegionStatsResponse(BaseModel):

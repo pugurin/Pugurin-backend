@@ -16,7 +16,8 @@ COPY alembic ./alembic
 COPY app ./app
 
 ENV PATH="/app/.venv/bin:$PATH"
-RUN useradd --create-home app && chown -R app /app
+# .cache(수집 캐시)를 미리 만들어 두어야 새 볼륨도 app 사용자 소유로 생긴다
+RUN useradd --create-home app && mkdir -p /app/.cache && chown -R app /app
 USER app
 
 EXPOSE 8000

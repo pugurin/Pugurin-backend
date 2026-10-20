@@ -32,6 +32,7 @@ FIELDS = {
     "trade_method",
     "is_cancelled",
     "cancelled_at",
+    "is_renewal",
 }
 AROUND_COMPLEX = "129.15,35.15,129.165,35.165"
 AROUND_BOTH = "129.15,35.15,129.18,35.18"

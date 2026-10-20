@@ -1,0 +1,64 @@
+# 운영 서버용 덮어쓰기. 기본 compose.yaml 위에 겹쳐서 쓴다 (docs/DEPLOY.md):
+#   docker compose -f compose.yaml -f compose.prod.yaml up -d --build
+# - db·redis·api 포트를 밖에 열지 않고, caddy(80·443)만 연다. 도메인이 있으면 HTTPS 인증서를 자동으로 받는다
+# - DB 비밀번호·도메인은 레포 루트의 .env(deploy/.env.example 참고), API 키는 backend/.env에 둔다
+# - worker는 운영에서 항상 뜬다(매일 04시 수집·적재)
+
+x-database-url: &database-url postgresql+asyncpg://pugurin:${PUGURIN_DB_PASSWORD:?레포 루트 .env에 PUGURIN_DB_PASSWORD를 넣으세요}@db:5432/pugurin
+
+services:
+  db:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${PUGURIN_DB_PASSWORD:?레포 루트 .env에 PUGURIN_DB_PASSWORD를 넣으세요}
+    restart: unless-stopped
+
+  redis:
+    ports: !reset []
+    restart: unless-stopped
+
+  migrate:
+    environment:
+      PUGURIN_DATABASE_URL: *database-url
+
+  api:
+    ports: !reset []
+    environment:
+      PUGURIN_APP_ENV: production
+      PUGURIN_DATABASE_URL: *database-url
+      # api는 caddy 뒤에만 있고 밖에서 직접 닿지 않으므로, X-Forwarded-For를 믿어 실제 사용자 IP로 요청 한도를 센다
+      FORWARDED_ALLOW_IPS: "*"
+    restart: unless-stopped
+
+  worker:
+    profiles: !reset []
+    environment:
+      PUGURIN_DATABASE_URL: *database-url
+      # 백필 범위. 신고 기한이 지난 달은 한 번 받으면 다시 받지 않아서, 처음 며칠만 호출이 많고 이후에는 최근 3개월만 받는다
+      PUGURIN_REAL_DATA_MONTHS: ${PUGURIN_BACKFILL_MONTHS:-60}
+    volumes: !override
+      # 수집 캐시는 서버 디렉터리 대신 볼륨에 둔다(새 서버에서 폴더 권한 문제가 없다)
+      - ingest_cache:/app/.cache
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # 비우면 http://서버IP 로만 뜬다. 도메인을 넣으면 HTTPS 인증서를 자동 발급·갱신한다
+      PUGURIN_DOMAIN: ${PUGURIN_DOMAIN:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ingest_cache:
+  caddy_data:
+  caddy_config:

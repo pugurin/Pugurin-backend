@@ -164,6 +164,10 @@ docker compose up --build
   docker compose exec api python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/internal/health/ready').read().decode())"
   ```
 
+### 운영 서버에 올리기
+
+리눅스 서버 1대에 같은 구성으로 올립니다(HTTPS 자동, 매일 수집). [`docs/DEPLOY.md`](./docs/DEPLOY.md)를 보세요.
+
 ### 방법 2. 직접 실행 (uv)
 
 필요한 것: [uv](https://docs.astral.sh/uv/) (Python 3.12는 uv가 알아서 준비합니다)

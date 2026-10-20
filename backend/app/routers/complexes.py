@@ -28,6 +28,7 @@ async def list_complex_transactions(
     sort: Literal["contract_date_desc", "price_asc", "price_desc"] = "contract_date_desc",
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=100)] = 20,
+    include_renewals: Annotated[bool, Query(description="전세·월세 갱신 계약 포함 (기본: 신규 계약만)")] = False,
 ) -> TransactionsResponse:
     result = await container.complex_service.transactions(
         complex_id,
@@ -37,6 +38,7 @@ async def list_complex_transactions(
         sort=sort,
         page=page,
         page_size=page_size,
+        include_renewals=include_renewals,
     )
     return TransactionsResponse(
         data=[TransactionOut.from_domain(tx) for tx in result.items],

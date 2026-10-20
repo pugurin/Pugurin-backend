@@ -3,6 +3,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, time
+from functools import cache
 from uuid import NAMESPACE_URL, uuid5
 
 from app.adapters.kakao import GeoResult
@@ -70,6 +71,14 @@ def needed_lookups(trades: Iterable[RawTrade]) -> tuple[set[tuple[str, str, str]
     return addresses, regions
 
 
+@cache
+def official_dong_names() -> dict[str, str]:
+    """법정동 코드 → 마스터 이름(기장군은 '기장읍 교리'처럼 읍면 + 리)."""
+    from app.db.legal_dong import load_legal_dongs
+
+    return {d.code: d.name for d in load_legal_dongs() if d.level == "dong"}
+
+
 def _kst_midnight(d) -> datetime | None:
     return datetime.combine(d, time(0, 0), tzinfo=KST) if d else None
 
@@ -100,17 +109,19 @@ def build_dataset(
         found = geo.region(s.code, "")
         regions[s.code] = RegionRef(s.code, s.name, found.lat if found else s.lat, found.lng if found else s.lng)
     dong_code: dict[tuple[str, str], str] = {}
-    for sgg_cd, umd_nm in {(t.sgg_cd, t.umd_nm) for t in kept}:
+    official = official_dong_names()
+    for sgg_cd, umd_nm in sorted({(t.sgg_cd, t.umd_nm) for t in kept}):
         found = geo.region(sgg_cd, umd_nm)
         code = apt_codes.get((sgg_cd, umd_nm)) or (found.b_code if found else None)
         if not code or len(code) != 10 or not code.startswith(sgg_cd):
             report.unmapped_regions.add((sgg_cd, umd_nm))
             continue
         dong_code[(sgg_cd, umd_nm)] = code
+        # 이름·중심점은 법정동 마스터 기준(DB 적재와 같음). 원천이 코드와 다른 동 이름을 보내는 경우가 있다
+        name = official.get(code, umd_nm)
+        hit = geo.region(sgg_cd, name) if name != umd_nm else found
         sgg = regions[sgg_cd]
-        regions.setdefault(
-            code, RegionRef(code, umd_nm, found.lat if found else sgg.lat, found.lng if found else sgg.lng)
-        )
+        regions.setdefault(code, RegionRef(code, name, hit.lat if hit else sgg.lat, hit.lng if hit else sgg.lng))
     report.regions = len(regions)
 
     complexes: dict[tuple, Complex] = {}
@@ -126,7 +137,7 @@ def build_dataset(
             continue
         region = regions[region_code]
         sgg_name = SIGUNGU_BY_CODE[t.sgg_cd].name
-        address = f"부산 {sgg_name} {t.umd_nm} {t.jibun}".strip()
+        address = f"부산 {sgg_name} {region.name} {t.jibun}".strip()
 
         complex_id = None
         lat, lng, pnu, precise = region.lat, region.lng, None, False
@@ -195,6 +206,7 @@ def build_dataset(
                 trade_method=t.trade_method,
                 is_cancelled=t.is_cancelled,
                 cancelled_at=_kst_midnight(t.cancelled_date),
+                is_renewal=t.contract_type == "갱신",
             )
         )
 

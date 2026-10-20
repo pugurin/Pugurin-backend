@@ -68,6 +68,7 @@ class TransactionFilter:
     exclusive_area_pyeong: Range = Range()
     land_area_pyeong: Range = Range()
     exclude_direct: bool = False
+    include_renewals: bool = False  # 전세·월세 갱신 계약. 기본은 빼고 신규 계약만 본다
 
 
 @dataclass(frozen=True)
@@ -116,6 +117,7 @@ class Transaction:
     trade_method: TradeMethod | None
     is_cancelled: bool
     cancelled_at: datetime | None
+    is_renewal: bool = False  # 전세·월세 갱신 계약(원천 contractType='갱신')
 
     @property
     def basis_area_m2(self) -> float:

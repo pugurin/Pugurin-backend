@@ -34,6 +34,7 @@ def market_filter(
     land_area_pyeong_min: Annotated[float | None, Query(ge=0)] = None,
     land_area_pyeong_max: Annotated[float | None, Query(ge=0)] = None,
     exclude_direct: bool = False,
+    include_renewals: Annotated[bool, Query(description="전세·월세 갱신 계약 포함 (기본: 신규 계약만)")] = False,
 ) -> TransactionFilter:
     """지도 마커와 거래 목록이 같이 쓰는 필터. 유형에 맞지 않는 조합은 400으로 거절한다."""
     is_land = property_type == PropertyType.land
@@ -58,6 +59,7 @@ def market_filter(
             "land_area_pyeong", _range("land_area_pyeong", land_area_pyeong_min, land_area_pyeong_max), is_land, "토지"
         ),
         exclude_direct=exclude_direct,
+        include_renewals=include_renewals,
     )
 
 

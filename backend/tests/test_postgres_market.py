@@ -83,8 +83,8 @@ async def repos(market_db, tmp_path_factory):
 
 
 def filters():
-    for (pt, dt), period, direct in itertools.product(KINDS, (24, 60), (False, True)):
-        yield TransactionFilter(pt, dt, period_months=period, exclude_direct=direct)
+    for (pt, dt), period, direct, renewals in itertools.product(KINDS, (24, 60), (False, True), (False, True)):
+        yield TransactionFilter(pt, dt, period_months=period, exclude_direct=direct, include_renewals=renewals)
     yield TransactionFilter(PropertyType.apartment, DealType.sale, 24, price=Range(300_000_000, 900_000_000))
     yield TransactionFilter(PropertyType.apartment, DealType.sale, 24, exclusive_area_pyeong=Range(20, 30))
     yield TransactionFilter(PropertyType.apartment, DealType.jeonse, 24, deposit=Range(None, 300_000_000))
@@ -136,10 +136,16 @@ async def test_transaction_lists_match(repos):
 async def test_complex_transactions_and_single_lookups_match(repos):
     memory, postgres, dataset, _ = repos
     for c in dataset.complexes[:40]:
-        for deal_type, direct, cancelled, sort in itertools.product(
-            (None, *DealType), (False, True), (False, True), ("latest", "price_desc")
+        for deal_type, direct, cancelled, sort, renewals in itertools.product(
+            (None, *DealType), (False, True), (False, True), ("latest", "price_desc"), (False, True)
         ):
-            kw = dict(deal_type=deal_type, exclude_direct=direct, include_cancelled=cancelled, sort=sort)
+            kw = dict(
+                deal_type=deal_type,
+                exclude_direct=direct,
+                include_cancelled=cancelled,
+                sort=sort,
+                include_renewals=renewals,
+            )
             got = await postgres.complex_transactions(c.id, offset=0, limit=50, **kw)
             assert got == await memory.complex_transactions(c.id, offset=0, limit=50, **kw), (c.name, kw)
     for t in dataset.transactions[::97]:
@@ -159,17 +165,16 @@ async def test_share_deals_and_roads_are_stored_but_never_served(repos):
 
 async def test_stats_match(repos):
     memory, postgres, dataset, regions = repos
-    for code, (pt, dt), period, direct in itertools.product(
-        [c for c in regions if c.startswith("26350")][:4] + ["26500"], KINDS, (24, 60), (False, True)
+    codes = [c for c in regions if c.startswith("26350")][:4] + ["26500"]
+    for code, (pt, dt), period, direct, renewals in itertools.product(
+        codes, KINDS, (24, 60), (False, True), (False, True)
     ):
-        assert await postgres.region_stats(code, pt, dt, period, direct) == await memory.region_stats(
-            code, pt, dt, period, direct
-        ), (code, pt, dt)
-    for c, dt, direct in itertools.product(dataset.complexes[:60], DealType, (False, True)):
-        assert await postgres.complex_stats(c.id, dt, 24, direct) == await memory.complex_stats(c.id, dt, 24, direct), (
-            c.name,
-            dt,
-        )
+        args = (code, pt, dt, period, direct)
+        got = await postgres.region_stats(*args, include_renewals=renewals)
+        assert got == await memory.region_stats(*args, include_renewals=renewals), (args, renewals)
+    for c, dt, direct, renewals in itertools.product(dataset.complexes[:60], DealType, (False, True), (False, True)):
+        got = await postgres.complex_stats(c.id, dt, 24, direct, include_renewals=renewals)
+        assert got == await memory.complex_stats(c.id, dt, 24, direct, include_renewals=renewals), (c.name, dt)
     assert await postgres.region_stats("99999", PropertyType.apartment, DealType.sale, 24, False) is None
 
 

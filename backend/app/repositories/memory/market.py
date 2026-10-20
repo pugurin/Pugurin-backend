@@ -202,7 +202,9 @@ class InMemoryMarketRepository:
         return [months_ago(last, n) for n in range(period_months - 1, -1, -1)]
 
     @staticmethod
-    def _stats_filter(txs, deal_type: DealType, exclude_direct: bool, start: date) -> list[Transaction]:
+    def _stats_filter(
+        txs, deal_type: DealType, exclude_direct: bool, start: date, include_renewals: bool
+    ) -> list[Transaction]:
         return [
             t
             for t in txs
@@ -210,6 +212,7 @@ class InMemoryMarketRepository:
             and not t.is_cancelled
             and t.contract_date >= start
             and not (exclude_direct and t.trade_method == TradeMethod.direct)
+            and (include_renewals or not t.is_renewal)
         ]
 
     async def get_region(self, region_code: str) -> RegionRef | None:
@@ -222,22 +225,32 @@ class InMemoryMarketRepository:
         deal_type: DealType,
         period_months: int,
         exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None:
         if region_code not in self._regions:
             return None
         months = self._stats_window(period_months)
         candidates = (t for t in self._by_kind[(property_type, deal_type)] if t.region_code.startswith(region_code))
-        txs = self._stats_filter(candidates, deal_type, exclude_direct, months[0])
+        txs = self._stats_filter(candidates, deal_type, exclude_direct, months[0], include_renewals)
         return StatsResult(_series(deal_type, txs, months))
 
     async def complex_stats(
-        self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
+        self,
+        complex_id: UUID,
+        deal_type: DealType,
+        period_months: int,
+        exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None:
         found = self._complexes.get(complex_id)
         if found is None:
             return None
         months = self._stats_window(period_months)
-        txs = self._stats_filter(self._by_complex.get(complex_id, []), deal_type, exclude_direct, months[0])
+        txs = self._stats_filter(
+            self._by_complex.get(complex_id, []), deal_type, exclude_direct, months[0], include_renewals
+        )
         by_area = []
         for area in sorted(found.area_types, key=lambda a: a.exclusive_area_m2):
             bucket = area_bucket(area.exclusive_area_m2)
@@ -259,6 +272,8 @@ class InMemoryMarketRepository:
             if (tx.is_cancelled and not include_cancelled) or tx.contract_date < cutoff:
                 continue
             if flt.exclude_direct and tx.trade_method == TradeMethod.direct:
+                continue
+            if tx.is_renewal and not flt.include_renewals:
                 continue
             if not (
                 flt.price.accepts(tx.price) and flt.deposit.accepts(tx.deposit) and flt.rent.accepts(tx.monthly_rent)
@@ -363,6 +378,7 @@ class InMemoryMarketRepository:
         sort: str,
         offset: int,
         limit: int,
+        include_renewals: bool = False,
     ) -> TransactionPage:
         items = [
             tx
@@ -370,6 +386,7 @@ class InMemoryMarketRepository:
             if (deal_type is None or tx.deal_type == deal_type)
             and (include_cancelled or not tx.is_cancelled)
             and not (exclude_direct and tx.trade_method == TradeMethod.direct)
+            and (include_renewals or not tx.is_renewal)
         ]
         self._sort(items, sort)
         return TransactionPage(items[offset : offset + limit], len(items))

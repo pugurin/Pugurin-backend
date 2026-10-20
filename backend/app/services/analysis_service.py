@@ -52,15 +52,27 @@ class AnalysisService:
         self._parcels = parcels
 
     async def complex(
-        self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
+        self,
+        complex_id: UUID,
+        deal_type: DealType,
+        period_months: int,
+        exclude_direct: bool,
+        include_renewals: bool = False,
     ) -> ComplexAnalysis:
         found = await self._repo.get_complex(complex_id)
         if found is None:
             raise not_found("단지를 찾을 수 없습니다")
 
-        complex_stats = await self._repo.complex_stats(complex_id, deal_type, period_months, exclude_direct)
+        complex_stats = await self._repo.complex_stats(
+            complex_id, deal_type, period_months, exclude_direct, include_renewals=include_renewals
+        )
         region_stats = await self._repo.region_stats(
-            found.region_code, found.property_type, deal_type, period_months, exclude_direct
+            found.region_code,
+            found.property_type,
+            deal_type,
+            period_months,
+            exclude_direct,
+            include_renewals=include_renewals,
         )
         assert complex_stats is not None and region_stats is not None
         full_name, short_name = await self._region_names(found.region_code)

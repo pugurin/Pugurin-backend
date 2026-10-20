@@ -31,6 +31,7 @@ TRANSACTION_FIELDS = {
     "trade_method",
     "is_cancelled",
     "cancelled_at",
+    "is_renewal",
 }
 
 

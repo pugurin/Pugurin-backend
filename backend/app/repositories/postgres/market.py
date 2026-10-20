@@ -58,7 +58,8 @@ _TX_COLUMNS = """
     t.id, t.property_type, t.deal_type, t.complex_id, t.region_code, t.jibun, t.pnu, t.location_precision,
     ST_Y(t.location) AS lat, ST_X(t.location) AS lng, t.price, t.deposit, t.monthly_rent,
     t.exclusive_area_m2::float8 AS exclusive_area_m2, t.land_area_m2::float8 AS land_area_m2, t.floor,
-    t.contract_date, t.build_year, t.trade_method, t.is_cancelled, t.cancelled_at
+    t.contract_date, t.build_year, t.trade_method, t.is_cancelled, t.cancelled_at,
+    t.contract_type IS NOT DISTINCT FROM '갱신' AS is_renewal
 """
 
 _PYEONG = f"(t.basis_area_m2::float8 / {SQM_PER_PYEONG})"
@@ -77,6 +78,7 @@ _ORDER = {
     "price_asc": 'coalesce(t.price, t.deposit, 0) ASC, t.id::text COLLATE "C" ASC',
     "price_desc": 'coalesce(t.price, t.deposit, 0) DESC, t.id::text COLLATE "C" ASC',
 }
+_NOT_RENEWAL = "t.contract_type IS DISTINCT FROM '갱신'"
 _LATEST_FIRST = 't.contract_date DESC, t.id::text COLLATE "C" DESC'
 
 
@@ -294,6 +296,7 @@ class PostgresMarketRepository:
             trade_method=TradeMethod(r.trade_method) if r.trade_method else None,
             is_cancelled=r.is_cancelled,
             cancelled_at=datetime.combine(r.cancelled_at, datetime.min.time(), tzinfo=KST) if r.cancelled_at else None,
+            is_renewal=r.is_renewal,
         )
 
     # ── 필터 ──────────────────────────────────────────────────
@@ -306,6 +309,8 @@ class PostgresMarketRepository:
             w.add("NOT t.is_cancelled")
         if flt.exclude_direct:
             w.add("t.trade_method IS DISTINCT FROM 'direct'")
+        if not flt.include_renewals:
+            w.add(_NOT_RENEWAL)
         w.range("t.price", "price", flt.price)
         w.range("t.deposit", "deposit", flt.deposit)
         w.range("t.monthly_rent", "rent", flt.rent)
@@ -448,9 +453,12 @@ class PostgresMarketRepository:
         sort: str,
         offset: int,
         limit: int,
+        include_renewals: bool = False,
     ) -> TransactionPage:
         w = _Where(self._visible, {})
         w.add("t.complex_id = :cid", cid=complex_id)
+        if not include_renewals:
+            w.add(_NOT_RENEWAL)
         if deal_type is not None:
             w.add("t.deal_type = :dt", dt=deal_type.value)
         if not include_cancelled:
@@ -472,11 +480,13 @@ class PostgresMarketRepository:
         last = self.data_as_of.date().replace(day=1)
         return [months_ago(last, n) for n in range(period_months - 1, -1, -1)]
 
-    def _stats_where(self, deal_type: DealType, exclude_direct: bool, start: date) -> _Where:
+    def _stats_where(self, deal_type: DealType, exclude_direct: bool, start: date, include_renewals: bool) -> _Where:
         w = _Where(self._visible, {})
         w.add("t.deal_type = :dt AND NOT t.is_cancelled AND t.contract_date >= :start", dt=deal_type.value, start=start)
         if exclude_direct:
             w.add("t.trade_method IS DISTINCT FROM 'direct'")
+        if not include_renewals:
+            w.add(_NOT_RENEWAL)
         return w
 
     @staticmethod
@@ -509,12 +519,14 @@ class PostgresMarketRepository:
         deal_type: DealType,
         period_months: int,
         exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None:
         snap = await self._snap()
         if region_code not in snap.regions:
             return None
         months = self._stats_window(period_months)
-        w = self._stats_where(deal_type, exclude_direct, months[0])
+        w = self._stats_where(deal_type, exclude_direct, months[0], include_renewals)
         w.add(
             "t.property_type = :pt AND left(t.region_code, :rc_len) = :rc",
             pt=property_type.value,
@@ -527,14 +539,20 @@ class PostgresMarketRepository:
         return StatsResult(self._series(deal_type, months, overall, by_month))
 
     async def complex_stats(
-        self, complex_id: UUID, deal_type: DealType, period_months: int, exclude_direct: bool
+        self,
+        complex_id: UUID,
+        deal_type: DealType,
+        period_months: int,
+        exclude_direct: bool,
+        *,
+        include_renewals: bool = False,
     ) -> StatsResult | None:
         snap = await self._snap()
         found = snap.complexes.get(complex_id)
         if found is None:
             return None
         months = self._stats_window(period_months)
-        w = self._stats_where(deal_type, exclude_direct, months[0])
+        w = self._stats_where(deal_type, exclude_direct, months[0], include_renewals)
         w.add("t.complex_id = :cid", cid=complex_id)
         rows = await self._grouped(w, "floor(t.exclusive_area_m2 + 0.5)::int")
         overall = next((r for r in rows if r.g_month == 1 and r.g_bucket == 1), None)

@@ -44,6 +44,7 @@ class _Regions:
     by_name: dict[tuple[str, str], str]  # (시군구 코드, 법정동 이름) → 법정동 코드
     codes: set[str]
     centroid: dict[str, tuple[float, float]]  # 코드 → (lat, lng). 동 중심점이 없으면 시군구 중심점
+    names: dict[str, str]  # 코드 → 마스터 이름
 
     def code_for(self, t: RawTrade) -> str | None:
         # 아파트 매매는 응답의 법정동 코드를 먼저 쓴다(파일 캐시 빌드와 같은 규칙)
@@ -307,7 +308,7 @@ async def _regions(conn: AsyncConnection, geo: GeoIndex) -> _Regions:
     for code, level, parent, _ in found:
         if level == "dong" and code not in centroid and parent in centroid:
             centroid[code] = centroid[parent]
-    return _Regions(by_name, {r[0] for r in found}, centroid)
+    return _Regions(by_name, {r[0] for r in found}, centroid, {r[0]: r[3] for r in found})
 
 
 def _columns(rows: list[dict], names: Iterable[str]) -> dict[str, list]:
@@ -340,7 +341,8 @@ async def _load_window(
             if cid not in complexes:
                 hit = geo.address(t.sgg_cd, t.umd_nm, t.jibun) if t.jibun else None
                 exact = bool(hit and hit.precise)
-                address = f"부산 {SIGUNGU_BY_CODE[t.sgg_cd].name} {t.umd_nm} {t.jibun}".strip()
+                dong = regions.names.get(region_code, t.umd_nm)
+                address = f"부산 {SIGUNGU_BY_CODE[t.sgg_cd].name} {dong} {t.jibun}".strip()
                 complexes[cid] = {
                     "id": cid,
                     "property_type": t.property_type.value,

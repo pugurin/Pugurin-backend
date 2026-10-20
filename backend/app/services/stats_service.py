@@ -21,9 +21,12 @@ class StatsService:
         deal_type: DealType,
         period_months: int,
         exclude_direct: bool,
+        include_renewals: bool = False,
     ) -> StatsResult:
         _check_land_is_sale(property_type, deal_type)
-        result = await self._repo.region_stats(region_code, property_type, deal_type, period_months, exclude_direct)
+        result = await self._repo.region_stats(
+            region_code, property_type, deal_type, period_months, exclude_direct, include_renewals=include_renewals
+        )
         if result is None:
             raise not_found("지역을 찾을 수 없습니다")
         return result
@@ -35,6 +38,7 @@ class StatsService:
         deal_type: DealType,
         period_months: int,
         exclude_direct: bool,
+        include_renewals: bool = False,
     ) -> StatsResult:
         _check_land_is_sale(property_type, deal_type)
         found = await self._repo.get_complex(complex_id)
@@ -42,6 +46,8 @@ class StatsService:
             raise not_found("단지를 찾을 수 없습니다")
         if found.property_type != property_type:
             raise validation_error("property_type", "단지의 매물 유형과 다릅니다")
-        result = await self._repo.complex_stats(complex_id, deal_type, period_months, exclude_direct)
+        result = await self._repo.complex_stats(
+            complex_id, deal_type, period_months, exclude_direct, include_renewals=include_renewals
+        )
         assert result is not None
         return result

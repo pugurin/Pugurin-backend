@@ -1,6 +1,43 @@
-# 현재는 파일 캐시(.cache)를 읽는 구조라 api 하나면 충분하다. db(PostGIS)·redis·worker는 실제 저장소를 붙일 때 추가한다.
-# backend/.cache(수집한 실데이터)가 있으면 실데이터로, 없으면 가짜 샘플로 응답한다.
+# api(조회 서버) + db(PostGIS) + redis. migrate가 스키마·법정동 시드를 먼저 올리고 끝나면 api가 뜬다.
+# 지금 조회는 아직 backend/.cache(파일 캐시)를 읽는다. 있으면 실데이터, 없으면 가짜 샘플. DB로 옮기는 작업은 #38에서 이어진다.
+# 수집 worker는 DB 적재를 붙일 때 추가한다(#38).
 services:
+  db:
+    # postgis/postgis는 amd64 전용이라 Apple Silicon에서 느리다. 같은 관리자가 내는 멀티아키 이미지를 쓴다
+    image: imresamu/postgis:16-3.5
+    environment:
+      POSTGRES_USER: pugurin
+      POSTGRES_PASSWORD: pugurin
+      POSTGRES_DB: pugurin
+    ports:
+      - "${PUGURIN_DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pugurin -d pugurin"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${PUGURIN_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: ./backend
+    command: ["python", "-m", "app.db", "upgrade"]
+    environment:
+      PUGURIN_DATABASE_URL: postgresql+asyncpg://pugurin:pugurin@db:5432/pugurin
+    depends_on:
+      db:
+        condition: service_healthy
+
   api:
     build: ./backend
     ports:
@@ -10,11 +47,22 @@ services:
         required: false
     environment:
       PUGURIN_DATA_MODE: auto
+      PUGURIN_DATABASE_URL: postgresql+asyncpg://pugurin:pugurin@db:5432/pugurin
+      PUGURIN_REDIS_URL: redis://redis:6379/0
     volumes:
       - ./backend/.cache:/app/.cache:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      # readiness: DB 스키마가 최신이고 Redis가 닿아야 healthy (컨테이너 안에서 부르므로 내부망 허용)
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/internal/health/ready')"]
       interval: 10s
       timeout: 3s
       retries: 5
       start_period: 15s
+
+volumes:
+  pgdata:

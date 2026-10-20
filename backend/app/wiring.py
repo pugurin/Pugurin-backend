@@ -1,11 +1,15 @@
 import logging
 from dataclasses import dataclass
 
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncEngine
+
 from app.adapters.kakao import KakaoGeocoder
 from app.adapters.mock.parcel_source import MockParcelSource
 from app.adapters.unconfigured import UnconfiguredParcelSource
 from app.core.config import Settings
 from app.core.dates import Clock, latest_etl_time
+from app.db.engine import make_engine
 from app.ingestion.real import load_real_data, resolve_data_mode
 from app.repositories.memory.glossary import InMemoryGlossaryRepository
 from app.repositories.memory.market import InMemoryMarketRepository
@@ -22,6 +26,7 @@ from app.services.complex_service import ComplexService
 from app.services.glossary_service import GlossaryService
 from app.services.map_service import MapService
 from app.services.parcel_service import ParcelService
+from app.services.readiness_service import ReadinessService
 from app.services.search_service import SearchService
 from app.services.stats_service import StatsService
 from app.services.transaction_service import TransactionService
@@ -42,12 +47,19 @@ class Container:
     stats_service: StatsService
     transaction_service: TransactionService
     analysis_service: AnalysisService
+    readiness_service: ReadinessService
     address_search: AddressSearch | None = None
+    db_engine: AsyncEngine | None = None
+    redis: Redis | None = None
 
     async def aclose(self) -> None:
         close = getattr(self.address_search, "aclose", None)
         if close is not None:
             await close()
+        if self.db_engine is not None:
+            await self.db_engine.dispose()
+        if self.redis is not None:
+            await self.redis.aclose()
 
 
 def build_container(
@@ -74,6 +86,9 @@ def build_container(
     # 주소 검색은 카카오 REST 키가 있을 때만 켠다
     if address_search is None and settings.kakao_rest_key:
         address_search = KakaoGeocoder(settings.kakao_rest_key)
+    # DB·Redis는 아직 조회에 쓰지 않고 연결 상태만 확인한다(#38에서 저장소를 옮긴다)
+    db_engine = make_engine(settings.database_url) if settings.database_url else None
+    redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
     parcel_service = ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock)
     return Container(
         settings=settings,
@@ -86,5 +101,8 @@ def build_container(
         stats_service=StatsService(market_repo),
         transaction_service=TransactionService(market_repo),
         analysis_service=AnalysisService(market_repo, parcel_service),
+        readiness_service=ReadinessService(db_engine, redis),
         address_search=address_search,
+        db_engine=db_engine,
+        redis=redis,
     )

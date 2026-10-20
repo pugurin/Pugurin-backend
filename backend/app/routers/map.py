@@ -1,14 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.core.geo import BBox
-from app.routers.deps import ContainerDep
+from app.routers.deps import ContainerDep, require_market_data
 from app.routers.filters import MarketFilter
 from app.schemas.common import DataMeta
 from app.schemas.map import ComplexMarker, MarkersData, MarkersResponse, ParcelMarker, RegionMarker
 
-router = APIRouter(tags=["map"])
+router = APIRouter(tags=["map"], dependencies=[Depends(require_market_data)])
 
 
 @router.get("/map/markers", response_model=MarkersResponse, summary="지도 마커·집계 조회")

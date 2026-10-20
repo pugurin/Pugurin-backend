@@ -4,8 +4,8 @@ import pytest
 
 from app.core.dates import latest_etl_time
 from app.repositories.types import PropertyType
-from app.sample_data.market import build_sample_market
 from tests.conftest import API, FIXED_NOW, HAEUNDAE
+from tests.fakes.market import build_sample_market
 
 TRANSACTION_FIELDS = {
     "id",

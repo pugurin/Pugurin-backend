@@ -7,7 +7,7 @@ from uuid import UUID
 from app.core.dates import months_ago
 from app.core.geo import BBox, area_bucket, pyeong_exact
 from app.core.text import normalize
-from app.repositories.memory.dataset import MarketData, RegionDirectory, sample_regions
+from app.repositories.memory.dataset import MarketData, RegionDirectory
 from app.repositories.types import (
     AreaStats,
     Complex,
@@ -30,7 +30,6 @@ from app.repositories.types import (
     TransactionFilter,
     TransactionPage,
 )
-from app.sample_data.market import build_sample_market
 
 MIN_MONTH_SAMPLE = 3  # 월 표본이 이보다 적으면 중위값을 내지 않는다
 BBOX_PADDING = 0.003  # 약 300m
@@ -171,12 +170,12 @@ def _series(deal_type: DealType, txs: list[Transaction], months: list[date]) -> 
 
 
 class InMemoryMarketRepository:
-    """거래 데이터를 메모리에서 집계하는 구현(샘플 또는 수집한 실데이터). DB 저장소로 교체해도 같은 포트를 따른다."""
+    """수집 캐시(.cache)로 만든 실데이터를 메모리에서 집계한다. DB가 없을 때 쓰고, DB 저장소와 같은 결과를 낸다."""
 
-    def __init__(self, as_of: datetime, market: MarketData | None = None, regions: RegionDirectory | None = None):
+    def __init__(self, as_of: datetime, market: MarketData, regions: RegionDirectory):
         self._as_of = as_of
-        self._market = market or build_sample_market(as_of.date())
-        self._regions = regions if regions is not None else sample_regions()
+        self._market = market
+        self._regions = regions
         self._complexes = {c.id: c for c in self._market.complexes}
         self._by_kind: dict[tuple[PropertyType, DealType], list[Transaction]] = defaultdict(list)
         self._by_complex: dict[UUID, list[Transaction]] = defaultdict(list)
@@ -192,6 +191,10 @@ class InMemoryMarketRepository:
     @property
     def data_as_of(self) -> datetime:
         return self._as_of
+
+    @property
+    def has_data(self) -> bool:
+        return bool(self._market.transactions)
 
     def _build_region_boxes(self) -> dict[str, tuple[float, float, float, float]]:
         return region_boxes(self._regions, self._market.complexes)

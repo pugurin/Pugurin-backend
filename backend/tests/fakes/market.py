@@ -17,7 +17,7 @@ from app.repositories.types import (
     TradeMethod,
     Transaction,
 )
-from app.sample_data.regions import (
+from tests.fakes.regions import (
     CELL_DLAT,
     CELL_DLNG,
     DONGS,

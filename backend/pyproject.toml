@@ -40,7 +40,7 @@ select = ["E", "F", "I", "UP", "B"]
 known-third-party = ["alembic"]
 
 [tool.ruff.lint.per-file-ignores]
-"app/sample_data/*" = ["E501"]
+"app/content/*" = ["E501"]
 "tests/*" = ["E501"]
 # ERD.md의 DDL을 그대로 옮긴 마이그레이션이라 주석 줄 길이를 맞추지 않는다
 "alembic/versions/*" = ["E501"]

@@ -26,7 +26,7 @@ async def ready(request: Request, container: ContainerDep) -> JSONResponse:
     result = await container.readiness_service.check()
     body = {
         "status": "ready" if result.ready else "not_ready",
-        "data_mode": container.data_mode,
+        "data_mode": "real" if result.checks.get("data") and result.checks["data"].status == "ok" else "none",
         "checks": {name: {"status": c.status, "detail": c.detail} for name, c in result.checks.items()},
     }
     return JSONResponse(body, status_code=200 if result.ready else 503, headers={"Cache-Control": "no-store"})

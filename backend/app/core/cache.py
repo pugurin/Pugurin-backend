@@ -4,7 +4,7 @@ from app.core.dates import Clock
 
 
 class TTLCache[V]:
-    """프로세스 내 TTL 캐시. Redis 도입 전 mock 단계에서만 쓴다."""
+    """프로세스 내 TTL 캐시."""
 
     def __init__(self, clock: Clock):
         self._clock = clock

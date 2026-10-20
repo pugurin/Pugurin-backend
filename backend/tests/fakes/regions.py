@@ -3,7 +3,8 @@
 import math
 from dataclasses import dataclass
 
-from app.core.busan import SIGUNGU_BY_CODE, Sigungu
+from app.core.busan import SIGUNGU, SIGUNGU_BY_CODE, Sigungu
+from app.repositories.types import RegionRef
 
 LAT0, LNG0 = 34.85, 128.75
 CELL_DLAT, CELL_DLNG = 0.0002, 0.00025
@@ -113,3 +114,10 @@ def parse_pnu(pnu: str) -> tuple[str, int, int] | None:
 
 def cell_origin(i: int, j: int) -> tuple[float, float]:
     return LAT0 + i * CELL_DLAT, LNG0 + j * CELL_DLNG
+
+
+def sample_regions() -> dict[str, RegionRef]:
+    """가짜 시장 데이터가 쓰는 지역 목록: 실제 16개 구·군 + 가짜 동 37곳."""
+    directory: dict[str, RegionRef] = {s.code: RegionRef(s.code, s.name, s.lat, s.lng) for s in SIGUNGU}
+    directory.update({d.code: RegionRef(d.code, d.name, d.lat, d.lng) for d in DONGS})
+    return directory

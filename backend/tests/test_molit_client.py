@@ -2,11 +2,9 @@ import httpx
 import pytest
 
 from app.adapters.molit.client import MolitClient
-from app.adapters.molit.factory import create_trade_source
-from app.adapters.molit.mock import FixtureTradeSource
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError, SourceKind
-from app.core.config import Settings
 from app.repositories.ports import SourceUnavailable
+from tests.fakes.molit import FixtureTradeSource
 
 pytestmark = pytest.mark.anyio
 
@@ -190,17 +188,6 @@ async def test_endless_pages_are_cut_off():
     client, _, _ = make(lambda r: httpx.Response(200, content=page(0, 1, 10_000_000)))
     with pytest.raises(SourceUnavailable):
         await client.fetch_month(SourceKind.apt_trade, "26350", "202509")
-
-
-def test_factory_uses_fixtures_without_both_keys():
-    assert isinstance(create_trade_source(Settings()), FixtureTradeSource)
-    assert isinstance(create_trade_source(Settings(data_go_kr_trade_key="a")), FixtureTradeSource)
-    assert isinstance(create_trade_source(Settings(data_go_kr_rent_key="b")), FixtureTradeSource)
-
-
-def test_factory_uses_real_client_with_both_keys():
-    source = create_trade_source(Settings(data_go_kr_trade_key="a", data_go_kr_rent_key="b", molit_daily_call_limit=5))
-    assert isinstance(source, MolitClient)
 
 
 async def test_fixture_source_returns_nothing_for_unknown_regions_and_months():

@@ -21,6 +21,13 @@ from app.wiring import build_container
 API_PREFIX = "/api/v1"
 
 
+async def _data_mode(container) -> str:
+    try:
+        return "real" if await container.has_market_data() else "none"
+    except Exception:  # noqa: BLE001 - DB가 잠깐 닿지 않아도 응답 헤더 때문에 요청을 실패시키지 않는다
+        return "none"
+
+
 def create_app(
     settings: Settings | None = None,
     clock: Clock | None = None,
@@ -47,12 +54,12 @@ def create_app(
 
     install_error_handlers(app)
     app.add_middleware(ConditionalGetMiddleware, max_age=settings.cache_max_age_seconds)
-    data_mode = app.state.container.data_mode
 
     @app.middleware("http")
     async def add_data_mode_header(request, call_next):
         response = await call_next(request)
-        response.headers["X-Data-Mode"] = data_mode
+        # real: 실거래 데이터로 응답 / none: 아직 데이터가 없음(가짜 데이터는 내보내지 않는다)
+        response.headers["X-Data-Mode"] = await _data_mode(container)
         return response
 
     # 가장 바깥에서 먼저 세어, 막힌 요청은 라우터·캐시 계산까지 가지 않게 한다

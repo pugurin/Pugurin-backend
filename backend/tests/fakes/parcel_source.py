@@ -2,7 +2,7 @@ import math
 import random
 
 from app.repositories.types import ParcelData, RestrictionInfo, ZoningPart
-from app.sample_data.regions import (
+from tests.fakes.regions import (
     CELL_DLAT,
     CELL_DLNG,
     DONG_BY_CODE,

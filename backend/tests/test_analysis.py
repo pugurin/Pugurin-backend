@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.adapters.unconfigured import UnconfiguredParcelSource
-from app.main import create_app
 from app.repositories.memory.dataset import MarketDataset
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.types import (
@@ -20,6 +19,7 @@ from app.repositories.types import (
 )
 from app.services.analysis_service import _compare
 from tests.conftest import API, FIXED_NOW
+from tests.fakes.app import create_app
 from tests.test_stats import COMPLEX, DONG, HEADERS, OTHER_COMPLEX, REGIONS, TRANSACTIONS
 
 PNU = "2635010500100010000"

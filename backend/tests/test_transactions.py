@@ -1,10 +1,10 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.main import create_app
 from app.repositories.memory.dataset import MarketDataset
 from app.repositories.memory.market import InMemoryMarketRepository
 from tests.conftest import API, BUSAN, FIXED_NOW
+from tests.fakes.app import create_app
 from tests.test_stats import COMPLEX, DONG, EOK, OTHER_COMPLEX, OTHER_DONG, REGIONS, SIGUNGU, TRANSACTIONS
 
 HEADERS = {"X-Device-Id": "2f8f1d52-7b0e-4c55-9c0e-3f6f9d1c2a11"}

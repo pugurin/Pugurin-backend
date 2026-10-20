@@ -6,11 +6,10 @@ from fastapi.testclient import TestClient
 
 from app.adapters.kakao import KakaoGeocoder
 from app.adapters.molit.types import QuotaExceeded
-from app.main import create_app
-from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.ports import SourceUnavailable
 from app.repositories.types import AddressHit
 from tests.conftest import API, BUSAN, FIXED_NOW
+from tests.fakes.app import create_app, sample_repo
 
 HEADERS = {"X-Device-Id": "2f8f1d52-7b0e-4c55-9c0e-3f6f9d1c2a11"}
 
@@ -264,7 +263,7 @@ async def test_kakao_search_does_not_double_the_city_prefix_and_respects_the_lim
 
 @pytest.mark.anyio
 async def test_region_boxes_enclose_their_complexes():
-    repo = InMemoryMarketRepository(FIXED_NOW)
+    repo = sample_repo(FIXED_NOW)
     dong = next(h for h in await repo.search_regions("우동", 5) if h.level == "dong")
     inside = [h.complex for h in await repo.search_complexes("우동", 50) if h.complex.region_code == dong.code]
     assert inside and all(

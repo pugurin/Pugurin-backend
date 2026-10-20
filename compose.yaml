@@ -46,7 +46,6 @@ services:
       - path: ./backend/.env
         required: false
     environment:
-      PUGURIN_DATA_MODE: auto
       PUGURIN_DATABASE_URL: postgresql+asyncpg://pugurin:pugurin@db:5432/pugurin
       PUGURIN_REDIS_URL: redis://redis:6379/0
     depends_on:

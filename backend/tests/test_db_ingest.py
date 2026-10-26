@@ -11,7 +11,7 @@ from app.db import migrate
 from app.db.engine import make_engine
 from app.ingestion.build import build_dataset
 from app.ingestion.collect import collect
-from app.ingestion.load import load_into_db
+from app.ingestion.load import LOAD_LOCK_KEY, LoadBusy, load_into_db
 from app.ingestion.rawcache import RawCache
 from tests.conftest import FIXED_NOW, create_database
 from tests.fakes.molit import FixtureTradeSource
@@ -182,6 +182,17 @@ async def test_run_is_recorded(engine, cache):
     )[0]
     assert run[:5] == ("success", 14, report.rows_fetched, report.rows_inserted, True)
     assert run[5] == FIXED_NOW
+
+
+async def test_a_second_load_refuses_to_run_while_one_is_in_progress(engine, cache):
+    """적재가 동시에 둘 돌면 같은 단지·거래를 놓고 deadlock이 난다(운영 서버에서 실제로 났다)."""
+    async with engine.connect() as holder:
+        await holder.execute(text("SELECT pg_advisory_lock(:k)"), {"k": LOAD_LOCK_KEY})
+        with pytest.raises(LoadBusy):
+            await load(engine, cache)
+        await holder.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOAD_LOCK_KEY})
+    assert await scalar(engine, "SELECT count(*) FROM etl_runs") == 0
+    assert (await load(engine, cache)).status == "success"
 
 
 # ── 다시 적재 ────────────────────────────────────────────────

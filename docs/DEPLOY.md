@@ -157,6 +157,7 @@ dc exec -T db pg_restore -U pugurin -d pugurin --clean --if-exists < ~/backups/p
 | api가 unhealthy | `dc logs api`, `dc logs migrate`. DB 비밀번호를 바꿨다면 아래 참고 |
 | 지도에 아무것도 없음 | `dc exec api python -m app.db status`에서 거래 0건이면 `dc logs worker`. 키가 없으면 worker가 안내를 남기고 멈춘다 |
 | worker "호출 한도" | 정상. 다음 날 이어서 받는다 |
+| `load`가 "다른 적재가 이미 진행 중" | worker(또는 다른 `load`)가 적재 중이다. 동시에 돌면 deadlock이 나서 한 번에 하나만 돈다. `dc logs -f worker`로 끝난 걸 보고 다시 실행한다 |
 
 **DB 비밀번호를 바꿔야 할 때:** 먼저 DB 안에서 바꾸고 `.env`를 맞춘다.
 ```bash

@@ -427,6 +427,26 @@ CREATE UNIQUE INDEX mv_monthly_stats_key
 - 5년 백필은 약 6,800회 호출로, API마다 개발계정 일 10,000회 한도 안이라 하루면 끝난다. 이후 매일 최근 3개월 재수집은 약 340회다.
 - 용량이 작고(1GB 이하) 공개 데이터라 개인정보 보존 기한도 없으므로 지울 이유가 없다. 더 긴 추이가 필요하면 백필 기간만 늘린다.
 
+### 4.1 경매·공매 `auctions` (마이그레이션 0005)
+
+경매마당 API(원천: 대법원 법원경매정보·온비드)에서 부산 진행 물건을 매일 받는다. 코드는 `app/ingestion/auctions.py`, 실행은 `python -m app.ingestion auctions`(worker는 실거래가 다음에 자동 실행).
+
+| 컬럼 | 내용 |
+|---|---|
+| `id` | 경매마당 `product_id`(`CA-…` 법원 경매, `GO-…` 공매) |
+| `source` | `court` / `public` |
+| `case_no`, `court_name`, `title`, `usage` | 사건번호·공매관리번호, 법원, 공매 물건명, 물건용도 원문 |
+| `address`, `jibun_address` | 대표 소재지(호수 포함), 지번 주소(경매는 상세에서) |
+| `region_code`, `pnu`, `location`, `location_precise` | 카카오 지오코딩 결과. `pnu`로 `complexes.pnu`와 잇는다 |
+| `appraisal_price`, `min_price`, `deposit`, `fail_count` | 감정가, 최저가, 입찰보증금, 유찰횟수 |
+| `sale_date`, `bid_start_at`, `bid_end_at` | 매각기일(공매는 입찰 마감일), 공매 입찰 기간 |
+| `land_area_m2`, `building_area_m2`, `is_share` | 면적(㎡), 지분 매각 여부 |
+| `schedule`, `results` | 기일 이력(날짜·종류·최저가·결과·낙찰가), 매각 결과(응찰자 수·최고가) |
+| `list_hash`, `detail_fetched_at` | 목록 값 지문. 바뀐 물건만 상세를 다시 받는다(상세 한도 월 10만 회) |
+| `first_seen_at`, `last_seen_at`, `closed_at` | 진행 목록에서 빠지면 지우지 않고 `closed_at`을 채운다. 다시 나타나면 비운다 |
+
+**개인정보는 저장하지 않는다.** 원천 응답에는 당사자·임차인·응찰자 이름, 점유조사 메모, 등기 권리자, 청구액이 섞여 온다. 어댑터(`app/adapters/madangs.py`)가 허용한 칸만 옮기고 나머지는 버리며, 테스트가 DB 전체에서 이름이 나오지 않는지 확인한다.
+
 ## 5. 2·3차 테이블 윤곽
 
 ```mermaid

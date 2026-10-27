@@ -4,11 +4,13 @@ import sys
 from datetime import datetime
 
 from app.adapters.kakao import KakaoGeocoder
+from app.adapters.madangs import MadangsClient
 from app.adapters.molit.client import MolitClient
 from app.adapters.molit.types import SourceKind
 from app.core.config import Settings
 from app.core.dates import KST
 from app.db.engine import make_engine
+from app.ingestion.auctions import sync_auctions
 from app.ingestion.build import GeoIndex
 from app.ingestion.geocode import GeocodeCache
 from app.ingestion.load import LoadBusy, LoadReport, load_into_db
@@ -102,6 +104,43 @@ async def _refresh(settings: Settings, args: argparse.Namespace) -> int:
     return code
 
 
+async def _auctions(settings: Settings) -> int:
+    if not settings.auction_api_key:
+        print("PUGURIN_AUCTION_API_KEY가 없어 경매 동기화를 건너뜁니다 (backend/.env)")
+        return 2
+    if not settings.database_url:
+        print("경매 동기화에는 PUGURIN_DATABASE_URL이 필요합니다")
+        return 2
+    source = MadangsClient(settings.auction_api_key, base_url=settings.auction_base_url)
+    geocoder = KakaoGeocoder(settings.kakao_rest_key) if settings.kakao_rest_key else None
+    engine = make_engine(settings.database_url)
+    try:
+        cache = GeocodeCache(settings.data_dir / "geocode.json")
+        r = await sync_auctions(engine, source, geocoder, cache, now=datetime.now(KST))
+    except LoadBusy as e:
+        print(e)
+        return 4
+    finally:
+        await source.aclose()
+        if geocoder:
+            await geocoder.aclose()
+        await engine.dispose()
+    print(f"경매 동기화 {r.status}: 경매 {r.court:,}건 · 공매 {r.public:,}건, 상세 {r.details_fetched:,}건 받음")
+    print(f"  새로 {r.inserted:,} · 갱신 {r.updated:,} · 종료 {r.closed:,} · 위치 없음 {r.without_location:,}", end="")
+    print(f" · 상세 실패 {r.details_failed} · 다음으로 미룸 {r.details_pending}")
+    for e in r.errors[:5]:
+        print(f"  - {e}")
+    return 0 if r.status == "success" else 3
+
+
+async def _daily(settings: Settings, args: argparse.Namespace) -> int:
+    """worker 하루치: 실거래가 수집·적재, 그다음 경매 동기화(키가 있을 때)."""
+    code = await _refresh(settings, args)
+    if settings.auction_api_key:
+        code = max(code, await _auctions(settings))
+    return code
+
+
 def _worker(settings: Settings, args: argparse.Namespace) -> int:
     if not (settings.data_go_kr_trade_key and settings.data_go_kr_rent_key and settings.kakao_rest_key):
         print("worker에는 공공데이터포털 키 2개(TRADE·RENT)와 PUGURIN_KAKAO_REST_KEY가 필요합니다")
@@ -109,7 +148,7 @@ def _worker(settings: Settings, args: argparse.Namespace) -> int:
     if not settings.database_url:
         print("worker에는 PUGURIN_DATABASE_URL이 필요합니다")
         return 2
-    asyncio.run(run_daily(lambda: _refresh(settings, args), hour=settings.worker_run_hour))
+    asyncio.run(run_daily(lambda: _daily(settings, args), hour=settings.worker_run_hour))
     return 0
 
 
@@ -125,7 +164,10 @@ def main() -> int:
     sub.add_parser("status", help="캐시로 만든 데이터셋 요약 (네트워크 사용 안 함)")
     load = sub.add_parser("load", help="수집 캐시를 DB에 적재 (API 호출 없음)")
     load.add_argument("--force", action="store_true", help="이미 적재한 단위도 다시 적재")
-    sub.add_parser("worker", help="refresh(수집 → 지오코딩 → DB 적재)를 지금 한 번, 이후 매일 정해진 시각에 실행")
+    sub.add_parser("auctions", help="부산 경매·공매 물건을 경매마당에서 받아 DB에 맞춘다")
+    sub.add_parser(
+        "worker", help="refresh(수집 → 지오코딩 → DB 적재)와 경매 동기화를 지금 한 번, 이후 매일 정해진 시각에 실행"
+    )
     args = parser.parse_args()
     settings = Settings()
     if args.command == "status":
@@ -135,6 +177,8 @@ def main() -> int:
             print("PUGURIN_DATABASE_URL이 필요합니다 (예: postgresql+asyncpg://pugurin:pugurin@localhost:5432/pugurin)")
             return 2
         return asyncio.run(_load(settings, force=args.force))
+    if args.command == "auctions":
+        return asyncio.run(_auctions(settings))
     if args.command == "worker":
         args.months = args.kinds = args.districts = None
         args.skip_geocode = args.no_db = False

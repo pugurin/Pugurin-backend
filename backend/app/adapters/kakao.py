@@ -81,6 +81,10 @@ class KakaoGeocoder:
     async def region(self, sgg_name: str, umd_nm: str) -> GeoResult | None:
         return parse_documents(await self._search(f"부산 {sgg_name} {umd_nm}".strip()), want_address=False)
 
+    async def lookup(self, query: str) -> GeoResult | None:
+        """완성된 주소 한 줄(예: "부산 해운대구 우동 639-3") → 좌표·법정동 코드·PNU."""
+        return parse_documents(await self._search(query), want_address=True)
+
     async def search_addresses(self, query: str, limit: int) -> list[AddressHit]:
         """자유 입력 주소를 검색한다. 부산 밖(법정동 코드가 26으로 시작하지 않는 것)은 버린다."""
         text = query.strip()

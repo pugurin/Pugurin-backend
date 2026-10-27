@@ -13,6 +13,7 @@ FIELDS = {
     "property_type",
     "deal_type",
     "complex_id",
+    "complex_name",
     "address",
     "region_code",
     "jibun",
@@ -86,6 +87,12 @@ def test_row_fields_match_the_spec(tx_client):
     body = rows(tx_client, region_code=DONG)
     assert body["data"] and all(set(item) == FIELDS for item in body["data"])
     assert all(item["property_type"] == "apartment" and item["deal_type"] == "sale" for item in body["data"])
+
+
+def test_rows_carry_the_complex_name(tx_client):
+    body = rows(tx_client, region_code=DONG, page_size=100)
+    names = {item["complex_id"]: item["complex_name"] for item in body["data"]}
+    assert names[str(COMPLEX.id)] == "통계단지"
 
 
 def test_cancelled_trades_are_hidden_unless_requested(tx_client):

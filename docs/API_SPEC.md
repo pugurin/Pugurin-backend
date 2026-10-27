@@ -325,7 +325,7 @@
 
 **거래 1건 필드** (`/transactions`, `/complexes/{id}/transactions` 공통)
 
-`id, property_type, deal_type, complex_id(nullable), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct, 전·월세는 원천이 구분을 주지 않아 null), is_cancelled, cancelled_at, is_renewal`
+`id, property_type, deal_type, complex_id(nullable), complex_name(nullable, 단지 거래면 단지명), address, region_code, jibun(nullable), pnu(nullable), location_precision(parcel|dong), lat, lng, price, deposit, monthly_rent, exclusive_area_m2, exclusive_area_pyeong, price_per_pyeong, floor, contract_date, build_year, trade_method(broker|direct, 전·월세는 원천이 구분을 주지 않아 null), is_cancelled, cancelled_at, is_renewal`
 
 - `is_renewal`: 전세·월세 **갱신 계약**이면 `true`(원천 `contractType='갱신'`). 매매는 항상 `false`
 

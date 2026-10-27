@@ -12,6 +12,7 @@ TRANSACTION_FIELDS = {
     "property_type",
     "deal_type",
     "complex_id",
+    "complex_name",
     "address",
     "region_code",
     "jibun",

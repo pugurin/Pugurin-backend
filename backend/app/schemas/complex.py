@@ -63,6 +63,7 @@ class TransactionOut(BaseModel):
     property_type: PropertyType
     deal_type: DealType
     complex_id: UUID | None
+    complex_name: str | None
     address: str
     region_code: str
     jibun: str | None
@@ -97,6 +98,7 @@ class TransactionOut(BaseModel):
             property_type=tx.property_type,
             deal_type=tx.deal_type,
             complex_id=tx.complex_id,
+            complex_name=tx.complex_name,
             address=tx.address,
             region_code=tx.region_code,
             jibun=tx.jibun,

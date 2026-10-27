@@ -297,6 +297,7 @@ class PostgresMarketRepository:
             is_cancelled=r.is_cancelled,
             cancelled_at=datetime.combine(r.cancelled_at, datetime.min.time(), tzinfo=KST) if r.cancelled_at else None,
             is_renewal=r.is_renewal,
+            complex_name=c.name if (c := snap.complexes.get(r.complex_id)) else None,
         )
 
     # ── 필터 ──────────────────────────────────────────────────

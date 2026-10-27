@@ -118,6 +118,7 @@ class Transaction:
     is_cancelled: bool
     cancelled_at: datetime | None
     is_renewal: bool = False  # 전세·월세 갱신 계약(원천 contractType='갱신')
+    complex_name: str | None = None  # 단지 거래면 단지명. 목록에서 주소 대신 보여준다
 
     @property
     def basis_area_m2(self) -> float:

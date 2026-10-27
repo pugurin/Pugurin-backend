@@ -1,6 +1,7 @@
 import statistics
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import replace
 from datetime import date, datetime
 from uuid import UUID
 
@@ -179,11 +180,15 @@ class InMemoryMarketRepository:
         self._complexes = {c.id: c for c in self._market.complexes}
         self._by_kind: dict[tuple[PropertyType, DealType], list[Transaction]] = defaultdict(list)
         self._by_complex: dict[UUID, list[Transaction]] = defaultdict(list)
-        for tx in self._market.transactions:
+        transactions = [
+            replace(tx, complex_name=self._complexes[tx.complex_id].name) if tx.complex_id in self._complexes else tx
+            for tx in self._market.transactions
+        ]
+        for tx in transactions:
             self._by_kind[(tx.property_type, tx.deal_type)].append(tx)
             if tx.complex_id:
                 self._by_complex[tx.complex_id].append(tx)
-        self._by_id = {t.id: t for t in self._market.transactions}
+        self._by_id = {t.id: t for t in transactions}
         self._popularity = {cid: sum(1 for t in txs if not t.is_cancelled) for cid, txs in self._by_complex.items()}
         self._search_index = [(normalize(c.name), normalize(c.address), c) for c in self._market.complexes]
         self._region_boxes = self._build_region_boxes()

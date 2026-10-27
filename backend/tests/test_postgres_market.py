@@ -149,7 +149,7 @@ async def test_complex_transactions_and_single_lookups_match(repos):
             got = await postgres.complex_transactions(c.id, offset=0, limit=50, **kw)
             assert got == await memory.complex_transactions(c.id, offset=0, limit=50, **kw), (c.name, kw)
     for t in dataset.transactions[::97]:
-        assert await postgres.get_transaction(t.id) == t
+        assert await postgres.get_transaction(t.id) == await memory.get_transaction(t.id)
 
 
 async def test_share_deals_and_roads_are_stored_but_never_served(repos):

@@ -181,9 +181,7 @@ class InMemoryMarketRepository:
         self._by_kind: dict[tuple[PropertyType, DealType], list[Transaction]] = defaultdict(list)
         self._by_complex: dict[UUID, list[Transaction]] = defaultdict(list)
         transactions = [
-            replace(tx, complex_name=self._complexes[tx.complex_id].name)
-            if tx.complex_id in self._complexes
-            else tx
+            replace(tx, complex_name=self._complexes[tx.complex_id].name) if tx.complex_id in self._complexes else tx
             for tx in self._market.transactions
         ]
         for tx in transactions:

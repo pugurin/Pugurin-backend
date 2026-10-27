@@ -11,7 +11,7 @@ from app.core.dates import KST
 from app.db.engine import make_engine
 from app.ingestion.build import GeoIndex
 from app.ingestion.geocode import GeocodeCache
-from app.ingestion.load import LoadReport, load_into_db
+from app.ingestion.load import LoadBusy, LoadReport, load_into_db
 from app.ingestion.rawcache import RawCache
 from app.ingestion.real import RealDataMissing, load_real_data
 from app.ingestion.refresh import refresh
@@ -55,6 +55,9 @@ async def _load(settings: Settings, *, force: bool = False, calls_made: int = 0,
     try:
         geo = GeoIndex(GeocodeCache(settings.data_dir / "geocode.json"))
         report = await load_into_db(engine, raw, geo, force=force, calls_made=calls_made, params=params)
+    except LoadBusy as e:
+        print(e)
+        return 4
     finally:
         await engine.dispose()
     _print_load(report)

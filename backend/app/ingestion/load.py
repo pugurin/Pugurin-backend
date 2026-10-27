@@ -22,6 +22,13 @@ from app.ingestion.collect import Window
 from app.ingestion.rawcache import RawCache
 from app.repositories.types import DealType, PropertyType
 
+# 적재는 한 번에 하나만 돈다. 둘이 같은 단지·거래를 upsert하면 deadlock으로 단위가 실패한다.
+LOAD_LOCK_KEY = 3800_0001
+
+
+class LoadBusy(RuntimeError):
+    """다른 적재(worker 또는 수동 `load`)가 이미 돌고 있다."""
+
 
 @dataclass
 class LoadReport:
@@ -447,7 +454,33 @@ async def load_into_db(
     force: bool = False,
     out: Callable[[str], None] = print,
 ) -> LoadReport:
-    """캐시의 모든 단위 중 DB에 없거나 더 최근에 받은 단위만 적재한다(`force`면 전부)."""
+    """캐시의 모든 단위 중 DB에 없거나 더 최근에 받은 단위만 적재한다(`force`면 전부).
+
+    다른 적재가 돌고 있으면 기록을 남기지 않고 `LoadBusy`를 던진다.
+    """
+    async with engine.connect() as lock:
+        if not (await lock.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": LOAD_LOCK_KEY})).scalar():
+            raise LoadBusy("다른 적재가 이미 진행 중입니다. 끝난 뒤에 다시 실행하세요")
+        # 세션 잠금이라 커밋해도 유지된다. 적재 내내 트랜잭션을 열어 두지 않는다
+        await lock.commit()
+        try:
+            return await _load(engine, raw, geo, job=job, params=params, calls_made=calls_made, force=force, out=out)
+        finally:
+            await lock.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOAD_LOCK_KEY})
+            await lock.commit()
+
+
+async def _load(
+    engine: AsyncEngine,
+    raw: RawCache,
+    geo: GeoIndex,
+    *,
+    job: str,
+    params: dict | None,
+    calls_made: int,
+    force: bool,
+    out: Callable[[str], None],
+) -> LoadReport:
     run_id = await _start_run(engine, job, {"force": force, **(params or {})})
     report = LoadReport(run_id)
     async with engine.begin() as conn:

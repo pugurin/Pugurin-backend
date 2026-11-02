@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query
 
 from app.core.errors import validation_error
 from app.core.geo import BBox
-from app.repositories.types import AuctionFilter, AuctionGroup, AuctionSource
+from app.repositories.types import AuctionFilter, AuctionGroup, AuctionSort, AuctionSource
 from app.routers.deps import ContainerDep
 from app.schemas.auction import (
     AuctionDetailOut,
@@ -30,6 +30,11 @@ async def list_auctions(
         str | None, Query(description="쉼표 구분: apartment,officetel,villa,land,other. 생략하면 전부")
     ] = None,
     include_closed: Annotated[bool, Query(description="진행 목록에서 빠진(끝난) 물건도 포함")] = False,
+    exclude_share: Annotated[bool, Query(description="지분 매각 물건 제외")] = False,
+    sort: Annotated[
+        AuctionSort,
+        Query(description="sale_date(매각기일 순) | min_price_ratio | min_price | recent_trade_discount"),
+    ] = AuctionSort.sale_date,
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> AuctionsResponse:
@@ -47,8 +52,9 @@ async def list_auctions(
         source=source,
         groups=groups,
         include_closed=include_closed,
+        exclude_share=exclude_share,
     )
-    result, as_of = await container.auction_service.search(flt, page=page, page_size=page_size)
+    result, as_of = await container.auction_service.search(flt, sort=sort, page=page, page_size=page_size)
     return AuctionsResponse(
         data=[AuctionOut.from_domain(a) for a in result.items],
         meta=AuctionPageMeta(

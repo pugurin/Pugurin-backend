@@ -22,8 +22,10 @@ from app.repositories.ports import (
     ParcelSource,
     ZoningRuleRepository,
 )
+from app.repositories.postgres.auctions import PostgresAuctionRepository
 from app.repositories.postgres.market import PostgresMarketRepository
 from app.services.analysis_service import AnalysisService
+from app.services.auction_service import AuctionService
 from app.services.complex_service import ComplexService
 from app.services.glossary_service import GlossaryService
 from app.services.map_service import MapService
@@ -49,6 +51,7 @@ class Container:
     transaction_service: TransactionService
     analysis_service: AnalysisService
     readiness_service: ReadinessService
+    auction_service: AuctionService
     address_search: AddressSearch | None = None
     db_engine: AsyncEngine | None = None
     redis: Redis | None = None
@@ -130,6 +133,8 @@ def build_container(
         transaction_service=TransactionService(market_repo),
         analysis_service=AnalysisService(market_repo, parcel_service),
         readiness_service=ReadinessService(db_engine, redis, market_repo),
+        # 경매·공매는 DB에만 있다(파일 캐시 모드에서는 503 DATA_NOT_READY)
+        auction_service=AuctionService(PostgresAuctionRepository(db_engine) if db_engine else None),
         address_search=address_search,
         db_engine=db_engine,
         redis=redis,

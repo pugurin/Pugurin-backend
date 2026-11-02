@@ -55,8 +55,8 @@ def not_found(message: str) -> AppError:
     return AppError(ErrorCode.RESOURCE_NOT_FOUND, message)
 
 
-def data_not_ready() -> AppError:
-    return AppError(ErrorCode.DATA_NOT_READY, "실거래 데이터가 아직 없어요. 수집·적재가 끝나면 다시 시도해 주세요")
+def data_not_ready(message: str = "실거래 데이터가 아직 없어요. 수집·적재가 끝나면 다시 시도해 주세요") -> AppError:
+    return AppError(ErrorCode.DATA_NOT_READY, message)
 
 
 def error_body(code: ErrorCode, message: str, field: str | None = None) -> dict:

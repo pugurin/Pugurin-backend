@@ -3,6 +3,8 @@ from datetime import date, datetime
 from enum import StrEnum
 from uuid import UUID
 
+from app.core.geo import BBox
+
 
 class PropertyType(StrEnum):
     apartment = "apartment"
@@ -268,3 +270,66 @@ class RegionSearchHit:
 class ZoningLimits:
     max_building_coverage_ratio: int
     max_floor_area_ratio: int
+
+
+# ── 경매·공매 (경매마당, 원천: 대법원 법원경매정보·온비드) ─────────────
+
+
+class AuctionSource(StrEnum):
+    court = "court"  # 법원 경매
+    public = "public"  # 공매(온비드)
+
+
+class AuctionGroup(StrEnum):
+    """물건용도 원문을 우리 매물 유형으로 묶은 것. 단독·다가구·상가·공장 등은 other."""
+
+    apartment = "apartment"
+    officetel = "officetel"
+    villa = "villa"
+    land = "land"
+    other = "other"
+
+
+@dataclass(frozen=True)
+class AuctionFilter:
+    bbox: BBox | None = None
+    complex_id: UUID | None = None
+    source: AuctionSource | None = None
+    groups: tuple[AuctionGroup, ...] = ()
+    include_closed: bool = False
+
+
+@dataclass(frozen=True)
+class Auction:
+    id: str
+    source: AuctionSource
+    case_no: str
+    court_name: str | None
+    title: str | None
+    usage: str | None
+    group: AuctionGroup
+    address: str
+    lat: float | None
+    lng: float | None
+    location_precise: bool
+    complex_id: UUID | None
+    appraisal_price: int | None
+    min_price: int | None
+    deposit: int | None
+    fail_count: int | None
+    sale_date: date | None
+    bid_start_at: datetime | None
+    bid_end_at: datetime | None
+    land_area_m2: float | None
+    building_area_m2: float | None
+    is_share: bool
+    status: str | None
+    closed_at: datetime | None
+    schedule: tuple[dict, ...] = ()
+    results: tuple[dict, ...] = ()
+
+
+@dataclass(frozen=True)
+class AuctionPage:
+    items: list[Auction]
+    total: int

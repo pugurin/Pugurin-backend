@@ -20,6 +20,8 @@
 - **가짜 데이터 폐지:** 샘플 모드를 없앴다. 실데이터가 없으면 `503 DATA_NOT_READY`, `X-Data-Mode`는 `real|none`
 - 전세·월세 **갱신 계약 기본 제외** 구현: 지도·거래 목록·단지 거래 이력·통계·분석에 `include_renewals`(기본 false) 추가, 거래 필드에 `is_renewal` 추가, `meta.method`에 `, 갱신 계약 제외` 표시
 
+- **경매·공매 조회 추가:** `GET /auctions`, `GET /auctions/{id}` (6.1장). 데이터는 DB에만 있고, 동기화 전에는 `503 DATA_NOT_READY`
+
 ### v0.4 보충 (1차 mock 구현 중 확인)
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
 - `/map/markers` 필터 조합 검증 규칙 명시, 토지의 줌 14 이상 동작 명시
@@ -533,6 +535,78 @@
 - `dong_land_trend`는 지분거래·지목 '도로'를 제외한다(v0.4 구현 기본값, 기능명세서 §7 #24에서 확정). 연도별 `count`를 함께 준다
 
 ---
+
+### 6.1 경매·공매 (Auctions) [추가]
+
+부산 법원 경매·공매 진행 물건. 원천은 경매마당 API(대법원 법원경매정보·온비드)이고 worker가 매일 04시 이후 동기화한다.
+**화면에 출처 `meta.source_attribution`("대법원 법원경매정보")을 표시해야 한다.** 개인정보(당사자·임차인·응찰자 이름 등)는 저장하지도 내려보내지도 않는다.
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/auctions` | 목록. 지도 화면(bbox) 또는 단지(complex_id)로 거른다 |
+| GET | `/auctions/{id}` | 상세. 목록 필드 + 기일 이력·매각 결과 |
+
+**`GET /auctions` 쿼리**
+
+| 이름 | 기본 | 설명 |
+|---|---|---|
+| `bbox` | - | `min_lng,min_lat,max_lng,max_lat`. 지도 화면 안의 물건 |
+| `complex_id` | - | 이 단지와 **같은 필지(PNU)**의 물건. 단지 상세의 "경매 진행 중" 표시에 쓴다 |
+| `source` | 둘 다 | `court`(법원 경매) / `public`(공매) |
+| `property_group` | 전부 | 쉼표 구분: `apartment,officetel,villa,land,other`. 물건용도 원문을 묶은 것(단독·다가구·상가·공장 등은 `other`) |
+| `include_closed` | `false` | 진행 목록에서 빠진(매각·취하 등으로 끝난) 물건도 포함 |
+| `page`, `page_size` | 1, 100 | `page_size` 최대 500 |
+
+정렬은 매각기일(공매는 입찰 마감일) 빠른 순이다.
+
+**응답 (목록 항목)**
+```json
+{
+  "data": [{
+    "id": "CA-41-2024-104630-1",
+    "source": "court",
+    "case_no": "2024타경104630",
+    "court_name": "부산지방법원 동부지원",
+    "title": null,
+    "usage": "오피스텔(주거)",
+    "property_group": "officetel",
+    "address": "부산광역시 해운대구 해운대로 602, 9층904호 (우동,해피투모로우마린)",
+    "lat": 35.16, "lng": 129.16, "location_precise": true,
+    "complex_id": null,
+    "appraisal_price": 334000000,
+    "min_price": 9435000,
+    "min_price_ratio": 3,
+    "deposit": 943500,
+    "fail_count": 10,
+    "sale_date": "2026-10-27",
+    "bid_start_at": null, "bid_end_at": null,
+    "land_area_m2": 7.79, "land_area_pyeong": 2.4,
+    "building_area_m2": 56.55, "building_area_pyeong": 17.1,
+    "is_share": false,
+    "status": "진행",
+    "is_closed": false
+  }],
+  "meta": {
+    "data_as_of": "2026-11-02T04:30:00+09:00",
+    "reporting_lag_notice": false,
+    "source_attribution": "대법원 법원경매정보",
+    "source_url": "https://www.courtauction.go.kr/",
+    "page": 1, "page_size": 100, "total": 3856, "total_pages": 39
+  }
+}
+```
+- `min_price_ratio`: 최저가 ÷ 감정가(%, 반올림). 유찰될수록 내려간다
+- `lat`·`lng`가 `null`이면 주소를 지도에서 못 찾은 물건이다(약 0.4%). `bbox` 검색에는 나오지 않는다
+- 공매는 `title`(물건명), `bid_start_at`·`bid_end_at`(입찰 기간)이 있고 `court_name`·`deposit`이 `null`이다
+- 이 경매 데이터를 다른 화면의 실거래가처럼 "시세"로 보여 주지 않는다(감정가·최저가는 거래가가 아니다)
+
+**`GET /auctions/{id}` 응답 `data`** = 목록 항목 + 아래 두 배열 (공매는 둘 다 빈 배열)
+```json
+"schedule": [{ "date": "2026-09-01", "kind": "매각기일", "min_price": 500000000, "result": "유찰", "sale_price": null }],
+"results":  [{ "date": "2026-09-01", "result": "유찰", "bidders": 0, "top_price": null }]
+```
+
+**오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 id는 `404 RESOURCE_NOT_FOUND`, 잘못된 `property_group`은 `400 VALIDATION_ERROR`(field `property_group`).
 
 ## 7. 용어 해설 (Glossary) [1차]
 

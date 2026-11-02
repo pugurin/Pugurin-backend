@@ -333,3 +333,66 @@ class Auction:
 class AuctionPage:
     items: list[Auction]
     total: int
+
+
+# ── 주변 생활 시설 (학교: 나이스, 병원: 건강보험심사평가원) ─────────────
+
+
+class SchoolLevel(StrEnum):
+    elementary = "elementary"  # 초등학교
+    middle = "middle"  # 중학교
+    high = "high"  # 고등학교
+    special = "special"  # 특수학교
+    other = "other"  # 각종·평생·외국인학교 등
+
+
+class HospitalTier(StrEnum):
+    general = "general"  # 상급종합·종합병원
+    hospital = "hospital"  # 병원·요양병원·정신병원·한방병원·치과병원
+    clinic = "clinic"  # 의원
+    dental = "dental"  # 치과의원
+    oriental = "oriental"  # 한의원
+    public = "public"  # 보건소·보건지소·보건진료소
+    other = "other"
+
+
+@dataclass(frozen=True)
+class School:
+    id: str
+    name: str
+    kind: str | None
+    level: SchoolLevel
+    foundation: str | None
+    coed: str | None
+    address: str
+    lat: float | None
+    lng: float | None
+    tel: str | None
+    homepage: str | None
+    opened_on: date | None
+    distance_m: int | None = None
+
+
+@dataclass(frozen=True)
+class Hospital:
+    id: str
+    name: str
+    class_name: str | None
+    tier: HospitalTier
+    address: str
+    lat: float | None
+    lng: float | None
+    tel: str | None
+    homepage: str | None
+    doctors: int | None
+    distance_m: int | None = None
+
+
+@dataclass(frozen=True)
+class Nearby:
+    schools: dict[SchoolLevel, list[School]]
+    school_radius_m: int
+    hospital_radius_m: int
+    hospital_counts: dict[HospitalTier, int]
+    nearest_general: Hospital | None
+    nearest_hospitals: list[Hospital]

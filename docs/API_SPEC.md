@@ -21,6 +21,7 @@
 - 전세·월세 **갱신 계약 기본 제외** 구현: 지도·거래 목록·단지 거래 이력·통계·분석에 `include_renewals`(기본 false) 추가, 거래 필드에 `is_renewal` 추가, `meta.method`에 `, 갱신 계약 제외` 표시
 
 - **경매·공매 조회 추가:** `GET /auctions`, `GET /auctions/{id}` (6.1장). 데이터는 DB에만 있고, 동기화 전에는 `503 DATA_NOT_READY`
+- **주변 학교·병원 추가:** `GET /nearby`, `GET /complexes/{id}/nearby`, `GET /schools`, `GET /hospitals` (6.2장)
 
 ### v0.4 보충 (1차 mock 구현 중 확인)
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
@@ -607,6 +608,59 @@
 ```
 
 **오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 id는 `404 RESOURCE_NOT_FOUND`, 잘못된 `property_group`은 `400 VALIDATION_ERROR`(field `property_group`).
+
+### 6.2 주변 학교·병원 (Facilities) [추가]
+
+학교는 나이스 교육정보 개방 포털, 병원은 건강보험심사평가원 자료다. worker가 매일 동기화한다. 거리는 모두 **직선거리(m)**다.
+**학교는 배정 학교(학군)가 아니다.** 통학구역(학구도) 데이터가 없어서 가까운 학교만 보여 준다. 화면에 `meta.school_notice`를 같이 표시한다.
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/nearby?lat=&lng=` | 좌표 주변 학교·병원 요약. 부산 밖 좌표는 400 |
+| GET | `/complexes/{id}/nearby` | 단지 위치로 같은 요약. 단지 상세 화면용 |
+| GET | `/schools?bbox=&level=` | 지도 화면 안의 학교(최대 500). `level`: `elementary,middle,high,special,other` |
+| GET | `/hospitals?bbox=&tier=` | 지도 화면 안의 병원(의사 많은 순 최대 500). `tier`: `general,hospital,clinic,dental,oriental,public,other` |
+
+- 개교 전((가칭), 개교일이 미래)이거나 폐교·폐업한 곳은 빠진다
+- 병원 `tier`: `general`=상급종합·종합병원, `hospital`=병원·요양병원·정신병원·한방병원·치과병원, `clinic`=의원, `dental`=치과의원, `oriental`=한의원, `public`=보건소 등
+
+**`/nearby` 응답**
+```json
+{
+  "data": {
+    "schools": {
+      "radius_m": 3000,
+      "elementary": [{ "id": "7241023", "name": "해운대초등학교", "kind": "초등학교", "level": "elementary",
+                       "foundation": "공립", "coed": "남여공학", "address": "부산광역시 해운대구 …",
+                       "lat": 35.16, "lng": 129.16, "tel": "051-…", "homepage": null, "opened_on": "1920-05-01",
+                       "distance_m": 274 }],
+      "middle": [],
+      "high": []
+    },
+    "hospitals": {
+      "radius_m": 1000,
+      "total": 120,
+      "counts": { "general": 1, "hospital": 7, "clinic": 61, "dental": 29, "oriental": 22, "public": 0, "other": 0 },
+      "nearest_general": { "id": "…", "name": "…병원", "class_name": "종합병원", "tier": "general",
+                           "address": "…", "lat": 35.16, "lng": 129.17, "tel": "051-…", "homepage": null,
+                           "doctors": 40, "distance_m": 747 },
+      "nearest": []
+    }
+  },
+  "meta": {
+    "data_as_of": "2026-11-02T14:13:39+09:00",
+    "reporting_lag_notice": false,
+    "source_attribution": ["나이스 교육정보 개방 포털", "건강보험심사평가원"],
+    "school_notice": "배정 학교(학군)가 아니라 직선거리로 가까운 학교입니다"
+  }
+}
+```
+- `schools.elementary`·`middle`·`high`: 각각 반경 3km 안에서 가까운 순 최대 3곳
+- `hospitals.counts`·`total`: 반경 1km 안의 수
+- `nearest_general`: 반경과 상관없이 가장 가까운 종합병원급 1곳
+- `nearest`: 종류와 상관없이 가장 가까운 5곳
+
+**오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 단지는 `404`, 잘못된 `level`·`tier`·좌표는 `400 VALIDATION_ERROR`.
 
 ## 7. 용어 해설 (Glossary) [1차]
 

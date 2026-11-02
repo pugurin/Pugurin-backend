@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # 카카오 로컬(REST 키): 지번 주소 → 좌표·법정동 코드. 수집 명령(refresh)에서만 쓴다
     kakao_rest_key: str = ""
 
+    # 경매마당(경매·공매 물건). 비우면 worker가 경매 동기화를 건너뛴다
+    auction_api_key: str = ""
+    auction_base_url: str = "https://api.madangs.com"
+
     # 실데이터 위치: PUGURIN_DATABASE_URL이 있으면 DB, 없으면 data_dir(.cache).
     # 둘 다 없으면 가짜로 채우지 않고 "데이터 없음"으로 응답한다
     data_dir: Path = Path(".cache")

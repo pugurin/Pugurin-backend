@@ -1,7 +1,7 @@
 """경매·공매 조회 API (실제 PostGIS). 데이터는 가짜 경매마당 응답으로 동기화해 채운다."""
 
 import asyncio
-from datetime import timedelta
+from datetime import date, timedelta
 from uuid import UUID
 
 import pytest
@@ -18,8 +18,22 @@ from tests.conftest import API, BUSAN, FIXED_NOW, create_database
 from tests.fakes.madangs import PERSONAL, FakeAuctionSource, FakeLookup, court_row, public_row
 
 COMPLEX_ID = UUID("6f1d2a8e-0000-4000-8000-000000000001")
+# 같은 필지에 있는 오피스텔 단지. id가 더 작아서 예전 규칙(가장 작은 id)이라면 이쪽이 골라진다
+OFFICETEL_ID = UUID("00000000-0000-4000-8000-000000000002")
 # FakeLookup이 "부산 해운대구 우동 601"에 주는 PNU
 PNU_601 = "2635010500" + "1" + "0601" + "0000"
+
+
+# (계약일, 가격, 전용면적, 거래방식, 해제, 단지). FIXED_NOW(2026-10-06) 기준 최근 12개월 = 2025-10-06부터
+TRADES = [
+    ("2026-08-01", 520_000_000, 84.97, "broker", False, COMPLEX_ID),  # ← 가장 최근의 유효 거래
+    ("2026-09-15", 300_000_000, 84.97, "direct", False, COMPLEX_ID),  # 직거래라 뺀다
+    ("2026-09-20", 600_000_000, 84.97, "broker", True, COMPLEX_ID),  # 해제라 뺀다
+    ("2026-09-25", 400_000_000, 59.90, "broker", False, COMPLEX_ID),  # 다른 평형
+    ("2026-03-01", 500_000_000, 84.90, None, False, COMPLEX_ID),  # 같은 평형, 거래방식 미상은 센다
+    ("2025-06-01", 480_000_000, 84.97, "broker", False, COMPLEX_ID),  # 12개월보다 오래됨
+    ("2026-09-30", 900_000_000, 84.50, "broker", False, OFFICETEL_ID),  # 다른 유형 단지
+]
 
 
 def client(url: str) -> TestClient:
@@ -43,9 +57,54 @@ async def _populate(url: str, cache: GeocodeCache) -> None:
             ),
             {"id": COMPLEX_ID, "pnu": PNU_601},
         )
+        await conn.execute(
+            text(
+                """
+                INSERT INTO complexes (id, property_type, name, name_key, region_code, jibun, pnu, location,
+                                       location_source)
+                VALUES (:id, 'officetel', '가상오피스', '가상오피스', '2635010500', '601', :pnu,
+                        ST_SetSRID(ST_MakePoint(129.166, 35.166), 4326), 'geocode')
+                """
+            ),
+            {"id": OFFICETEL_ID, "pnu": PNU_601},
+        )
+        # 경매 1번(아파트, 전용 84.97㎡)과 같은 평형 85, 다른 평형 60
+        await conn.execute(
+            text(
+                "INSERT INTO complex_area_types (complex_id, area_bucket, exclusive_area_m2) "
+                "VALUES (:c, 85, 84.97), (:c, 60, 59.9), (:o, 85, 84.5)"
+            ),
+            {"c": COMPLEX_ID, "o": OFFICETEL_ID},
+        )
+        run = (
+            await conn.execute(text("INSERT INTO etl_runs (job, status) VALUES ('collect', 'success') RETURNING id"))
+        ).scalar_one()
+        for n, (day, price, area, method, cancelled, complex_id) in enumerate(TRADES):
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO transactions (id, source_key, source_kind, property_type, deal_type, complex_id,
+                        region_code, location, location_precision, price, exclusive_area_m2, contract_date,
+                        trade_method, is_cancelled, first_seen_run_id, last_seen_run_id)
+                    VALUES (gen_random_uuid(), :key, 'apt_trade', 'apartment', 'sale', :complex_id, '2635010500',
+                        ST_SetSRID(ST_MakePoint(129.166, 35.166), 4326), 'parcel', :price, :area, :day,
+                        :method, :cancelled, :run, :run)
+                    """
+                ),
+                {
+                    "key": f"{n:040d}",
+                    "complex_id": complex_id,
+                    "price": price,
+                    "area": area,
+                    "day": date.fromisoformat(day),
+                    "method": method,
+                    "cancelled": cancelled,
+                    "run": run,
+                },
+            )
     court = [
         court_row(1),
-        court_row(2, 물건용도="오피스텔(주거)"),
+        court_row(2, 물건용도="오피스텔(주거)", _지분내용="채무자 지분 2분의 1"),
         court_row(3, 물건용도="근린생활시설", 매각기일="2026-11-20"),
         court_row(4, 물건용도="대지"),
     ]
@@ -164,3 +223,36 @@ def test_usage_names_map_to_our_property_groups(usage, group):
     from app.repositories.postgres.auctions import auction_group
 
     assert auction_group(usage) == group
+
+
+def test_items_carry_the_latest_comparable_sale_of_the_same_plan(auction_api_db):
+    with client(auction_api_db) as c:
+        data = {a["id"]: a for a in c.get(f"{API}/auctions").json()["data"]}
+        detail = c.get(f"{API}/auctions/CA-41-2025-1001-1").json()["data"]
+    apt = data["CA-41-2025-1001-1"]
+    assert apt["complex_id"] == str(COMPLEX_ID)  # 같은 필지의 오피스텔 단지가 아니라 아파트 단지
+    assert (apt["recent_trade_price"], apt["recent_trade_date"]) == (520_000_000, "2026-08-01")
+    assert (apt["recent_trade_area_m2"], apt["recent_trade_count"]) == (84.97, 2)
+    assert detail["recent_trade_price"] == 520_000_000
+    for other in ("CA-41-2025-1002-1", "CA-41-2025-1003-1", "GO-2026-1000-000001"):
+        assert [data[other][k] for k in ("recent_trade_price", "recent_trade_date", "recent_trade_count")] == [
+            None,
+            None,
+            None,
+        ]
+
+
+def test_sorts_and_share_filter(auction_api_db):
+    with client(auction_api_db) as c:
+        by_discount = ids(c.get(f"{API}/auctions", params={"sort": "recent_trade_discount"}))
+        by_ratio = c.get(f"{API}/auctions", params={"sort": "min_price_ratio"}).json()["data"]
+        by_price = c.get(f"{API}/auctions", params={"sort": "min_price"}).json()["data"]
+        no_share = ids(c.get(f"{API}/auctions", params={"exclude_share": True}))
+        bad = c.get(f"{API}/auctions", params={"sort": "cheapest"})
+    assert by_discount[0] == "CA-41-2025-1001-1"  # 비교할 실거래가 있는 물건이 먼저, 없으면 뒤로
+    ratios = [a["min_price_ratio"] for a in by_ratio]
+    assert ratios == sorted(ratios)
+    prices = [a["min_price"] for a in by_price]
+    assert prices == sorted(prices)
+    assert "CA-41-2025-1002-1" not in no_share and len(no_share) == 3
+    assert bad.status_code == 400

@@ -20,6 +20,7 @@ from app.repositories.ports import SourceUnavailable
 
 Source = Literal["court", "public"]
 PAGE_SIZE = 100  # API 최대
+DETAIL_VERSION = 2  # 2: 매각물건내목록의 지분 여부
 MAX_PAGES = 200
 
 
@@ -51,7 +52,10 @@ class AuctionItem:
     def list_hash(self) -> str:
         """목록에서 오는 값의 지문. 바뀌면(유찰·가격·기일 변경) 상세를 다시 받는다."""
         keys = (self.case_no, self.address, self.usage, self.appraisal_price, self.min_price, self.fail_count)
-        raw = json.dumps([*keys, self.sale_date and self.sale_date.isoformat(), self.status], ensure_ascii=False)
+        # 앞의 버전을 올리면 다음 동기화에서 모든 상세를 한 번 다시 받는다(상세에서 새 칸을 읽게 됐을 때)
+        raw = json.dumps(
+            [DETAIL_VERSION, *keys, self.sale_date and self.sale_date.isoformat(), self.status], ensure_ascii=False
+        )
         return hashlib.sha1(raw.encode()).hexdigest()
 
 
@@ -131,6 +135,8 @@ def court_with_detail(item: AuctionItem, detail: dict) -> AuctionItem:
         deposit=_int(detail.get("보증금")),
         land_area_m2=_float(detail.get("토지면적")),
         building_area_m2=_float(detail.get("건물면적")),
+        # 지분내용 원문에는 채무자 이름이 섞여 있어 있는지 여부만 남긴다
+        is_share=any(bool(_text(s.get("지분내용"))) for s in detail.get("매각물건내목록") or []),
         schedule=schedule,
         results=results,
     )

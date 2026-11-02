@@ -137,7 +137,7 @@ def build_container(
         analysis_service=AnalysisService(market_repo, parcel_service),
         readiness_service=ReadinessService(db_engine, redis, market_repo),
         # 경매·공매는 DB에만 있다(파일 캐시 모드에서는 503 DATA_NOT_READY)
-        auction_service=AuctionService(PostgresAuctionRepository(db_engine) if db_engine else None),
+        auction_service=AuctionService(PostgresAuctionRepository(db_engine) if db_engine else None, clock),
         facility_service=FacilityService(PostgresFacilityRepository(db_engine) if db_engine else None, clock),
         address_search=address_search,
         db_engine=db_engine,

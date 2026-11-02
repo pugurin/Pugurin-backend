@@ -37,6 +37,14 @@ def test_detail_keeps_numbers_and_drops_every_personal_field():
     assert "400000000" not in dumped  # 청구액(채무 정보)도 옮기지 않는다
 
 
+def test_court_share_sales_are_flagged_without_keeping_the_share_text():
+    row = court_row(1, _지분내용="채무자 홍길동 지분 4분의 1 전부")
+    item = court_with_detail(court_from_list(row), court_detail(row))
+    assert item.is_share is True and "홍길동" not in repr(item)
+    plain = court_row(2)
+    assert court_with_detail(court_from_list(plain), court_detail(plain)).is_share is False
+
+
 def test_geocode_query_prefers_jibun_and_strips_unit_from_road_address():
     row = court_row(1)
     assert geocode_query(court_from_list(row)) == "부산광역시 해운대구 해운대로 601"
@@ -171,6 +179,14 @@ async def test_unchanged_items_do_not_spend_detail_calls(engine, cache):
         engine, "SELECT jsonb_array_length(schedule) FROM auctions WHERE id = 'CA-41-2025-1001-1'"
     )
     assert schedule == 2  # 상세 없이 갱신해도 기일 이력이 지워지지 않는다
+
+
+async def test_share_flag_from_the_detail_survives_runs_without_a_detail(engine, cache):
+    source = FakeAuctionSource([court_row(1, _지분내용="채무자 홍길동 지분 2분의 1")], [])
+    await sync(engine, source, cache)
+    await sync(engine, source, cache, minutes=1)  # 목록이 그대로라 상세를 다시 받지 않는다
+    assert len(source.detail_calls) == 1
+    assert await fetch(engine, "SELECT is_share FROM auctions") == [(True,)]
 
 
 async def test_changed_list_values_refetch_the_detail(engine, cache):

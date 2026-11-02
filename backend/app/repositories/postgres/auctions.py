@@ -1,12 +1,21 @@
 """경매·공매 조회. 데이터는 `python -m app.ingestion auctions`(worker가 매일)로 채운 `auctions` 테이블에만 있다."""
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from app.repositories.types import Auction, AuctionFilter, AuctionGroup, AuctionPage, AuctionSource
+from app.core.dates import months_ago
+from app.repositories.types import (
+    Auction,
+    AuctionFilter,
+    AuctionGroup,
+    AuctionPage,
+    AuctionSort,
+    AuctionSource,
+    RecentTrade,
+)
 
 # 경매마당 용도(getcaUseCodeList 이름) → 우리 매물 유형. '%'로 끝나면 앞부분 일치(다세대주택, 아파트(생활주택) 등)
 _GROUPS: dict[AuctionGroup, tuple[str, ...]] = {
@@ -33,16 +42,74 @@ def auction_group(usage: str | None) -> AuctionGroup:
     return AuctionGroup.other
 
 
-# 단지와는 PNU(같은 필지)로 잇는다. 한 필지에 단지가 여럿이면 id가 가장 작은 곳
-_SELECT = """
+# 실거래와 비교하는 유형: 경매 용도 묶음 → 단지 property_type
+_COMPARABLE = (AuctionGroup.apartment, AuctionGroup.officetel, AuctionGroup.villa)
+
+
+def _group_case() -> str:
+    """물건용도 원문 → 비교할 단지 유형(apartment·officetel·villa), 나머지는 NULL.
+
+    패턴은 코드 상수라 SQL에 바로 넣는다(사용자 입력이 아니다).
+    """
+    whens = []
+    for group in _COMPARABLE:
+        cond = " OR ".join(f"a.usage LIKE '{p}'" if p.endswith("%") else f"a.usage = '{p}'" for p in _GROUPS[group])
+        whens.append(f"WHEN {cond} THEN '{group.value}'")
+    return "CASE " + " ".join(whens) + " END"
+
+
+# 단지와는 PNU(같은 필지)로 잇는다.
+# 한 필지에 단지가 여럿이면 같은 유형·전용면적이 가장 가까운 평형이 있는 곳, 그다음 id 순.
+# 경매 건물면적은 전용면적이다(운영 데이터에서 아파트·오피스텔의 95% 이상이 단지 평형과 0.5㎡ 안에서 일치).
+# 최근 실거래: 그 평형(area_bucket)의 최근 12개월 매매 중 가장 최근 1건. 해제·직거래·삭제된 거래는 뺀다.
+_FROM = f"""
+    FROM auctions a
+    LEFT JOIN LATERAL (
+        SELECT c.id, at.area_bucket
+        FROM complexes c
+        LEFT JOIN LATERAL (
+            SELECT t.area_bucket, abs(t.exclusive_area_m2 - a.building_area_m2) AS diff
+            FROM complex_area_types t
+            WHERE t.complex_id = c.id AND a.building_area_m2 IS NOT NULL
+              AND c.property_type = ({_group_case()})
+              AND abs(t.exclusive_area_m2 - a.building_area_m2) <= :area_tolerance
+            ORDER BY diff, t.area_bucket LIMIT 1
+        ) at ON true
+        WHERE a.pnu IS NOT NULL AND c.pnu = a.pnu
+        ORDER BY at.diff IS NULL, at.diff, c.id LIMIT 1
+    ) cx ON true
+    LEFT JOIN LATERAL (
+        SELECT t.price, t.contract_date, t.exclusive_area_m2::float8 AS exclusive_area_m2, count(*) OVER () AS n
+        FROM transactions t
+        WHERE cx.area_bucket IS NOT NULL AND t.complex_id = cx.id
+          AND t.deleted_at IS NULL AND NOT t.is_cancelled
+          AND t.deal_type = 'sale' AND t.trade_method IS DISTINCT FROM 'direct'
+          AND t.contract_date >= :since AND floor(t.exclusive_area_m2 + 0.5) = cx.area_bucket
+        ORDER BY t.contract_date DESC, t.id LIMIT 1
+    ) rt ON true
+"""
+
+_SELECT = f"""
     SELECT a.id, a.source, a.case_no, a.court_name, a.title, a.usage, a.address,
            ST_Y(a.location) AS lat, ST_X(a.location) AS lng, a.location_precise,
-           (SELECT c.id FROM complexes c WHERE c.pnu = a.pnu ORDER BY c.id LIMIT 1) AS complex_id,
+           cx.id AS complex_id,
            a.appraisal_price, a.min_price, a.deposit, a.fail_count, a.sale_date, a.bid_start_at, a.bid_end_at,
            a.land_area_m2::float8 AS land_area_m2, a.building_area_m2::float8 AS building_area_m2,
-           a.is_share, a.status, a.closed_at, a.schedule, a.results
-    FROM auctions a
+           a.is_share, a.status, a.closed_at, a.schedule, a.results,
+           rt.price AS recent_trade_price, rt.contract_date AS recent_trade_date,
+           rt.exclusive_area_m2 AS recent_trade_area_m2, rt.n AS recent_trade_count
+    {_FROM}
 """
+
+_ORDER = {
+    AuctionSort.sale_date: "a.sale_date NULLS LAST, a.id",
+    AuctionSort.min_price_ratio: "a.min_price::float8 / NULLIF(a.appraisal_price, 0) NULLS LAST, a.id",
+    AuctionSort.min_price: "a.min_price NULLS LAST, a.id",
+    # 최근 실거래 대비 많이 싼 순 = 최저가 ÷ 최근 실거래가가 작은 순. 비교할 거래가 없으면 뒤로
+    AuctionSort.recent_trade_discount: "a.min_price::float8 / NULLIF(rt.price, 0) NULLS LAST, a.id",
+}
+AREA_TOLERANCE_M2 = 3.0
+RECENT_TRADE_MONTHS = 12
 
 _DATA_AS_OF = text(
     """
@@ -61,22 +128,28 @@ class PostgresAuctionRepository:
         async with self._engine.connect() as conn:
             return (await conn.execute(_DATA_AS_OF)).scalar()
 
-    async def search(self, flt: AuctionFilter, *, offset: int, limit: int) -> AuctionPage:
+    async def search(
+        self, flt: AuctionFilter, *, today: date, sort: AuctionSort, offset: int, limit: int
+    ) -> AuctionPage:
         where, params = self._where(flt)
-        order = " ORDER BY a.sale_date NULLS LAST, a.id"
+        order = f" ORDER BY {_ORDER[sort]}"
         async with self._engine.connect() as conn:
             total = (await conn.execute(text(f"SELECT count(*) FROM auctions a{where}"), params)).scalar_one()
             rows = (
                 await conn.execute(
                     text(f"{_SELECT}{where}{order} OFFSET :offset LIMIT :limit"),
-                    {**params, "offset": offset, "limit": limit},
+                    {**params, **_trade_params(today), "offset": offset, "limit": limit},
                 )
             ).mappings()
             return AuctionPage([_auction(r) for r in rows], total)
 
-    async def get(self, auction_id: str) -> Auction | None:
+    async def get(self, auction_id: str, *, today: date) -> Auction | None:
         async with self._engine.connect() as conn:
-            row = (await conn.execute(text(f"{_SELECT} WHERE a.id = :id"), {"id": auction_id})).mappings().first()
+            row = (
+                (await conn.execute(text(f"{_SELECT} WHERE a.id = :id"), {"id": auction_id, **_trade_params(today)}))
+                .mappings()
+                .first()
+            )
         return _auction(row) if row else None
 
     @staticmethod
@@ -85,6 +158,8 @@ class PostgresAuctionRepository:
         params: dict = {}
         if not flt.include_closed:
             clauses.append("a.closed_at IS NULL")
+        if flt.exclude_share:
+            clauses.append("NOT a.is_share")
         if flt.source is not None:
             clauses.append("a.source = :source")
             params["source"] = flt.source.value
@@ -106,6 +181,10 @@ class PostgresAuctionRepository:
                 params["known"] = _ALL_PATTERNS
             clauses.append("(" + " OR ".join(f"({p})" for p in parts) + ")")
         return (" WHERE " + " AND ".join(clauses) if clauses else ""), params
+
+
+def _trade_params(today: date) -> dict:
+    return {"since": months_ago(today, RECENT_TRADE_MONTHS), "area_tolerance": AREA_TOLERANCE_M2}
 
 
 def _auction(r) -> Auction:
@@ -137,4 +216,14 @@ def _auction(r) -> Auction:
         closed_at=r["closed_at"],
         schedule=tuple(r["schedule"] or ()),
         results=tuple(r["results"] or ()),
+        recent_trade=(
+            RecentTrade(
+                price=r["recent_trade_price"],
+                contract_date=r["recent_trade_date"],
+                exclusive_area_m2=r["recent_trade_area_m2"],
+                count=r["recent_trade_count"],
+            )
+            if r["recent_trade_price"] is not None
+            else None
+        ),
     )

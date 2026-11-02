@@ -290,6 +290,23 @@ class AuctionGroup(StrEnum):
     other = "other"
 
 
+class AuctionSort(StrEnum):
+    sale_date = "sale_date"  # 매각기일 빠른 순(기본)
+    min_price_ratio = "min_price_ratio"  # 최저가 ÷ 감정가 낮은 순
+    min_price = "min_price"  # 최저가 낮은 순
+    recent_trade_discount = "recent_trade_discount"  # 최근 실거래 대비 많이 싼 순
+
+
+@dataclass(frozen=True)
+class RecentTrade:
+    """같은 단지·같은 평형의 최근 12개월 매매(해제·직거래 제외) 중 가장 최근 1건과 그 기간 거래 수."""
+
+    price: int
+    contract_date: date
+    exclusive_area_m2: float
+    count: int
+
+
 @dataclass(frozen=True)
 class AuctionFilter:
     bbox: BBox | None = None
@@ -297,6 +314,7 @@ class AuctionFilter:
     source: AuctionSource | None = None
     groups: tuple[AuctionGroup, ...] = ()
     include_closed: bool = False
+    exclude_share: bool = False
 
 
 @dataclass(frozen=True)
@@ -327,6 +345,7 @@ class Auction:
     closed_at: datetime | None
     schedule: tuple[dict, ...] = ()
     results: tuple[dict, ...] = ()
+    recent_trade: RecentTrade | None = None
 
 
 @dataclass(frozen=True)

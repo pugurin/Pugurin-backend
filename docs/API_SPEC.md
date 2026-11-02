@@ -556,9 +556,11 @@
 | `source` | 둘 다 | `court`(법원 경매) / `public`(공매) |
 | `property_group` | 전부 | 쉼표 구분: `apartment,officetel,villa,land,other`. 물건용도 원문을 묶은 것(단독·다가구·상가·공장 등은 `other`) |
 | `include_closed` | `false` | 진행 목록에서 빠진(매각·취하 등으로 끝난) 물건도 포함 |
+| `exclude_share` | `false` | 지분 매각 물건 제외 |
+| `sort` | `sale_date` | `sale_date`(매각기일 빠른 순, 공매는 입찰 마감일) · `min_price_ratio`(감정가 대비 최저가 낮은 순) · `min_price`(최저가 낮은 순) · `recent_trade_discount`(최근 실거래 대비 많이 싼 순, 비교 거래가 없는 물건은 뒤) |
 | `page`, `page_size` | 1, 100 | `page_size` 최대 500 |
 
-정렬은 매각기일(공매는 입찰 마감일) 빠른 순이다.
+같은 값이면 `id` 순이다.
 
 **응답 (목록 항목)**
 ```json
@@ -585,7 +587,11 @@
     "building_area_m2": 56.55, "building_area_pyeong": 17.1,
     "is_share": false,
     "status": "진행",
-    "is_closed": false
+    "is_closed": false,
+    "recent_trade_price": 262000000,
+    "recent_trade_date": "2026-01-16",
+    "recent_trade_area_m2": 56.5488,
+    "recent_trade_count": 1
   }],
   "meta": {
     "data_as_of": "2026-11-02T04:30:00+09:00",
@@ -596,7 +602,14 @@
   }
 }
 ```
-- `min_price_ratio`: 최저가 ÷ 감정가(%, 반올림). 유찰될수록 내려간다
+- `min_price_ratio`: 최저가 ÷ 감정가(%, 반올림). 유찰될수록 내려간다. 감정가 대비 할인율은 `100 - min_price_ratio`
+- `building_area_m2`는 **전용면적**이다(운영 데이터에서 아파트·오피스텔의 95% 이상이 단지 평형과 0.5㎡ 안에서 일치)
+- `recent_trade_*`: 같은 단지·같은 평형의 최근 12개월 매매 중 **가장 최근 1건**과 그 기간 거래 수(`recent_trade_count`)
+  - 단지: 같은 필지(PNU)에서 같은 유형(아파트·오피스텔·빌라)이고 전용면적이 ±3㎡ 안에 가장 가까운 평형이 있는 단지
+  - 해제·직거래 거래는 뺀다(직거래는 가족 간 거래처럼 시세와 동떨어질 수 있다)
+  - 단지에 매칭이 안 되거나(상가·토지·단독 등) 기간 안에 거래가 없으면 넷 다 `null`
+  - 유찰이 많은 물건은 최근 실거래보다 90% 넘게 쌀 수 있다. 이런 물건은 인수해야 할 권리(대항력 있는 임차인 등)가 있는 경우가 많은데, 그 정보는 제공하지 않는다
+- `is_share`: 지분 매각. 법원 경매는 상세의 매각물건 지분 내용이 있는지로 판단한다(원문에는 이름이 섞여 있어 저장하지 않는다)
 - `lat`·`lng`가 `null`이면 주소를 지도에서 못 찾은 물건이다(약 0.4%). `bbox` 검색에는 나오지 않는다
 - 공매는 `title`(물건명), `bid_start_at`·`bid_end_at`(입찰 기간)이 있고 `court_name`·`deposit`이 `null`이다
 - 이 경매 데이터를 다른 화면의 실거래가처럼 "시세"로 보여 주지 않는다(감정가·최저가는 거래가가 아니다)

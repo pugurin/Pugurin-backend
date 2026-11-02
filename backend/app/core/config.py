@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     auction_api_key: str = ""
     auction_base_url: str = "https://api.madangs.com"
 
+    # 학교(나이스 교육정보 개방 포털)·병원(공공데이터포털 건강보험심사평가원) 키. 비우면 worker가 그쪽을 건너뛴다
+    neis_api_key: str = ""
+    hospital_api_key: str = ""
+
     # 실데이터 위치: PUGURIN_DATABASE_URL이 있으면 DB, 없으면 data_dir(.cache).
     # 둘 다 없으면 가짜로 채우지 않고 "데이터 없음"으로 응답한다
     data_dir: Path = Path(".cache")

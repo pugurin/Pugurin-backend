@@ -18,6 +18,7 @@ from app.routers import (
     analysis,
     auctions,
     complexes,
+    facilities,
     glossary,
     health,
     internal,
@@ -88,7 +89,7 @@ def create_app(
     app.include_router(internal.router)
     public = APIRouter(prefix=API_PREFIX, dependencies=[Depends(require_device_id)])
     # 고정 경로(/parcels/lookup)는 경로 변수(/parcels/{pnu})보다 먼저 등록되도록 각 라우터 안에서 선언 순서를 지켰다
-    for module in (map, search, stats, transactions, complexes, parcels, analysis, glossary, auctions):
+    for module in (map, search, stats, transactions, complexes, parcels, analysis, glossary, auctions, facilities):
         public.include_router(module.router)
     app.include_router(public)
     return app

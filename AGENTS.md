@@ -99,9 +99,10 @@
 
 **경매마당 (https://api.madangs.com)** — 부산 법원 경매·공매 진행 물건(원천: 대법원 법원경매정보·온비드, 출처 표시 필요). worker가 매일 동기화한다(`python -m app.ingestion auctions`). 응답의 개인정보(당사자·임차인 이름 등)는 저장하지 않는다. 키는 `PUGURIN_AUCTION_API_KEY`, 이용 목적은 경매마당 문의하기로 제출해야 한다.
 
-**학교·병원** — 단지 주변 생활 시설. worker가 매일 동기화한다(`python -m app.ingestion facilities`).
+**학교·병원·학원** — 단지 주변 생활 시설. worker가 매일 동기화한다(`python -m app.ingestion facilities`).
 - 학교: 나이스 교육정보 개방 포털(https://open.neis.go.kr) `schoolInfo`, 키 `PUGURIN_NEIS_API_KEY`. 학구도(배정 학교)는 없다
 - 병원: 공공데이터포털 건강보험심사평가원 병원정보서비스, 키 `PUGURIN_HOSPITAL_API_KEY`
+- 학원: 나이스 `acaInsTiInfo`(학원·교습소), 키 `PUGURIN_ACADEMY_API_KEY`(비우면 나이스 키). 수강료 등 다른 칸은 저장하지 않는다
 
 **VWorld는 쓰지 않기로 했다.** 그래서 토지이용계획, 토지특성(공시지가·지목·도로접면·형상), 연속지적도, 부동산중개업 조회에는 현재 공급처가 없다.
 

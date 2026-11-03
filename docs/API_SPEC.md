@@ -324,7 +324,10 @@
 }
 ```
 - `supply_area_pyeong`(공급 평형)은 건축물대장 기반, 산출 불가 시 `null` (사용자가 흔히 말하는 "34평"은 공급면적 기준)
-- 실거래가 공공데이터에는 **세대수·공급면적이 없다**. 건축물대장 연동 전에는 `household_count`, `supply_area_pyeong`이 `null`이다. 좌표를 못 찾은 단지는 `pnu`도 `null`이고, `build_year`도 원천에 없으면 `null`이다. 앱은 `null`을 처리해야 한다
+  - **아파트만** 채운다. 공급면적 = 전용 + 주거공용(계단·승강기·복도·벽체). 지하주차장·관리사무소 같은 기타공용은 넣지 않는다
+  - 건축물대장 기준이라 분양 광고의 평형과 1평 안팎 다를 수 있다. 같은 평형에 A·B 타입이 있으면 세대가 많은 쪽 값이다
+  - worker가 하루 호출 한도 안에서 나눠 채운다(부산 아파트 전체가 차는 데 약 2일). 옛 대장처럼 주거공용이 제대로 안 적힌 평형은 계속 `null`이다
+- 실거래가 공공데이터에는 **세대수가 없다**. `household_count`는 지금 `null`이다(한 필지에 단지가 여럿이면 건축물대장이 필지 전체 세대수를 줘서 쓰지 않는다). 좌표를 못 찾은 단지는 `pnu`도 `null`이고, `build_year`도 원천에 없으면 `null`이다. 앱은 `null`을 처리해야 한다
 
 **거래 1건 필드** (`/transactions`, `/complexes/{id}/transactions` 공통)
 
@@ -622,20 +625,23 @@
 
 **오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 id는 `404 RESOURCE_NOT_FOUND`, 잘못된 `property_group`은 `400 VALIDATION_ERROR`(field `property_group`).
 
-### 6.2 주변 학교·병원 (Facilities) [추가]
+### 6.2 주변 학교·병원·학원 (Facilities) [추가]
 
-학교는 나이스 교육정보 개방 포털, 병원은 건강보험심사평가원 자료다. worker가 매일 동기화한다. 거리는 모두 **직선거리(m)**다.
+학교·학원은 나이스 교육정보 개방 포털, 병원은 건강보험심사평가원 자료다. worker가 매일 동기화한다. 거리는 모두 **직선거리(m)**다.
 **학교는 배정 학교(학군)가 아니다.** 통학구역(학구도) 데이터가 없어서 가까운 학교만 보여 준다. 화면에 `meta.school_notice`를 같이 표시한다.
 
 | Method | Path | 설명 |
 |---|---|---|
-| GET | `/nearby?lat=&lng=` | 좌표 주변 학교·병원 요약. 부산 밖 좌표는 400 |
+| GET | `/nearby?lat=&lng=` | 좌표 주변 학교·병원·학원 요약. 부산 밖 좌표는 400 |
 | GET | `/complexes/{id}/nearby` | 단지 위치로 같은 요약. 단지 상세 화면용 |
 | GET | `/schools?bbox=&level=` | 지도 화면 안의 학교(최대 500). `level`: `elementary,middle,high,special,other` |
 | GET | `/hospitals?bbox=&tier=` | 지도 화면 안의 병원(의사 많은 순 최대 500). `tier`: `general,hospital,clinic,dental,oriental,public,other` |
+| GET | `/academies?bbox=&category=` | 지도 화면 안의 학원·교습소(최대 500). `category`: `tutoring,arts,language,reading_room,other` |
 
 - 개교 전((가칭), 개교일이 미래)이거나 폐교·폐업한 곳은 빠진다
 - 병원 `tier`: `general`=상급종합·종합병원, `hospital`=병원·요양병원·정신병원·한방병원·치과병원, `clinic`=의원, `dental`=치과의원, `oriental`=한의원, `public`=보건소 등
+- 학원 `category`(원천 분야 `field`를 묶은 것): `tutoring`=입시.검정 및 보습, `arts`=예능(음악·미술·무용), `language`=국제화(외국어), `reading_room`=독서실, `other`=종합·직업기술·기예 등
+- 학원은 교육청에 등록된 학원·교습소만 있다(개인과외교습자 없음). 휴원·폐원하면 빠진다
 
 **`/nearby` 응답**
 ```json
@@ -658,6 +664,11 @@
                            "address": "…", "lat": 35.16, "lng": 129.17, "tel": "051-…", "homepage": null,
                            "doctors": 40, "distance_m": 747 },
       "nearest": []
+    },
+    "academies": {
+      "radius_m": 1000,
+      "total": 212,
+      "counts": { "tutoring": 118, "arts": 51, "language": 22, "reading_room": 4, "other": 17 }
     }
   },
   "meta": {
@@ -672,8 +683,17 @@
 - `hospitals.counts`·`total`: 반경 1km 안의 수
 - `nearest_general`: 반경과 상관없이 가장 가까운 종합병원급 1곳
 - `nearest`: 종류와 상관없이 가장 가까운 5곳
+- `academies.counts`·`total`: 반경 1km 안의 학원·교습소 수. 학원 목록은 `/academies`로 지도에 띄운다
 
-**오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 단지는 `404`, 잘못된 `level`·`tier`·좌표는 `400 VALIDATION_ERROR`.
+**`/academies` 항목**
+```json
+{ "id": "3000020166", "name": "1등급국어교습소", "kind": "교습소", "field": "입시.검정 및 보습", "category": "tutoring",
+  "course": "보습", "address": "부산광역시 강서구 명지국제8로 234, 707호 (명지동)",
+  "lat": 35.09, "lng": 128.92, "tel": null }
+```
+- `kind`: `학원` 또는 `교습소`. `course`(교습과정)·`tel`은 없으면 `null`
+
+**오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 단지는 `404`, 잘못된 `level`·`tier`·`category`·좌표는 `400 VALIDATION_ERROR`.
 
 ## 7. 용어 해설 (Glossary) [1차]
 

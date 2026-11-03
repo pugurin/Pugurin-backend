@@ -6,9 +6,11 @@ from fastapi import APIRouter, Query
 
 from app.core.errors import validation_error
 from app.core.geo import BBox
-from app.repositories.types import HospitalTier, SchoolLevel
+from app.repositories.types import AcademyCategory, HospitalTier, SchoolLevel
 from app.routers.deps import ContainerDep, require_market_data
 from app.schemas.facility import (
+    AcademiesResponse,
+    AcademyOut,
     FacilityMeta,
     HospitalOut,
     HospitalsResponse,
@@ -37,7 +39,7 @@ def _check_point(lat: float, lng: float, container) -> None:
         raise validation_error("lat", "부산 안의 좌표만 조회할 수 있습니다")
 
 
-@router.get("/nearby", response_model=NearbyResponse, summary="좌표 주변 학교·병원")
+@router.get("/nearby", response_model=NearbyResponse, summary="좌표 주변 학교·병원·학원")
 async def get_nearby(
     container: ContainerDep,
     lat: Annotated[float, Query(ge=-90, le=90)],
@@ -48,7 +50,7 @@ async def get_nearby(
     return NearbyResponse(data=NearbyData.from_domain(found), meta=FacilityMeta(data_as_of=as_of))
 
 
-@router.get("/complexes/{complex_id}/nearby", response_model=NearbyResponse, summary="단지 주변 학교·병원")
+@router.get("/complexes/{complex_id}/nearby", response_model=NearbyResponse, summary="단지 주변 학교·병원·학원")
 async def get_complex_nearby(complex_id: UUID, container: ContainerDep) -> NearbyResponse:
     await require_market_data(container)
     complex_ = await container.complex_service.get(complex_id)
@@ -78,3 +80,14 @@ async def list_hospitals(
     tiers = _parse(tier, HospitalTier, "tier")
     found, as_of = await container.facility_service.hospitals(BBox.parse(bbox), tiers)
     return HospitalsResponse(data=[HospitalOut.from_domain(h) for h in found], meta=FacilityMeta(data_as_of=as_of))
+
+
+@router.get("/academies", response_model=AcademiesResponse, summary="지도 화면 안의 학원·교습소 (최대 500)")
+async def list_academies(
+    container: ContainerDep,
+    bbox: Annotated[str, Query(description="min_lng,min_lat,max_lng,max_lat")],
+    category: Annotated[str | None, Query(description="쉼표 구분: tutoring,arts,language,reading_room,other")] = None,
+) -> AcademiesResponse:
+    categories = _parse(category, AcademyCategory, "category")
+    found, as_of = await container.facility_service.academies(BBox.parse(bbox), categories)
+    return AcademiesResponse(data=[AcademyOut.from_domain(a) for a in found], meta=FacilityMeta(data_as_of=as_of))

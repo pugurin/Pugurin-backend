@@ -2,7 +2,7 @@ from datetime import date
 
 from pydantic import BaseModel
 
-from app.repositories.types import Hospital, HospitalTier, Nearby, School, SchoolLevel
+from app.repositories.types import Academy, AcademyCategory, Hospital, HospitalTier, Nearby, School, SchoolLevel
 from app.schemas.common import DataMeta
 
 SCHOOL_SOURCE = "나이스 교육정보 개방 포털"
@@ -54,6 +54,23 @@ class HospitalOut(BaseModel):
         return cls(**{f: getattr(h, f) for f in cls.model_fields})
 
 
+class AcademyOut(BaseModel):
+    id: str
+    name: str
+    kind: str | None
+    field: str | None
+    category: AcademyCategory
+    course: str | None
+    address: str
+    lat: float | None
+    lng: float | None
+    tel: str | None
+
+    @classmethod
+    def from_domain(cls, a: Academy) -> "AcademyOut":
+        return cls(**{f: getattr(a, f) for f in cls.model_fields})
+
+
 class NearbySchools(BaseModel):
     radius_m: int
     elementary: list[SchoolOut]
@@ -69,9 +86,16 @@ class NearbyHospitals(BaseModel):
     nearest: list[HospitalOut]
 
 
+class NearbyAcademies(BaseModel):
+    radius_m: int
+    total: int
+    counts: dict[AcademyCategory, int]
+
+
 class NearbyData(BaseModel):
     schools: NearbySchools
     hospitals: NearbyHospitals
+    academies: NearbyAcademies
 
     @classmethod
     def from_domain(cls, n: Nearby) -> "NearbyData":
@@ -92,6 +116,9 @@ class NearbyData(BaseModel):
                 nearest_general=HospitalOut.from_domain(n.nearest_general) if n.nearest_general else None,
                 nearest=[HospitalOut.from_domain(h) for h in n.nearest_hospitals],
             ),
+            academies=NearbyAcademies(
+                radius_m=n.academy_radius_m, total=sum(n.academy_counts.values()), counts=n.academy_counts
+            ),
         )
 
 
@@ -107,4 +134,9 @@ class SchoolsResponse(BaseModel):
 
 class HospitalsResponse(BaseModel):
     data: list[HospitalOut]
+    meta: FacilityMeta
+
+
+class AcademiesResponse(BaseModel):
+    data: list[AcademyOut]
     meta: FacilityMeta

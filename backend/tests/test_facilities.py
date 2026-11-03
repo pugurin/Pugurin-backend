@@ -6,7 +6,13 @@ import httpx
 import pytest
 from sqlalchemy import text
 
-from app.adapters.facilities import HiraHospitalClient, NeisSchoolClient, hospital_from_row, school_from_row
+from app.adapters.facilities import (
+    HiraHospitalClient,
+    NeisSchoolClient,
+    academy_from_row,
+    hospital_from_row,
+    school_from_row,
+)
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError
 from app.db import migrate
 from app.db.engine import make_engine
@@ -53,6 +59,23 @@ def hospital(n: int, **over) -> dict:
     return {**row, **over}
 
 
+def academy(n: int, **over) -> dict:
+    row = {
+        "ATPT_OFCDC_SC_CODE": "C10",
+        "ACA_ASNUM": f"30000{n:05d}",
+        "ACA_NM": f"가상{n}학원",
+        "ACA_INSTI_SC_NM": "학원",
+        "REALM_SC_NM": "입시.검정 및 보습",
+        "LE_CRSE_NM": "보습",
+        "REG_STTUS_NM": "개원",
+        "FA_RDNMA": f"부산광역시 해운대구 가상로 {n}",
+        "FA_RDNDA": ", 3층 301호 (우동)",
+        "FA_TELNO": "null",
+        "PSNBY_THCC_CNTNT": "국어:240000",
+    }
+    return {**row, **over}
+
+
 # ── 원천 해석 ───────────────────────────────────────────────
 
 
@@ -69,6 +92,13 @@ def test_school_rows_keep_basic_fields_and_name_tentative_schools():
 def test_hospital_rows_use_source_coordinates():
     h = hospital_from_row(hospital(1))
     assert (h.lat, h.lng, h.doctors, h.opened_on.isoformat()) == (35.1501, 129.1101, 2, "2010-01-05")
+
+
+def test_academy_rows_keep_the_full_address_but_geocode_the_road_address():
+    a = academy_from_row(academy(1))
+    assert (a.id, a.kind, a.field, a.course, a.tel) == ("3000000001", "학원", "입시.검정 및 보습", "보습", None)
+    assert a.address == "부산광역시 해운대구 가상로 1, 3층 301호 (우동)"
+    assert a.road_address == "부산광역시 해운대구 가상로 1"
 
 
 def http_client(handler):
@@ -91,6 +121,17 @@ async def test_neis_pages_until_the_total_and_stops_on_no_data():
 
     client = NeisSchoolClient("k", http=http_client(handler), sleep=_no_sleep)
     assert [s.id for s in await client.schools()] == ["7240001", "7240002", "7240003"]
+
+
+async def test_neis_academies_use_their_own_service_and_skip_closed_ones():
+    def handler(request):
+        assert request.url.path.endswith("/acaInsTiInfo")
+        head = [{"list_total_count": 2}, {"RESULT": {"CODE": "INFO-000"}}]
+        rows = [academy(1), academy(2, REG_STTUS_NM="휴원")]
+        return httpx.Response(200, json={"acaInsTiInfo": [{"head": head}, {"row": rows}]})
+
+    client = NeisSchoolClient("k", http=http_client(handler), sleep=_no_sleep)
+    assert [a.name for a in await client.academies()] == ["가상1학원"]
 
 
 @pytest.mark.parametrize(("code", "error"), [("ERROR-290", SourceAuthError), ("ERROR-337", QuotaExceeded)])
@@ -135,6 +176,15 @@ class FakeSchools:
         return [school_from_row(r) for r in self.rows]
 
 
+class FakeAcademies:
+    def __init__(self, rows):
+        self.rows, self.calls_made = rows, 0
+
+    async def academies(self):
+        self.calls_made += 1
+        return [academy_from_row(r) for r in self.rows]
+
+
 class FakeHospitals:
     def __init__(self, rows):
         self.rows, self.calls_made = rows, 0
@@ -155,7 +205,7 @@ def facility_db(postgis: str) -> str:
 async def engine(facility_db):
     engine = make_engine(facility_db)
     async with engine.begin() as conn:
-        await conn.execute(text("TRUNCATE schools, hospitals, etl_runs RESTART IDENTITY CASCADE"))
+        await conn.execute(text("TRUNCATE schools, hospitals, academies, etl_runs RESTART IDENTITY CASCADE"))
     yield engine
     await engine.dispose()
 
@@ -165,9 +215,9 @@ def cache(tmp_path) -> GeocodeCache:
     return GeocodeCache(tmp_path / "geocode.json")
 
 
-async def sync(engine, schools, hospitals, cache, *, minutes=0, lookup=None):
+async def sync(engine, schools, hospitals, cache, *, minutes=0, lookup=None, academies=None):
     return await sync_facilities(
-        engine, schools, hospitals, lookup or FakeLookup(), cache,
+        engine, schools, hospitals, lookup or FakeLookup(), cache, academies=academies,
         now=FIXED_NOW + timedelta(minutes=minutes), out=lambda _: None,
     )  # fmt: skip
 
@@ -220,6 +270,20 @@ async def test_hospitals_without_coordinates_are_geocoded_and_outside_busan_is_d
         ("가상1의원", True),
         ("가상2의원", False),
     ]
+
+
+async def test_academies_are_geocoded_by_road_address_and_closed_when_they_disappear(engine, cache):
+    lookup = FakeLookup()
+    report = await sync(engine, None, None, cache, lookup=lookup, academies=FakeAcademies([academy(1), academy(2)]))
+    assert (report.status, report.academies, report.inserted) == ("success", 2, 2)
+    assert lookup.queries == ["부산광역시 해운대구 가상로 1", "부산광역시 해운대구 가상로 2"]
+    assert await fetch(engine, "SELECT id, field, location IS NOT NULL FROM academies ORDER BY id") == [
+        ("3000000001", "입시.검정 및 보습", True),
+        ("3000000002", "입시.검정 및 보습", True),
+    ]
+    again = await sync(engine, None, None, cache, minutes=1, academies=FakeAcademies([academy(2)]))
+    assert again.closed == 1
+    assert await fetch(engine, "SELECT id FROM academies WHERE closed_at IS NULL") == [("3000000002",)]
 
 
 async def test_a_second_sync_refuses_to_run_while_one_is_in_progress(engine, cache):

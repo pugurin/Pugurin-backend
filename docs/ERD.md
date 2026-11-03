@@ -52,8 +52,8 @@ erDiagram
         uuid complex_id FK
         smallint area_bucket "전용면적 반올림"
         numeric exclusive_area_m2
-        numeric supply_area_pyeong "NULL 가능"
-        text supply_source
+        numeric supply_area_pyeong "건축물대장, 아파트만, NULL 가능"
+        text supply_source "building_register"
     }
     transactions {
         uuid id PK "uuid5 of source_key"
@@ -253,6 +253,7 @@ CREATE TABLE complexes (
     location_source  text NOT NULL CHECK (location_source IN ('geocode', 'centroid')),
     build_year       smallint,
     household_count  int,
+    supply_checked_at timestamptz,  -- 건축물대장으로 공급면적을 마지막으로 본 시각 (마이그레이션 0009)
     created_at       timestamptz NOT NULL DEFAULT now(),
     CHECK (source_seq IS NULL OR property_type = 'apartment')
 );
@@ -447,14 +448,15 @@ CREATE UNIQUE INDEX mv_monthly_stats_key
 
 **개인정보는 저장하지 않는다.** 원천 응답에는 당사자·임차인·응찰자 이름, 점유조사 메모, 등기 권리자, 청구액이 섞여 온다. 어댑터(`app/adapters/madangs.py`)가 허용한 칸만 옮기고 나머지는 버리며, 테스트가 DB 전체에서 이름이 나오지 않는지 확인한다.
 
-### 4.2 학교 `schools`·병원 `hospitals` (마이그레이션 0007)
+### 4.2 학교 `schools`·병원 `hospitals`·학원 `academies` (마이그레이션 0007·0008)
 
-단지 주변 생활 시설. `python -m app.ingestion facilities`(worker는 경매 다음에 자동 실행)로 하루 한 번 맞춘다(호출 약 7회).
+단지 주변 생활 시설. `python -m app.ingestion facilities`(worker는 경매 다음에 자동 실행)로 하루 한 번 맞춘다(호출 약 17회).
 
 | 테이블 | 원천 | 핵심 컬럼 |
 |---|---|---|
 | `schools` | 나이스 교육정보 개방 포털 `schoolInfo`(부산광역시교육청 C10, 약 670곳) | `id`(표준 학교코드, (가칭) 학교는 `TMP-…`), `kind`(초·중·고·특수 …), `foundation`(공립·사립), `coed`, `address`, `location`(주소를 카카오로 지오코딩), `opened_on`(미래면 개교 전) |
 | `hospitals` | 건강보험심사평가원 병원정보서비스(부산 sidoCd 210000, 약 5,600곳) | `id`(ykiho), `class_name`(상급종합·종합병원·병원·의원·치과의원·한의원 …), `location`(원천 좌표), `doctors`, `opened_on` |
+| `academies` | 나이스 `acaInsTiInfo`(부산광역시교육청 C10, 개원 중 약 9,100곳) | `id`(학원지정번호), `kind`(학원·교습소), `field`(분야), `course`(교습과정), `address`(도로명+상세), `location`(도로명 주소를 카카오로 지오코딩) |
 
 - 원천 목록에서 빠지면 지우지 않고 `closed_at`을 채운다(폐교·폐업). 받기에 실패한 쪽은 손대지 않는다.
 - **학군(배정 학교)은 아니다.** 나이스는 학교 위치·정보만 주고 통학구역(학구도)은 주지 않는다. 지금은 "가까운 학교"까지만 보여 줄 수 있다.

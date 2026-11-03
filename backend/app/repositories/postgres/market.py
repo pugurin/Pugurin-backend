@@ -289,7 +289,7 @@ class PostgresMarketRepository:
             monthly_rent=r.monthly_rent,
             exclusive_area_m2=None if land else r.exclusive_area_m2,
             land_area_m2=r.land_area_m2 if land else None,
-            supply_area_pyeong=None,
+            supply_area_pyeong=None if land else _supply_pyeong(snap.complexes.get(r.complex_id), r.exclusive_area_m2),
             floor=r.floor,
             contract_date=r.contract_date,
             build_year=r.build_year,
@@ -571,3 +571,11 @@ class PostgresMarketRepository:
                     AreaStats(area, self._series(deal_type, months, bucket_total[bucket], bucket_month[bucket]))
                 )
         return StatsResult(self._series(deal_type, months, overall, by_month), tuple(by_area))
+
+
+def _supply_pyeong(complex_: Complex | None, exclusive_area_m2: float | None) -> float | None:
+    """거래 전용면적과 같은 평형(반올림 ㎡)의 공급 평형. 건축물대장에서 못 구했으면 None."""
+    if complex_ is None or exclusive_area_m2 is None:
+        return None
+    bucket = area_bucket(exclusive_area_m2)
+    return next((a.supply_area_pyeong for a in complex_.area_types if area_bucket(a.exclusive_area_m2) == bucket), None)

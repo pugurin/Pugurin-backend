@@ -3,6 +3,7 @@ import asyncio
 import sys
 from datetime import datetime
 
+from app.adapters.building import BuildingRegisterClient
 from app.adapters.facilities import HiraHospitalClient, NeisSchoolClient
 from app.adapters.kakao import KakaoGeocoder
 from app.adapters.madangs import MadangsClient
@@ -19,6 +20,7 @@ from app.ingestion.load import LoadBusy, LoadReport, load_into_db
 from app.ingestion.rawcache import RawCache
 from app.ingestion.real import RealDataMissing, load_real_data
 from app.ingestion.refresh import refresh
+from app.ingestion.supply import sync_supply_areas
 from app.ingestion.worker import run_daily
 
 
@@ -168,13 +170,41 @@ async def _facilities(settings: Settings) -> int:
     return 0 if r.status == "success" else 3
 
 
+async def _supply(settings: Settings, max_calls: int | None = None) -> int:
+    if not settings.building_api_key:
+        print("PUGURIN_BUILDING_API_KEY가 없어 공급면적 동기화를 건너뜁니다 (backend/.env)")
+        return 2
+    if not settings.database_url:
+        print("공급면적 동기화에는 PUGURIN_DATABASE_URL이 필요합니다")
+        return 2
+    client = BuildingRegisterClient(settings.building_api_key)
+    engine = make_engine(settings.database_url)
+    try:
+        r = await sync_supply_areas(
+            engine, client, now=datetime.now(KST), max_calls=max_calls or settings.building_daily_calls
+        )
+    except LoadBusy as e:
+        print(e)
+        return 4
+    finally:
+        await client.aclose()
+        await engine.dispose()
+    print(f"공급면적 동기화 {r.status}: 단지 {r.complexes:,}곳 확인, 호출 {r.calls:,}회")
+    print(f"  평형 채움 {r.area_types_filled:,} · 산출 못 함 {r.area_types_missing:,} · 실패 {r.failed:,}")
+    for e in r.errors[:5]:
+        print(f"  - {e}")
+    return 0 if r.status == "success" else 3
+
+
 async def _daily(settings: Settings, args: argparse.Namespace) -> int:
-    """worker 하루치: 실거래가 수집·적재, 그다음 경매·학교·병원·학원 동기화(키가 있을 때)."""
+    """worker 하루치: 실거래가 수집·적재, 그다음 경매·학교·병원·학원·공급면적 동기화(키가 있을 때)."""
     code = await _refresh(settings, args)
     if settings.auction_api_key:
         code = max(code, await _auctions(settings))
     if settings.neis_api_key or settings.hospital_api_key or settings.academy_api_key:
         code = max(code, await _facilities(settings))
+    if settings.building_api_key:
+        code = max(code, await _supply(settings))
     return code
 
 
@@ -203,9 +233,13 @@ def main() -> int:
     load.add_argument("--force", action="store_true", help="이미 적재한 단위도 다시 적재")
     sub.add_parser("auctions", help="부산 경매·공매 물건을 경매마당에서 받아 DB에 맞춘다")
     sub.add_parser("facilities", help="부산 학교·학원(나이스)·병원(심평원) 목록을 받아 DB에 맞춘다")
+    supply = sub.add_parser(
+        "supply", help="건축물대장으로 아파트 평형별 공급면적을 채운다 (하루 호출 한도 안에서 나눠 받음)"
+    )
+    supply.add_argument("--max-calls", type=int, help="이번에 쓸 최대 호출 수 (기본: PUGURIN_BUILDING_DAILY_CALLS)")
     sub.add_parser(
         "worker",
-        help="refresh(수집 → 지오코딩 → DB 적재)와 경매·학교·병원 동기화를 지금 한 번, 이후 매일 정해진 시각에 실행",
+        help="refresh(수집 → 지오코딩 → DB 적재)와 경매·시설·공급면적 동기화를 지금 한 번, 이후 매일 실행",
     )
     args = parser.parse_args()
     settings = Settings()
@@ -220,6 +254,8 @@ def main() -> int:
         return asyncio.run(_auctions(settings))
     if args.command == "facilities":
         return asyncio.run(_facilities(settings))
+    if args.command == "supply":
+        return asyncio.run(_supply(settings, args.max_calls))
     if args.command == "worker":
         args.months = args.kinds = args.districts = None
         args.skip_geocode = args.no_db = False

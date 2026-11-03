@@ -52,8 +52,8 @@ erDiagram
         uuid complex_id FK
         smallint area_bucket "전용면적 반올림"
         numeric exclusive_area_m2
-        numeric supply_area_pyeong "NULL 가능"
-        text supply_source
+        numeric supply_area_pyeong "건축물대장, 아파트만, NULL 가능"
+        text supply_source "building_register"
     }
     transactions {
         uuid id PK "uuid5 of source_key"
@@ -253,6 +253,7 @@ CREATE TABLE complexes (
     location_source  text NOT NULL CHECK (location_source IN ('geocode', 'centroid')),
     build_year       smallint,
     household_count  int,
+    supply_checked_at timestamptz,  -- 건축물대장으로 공급면적을 마지막으로 본 시각 (마이그레이션 0009)
     created_at       timestamptz NOT NULL DEFAULT now(),
     CHECK (source_seq IS NULL OR property_type = 'apartment')
 );

@@ -136,28 +136,32 @@ async def _auctions(settings: Settings) -> int:
 
 
 async def _facilities(settings: Settings) -> int:
-    if not (settings.neis_api_key or settings.hospital_api_key):
-        print("PUGURIN_NEIS_API_KEY, PUGURIN_HOSPITAL_API_KEY가 없어 학교·병원 동기화를 건너뜁니다 (backend/.env)")
+    academy_key = settings.academy_api_key or settings.neis_api_key
+    if not (settings.neis_api_key or settings.hospital_api_key or academy_key):
+        print("PUGURIN_NEIS_API_KEY, PUGURIN_HOSPITAL_API_KEY가 없어 학교·병원·학원 동기화를 건너뜁니다 (backend/.env)")
         return 2
     if not settings.database_url:
-        print("학교·병원 동기화에는 PUGURIN_DATABASE_URL이 필요합니다")
+        print("학교·병원·학원 동기화에는 PUGURIN_DATABASE_URL이 필요합니다")
         return 2
     schools = NeisSchoolClient(settings.neis_api_key) if settings.neis_api_key else None
     hospitals = HiraHospitalClient(settings.hospital_api_key) if settings.hospital_api_key else None
+    academies = NeisSchoolClient(academy_key) if academy_key else None
     geocoder = KakaoGeocoder(settings.kakao_rest_key) if settings.kakao_rest_key else None
     engine = make_engine(settings.database_url)
     try:
         cache = GeocodeCache(settings.data_dir / "geocode.json")
-        r = await sync_facilities(engine, schools, hospitals, geocoder, cache, now=datetime.now(KST))
+        r = await sync_facilities(
+            engine, schools, hospitals, geocoder, cache, academies=academies, now=datetime.now(KST)
+        )
     except LoadBusy as e:
         print(e)
         return 4
     finally:
-        for client in (schools, hospitals, geocoder):
+        for client in (schools, hospitals, academies, geocoder):
             if client is not None:
                 await client.aclose()
         await engine.dispose()
-    print(f"학교·병원 동기화 {r.status}: 학교 {r.schools:,}곳 · 병원 {r.hospitals:,}곳")
+    print(f"학교·병원·학원 동기화 {r.status}: 학교 {r.schools:,}곳 · 병원 {r.hospitals:,}곳 · 학원 {r.academies:,}곳")
     print(f"  새로 {r.inserted:,} · 갱신 {r.updated:,} · 폐교·폐업 {r.closed:,} · 위치 없음 {r.without_location:,}")
     for e in r.errors[:5]:
         print(f"  - {e}")
@@ -165,11 +169,11 @@ async def _facilities(settings: Settings) -> int:
 
 
 async def _daily(settings: Settings, args: argparse.Namespace) -> int:
-    """worker 하루치: 실거래가 수집·적재, 그다음 경매·학교·병원 동기화(키가 있을 때)."""
+    """worker 하루치: 실거래가 수집·적재, 그다음 경매·학교·병원·학원 동기화(키가 있을 때)."""
     code = await _refresh(settings, args)
     if settings.auction_api_key:
         code = max(code, await _auctions(settings))
-    if settings.neis_api_key or settings.hospital_api_key:
+    if settings.neis_api_key or settings.hospital_api_key or settings.academy_api_key:
         code = max(code, await _facilities(settings))
     return code
 
@@ -198,7 +202,7 @@ def main() -> int:
     load = sub.add_parser("load", help="수집 캐시를 DB에 적재 (API 호출 없음)")
     load.add_argument("--force", action="store_true", help="이미 적재한 단위도 다시 적재")
     sub.add_parser("auctions", help="부산 경매·공매 물건을 경매마당에서 받아 DB에 맞춘다")
-    sub.add_parser("facilities", help="부산 학교(나이스)·병원(심평원) 목록을 받아 DB에 맞춘다")
+    sub.add_parser("facilities", help="부산 학교·학원(나이스)·병원(심평원) 목록을 받아 DB에 맞춘다")
     sub.add_parser(
         "worker",
         help="refresh(수집 → 지오코딩 → DB 적재)와 경매·학교·병원 동기화를 지금 한 번, 이후 매일 정해진 시각에 실행",

@@ -4,6 +4,8 @@
   좌표가 없어 주소를 지오코딩한다.
 - 병원: 건강보험심사평가원 병원정보서비스(공공데이터포털) `getHospBasisList`. 부산(sidoCd 210000) 요양기관 전부.
   좌표가 온다.
+- 학원: 나이스 `acaInsTiInfo`. 부산광역시교육청에 등록된 학원·교습소(개인과외교습자는 원천에 없다).
+  좌표가 없어 주소를 지오코딩한다.
 
 허용한 칸만 골라 옮긴다(원문을 밖으로 넘기지 않는다).
 """
@@ -51,9 +53,21 @@ class HospitalItem:
     opened_on: date | None
 
 
+@dataclass(frozen=True)
+class AcademyItem:
+    id: str  # 학원지정번호(ACA_ASNUM)
+    name: str
+    kind: str | None  # 학원 / 교습소
+    field: str | None  # 분야: 입시.검정 및 보습 / 예능(대) / 국제화 / 독서실 …
+    course: str | None  # 교습과정: 보습 / 음악 / 미술 / 실용외국어(유아/초·중·고) …
+    address: str  # 도로명 주소 + 상세(층·호)
+    road_address: str  # 지오코딩용 도로명 주소
+    tel: str | None
+
+
 def _text(v) -> str | None:
     s = str(v).strip() if v is not None else ""
-    return s or None
+    return s if s and s.lower() != "null" else None
 
 
 def _ymd(v) -> date | None:
@@ -89,6 +103,21 @@ def school_from_row(row: dict) -> SchoolItem:
         tel=_text(row.get("ORG_TELNO")),
         homepage=_url(row.get("HMPG_ADRES")),
         opened_on=_ymd(row.get("FOAS_MEMRD")) or _ymd(row.get("FOND_YMD")),
+    )
+
+
+def academy_from_row(row: dict) -> AcademyItem:
+    road = _text(row.get("FA_RDNMA")) or ""
+    detail = _text(row.get("FA_RDNDA")) or ""
+    return AcademyItem(
+        id=str(row["ACA_ASNUM"]).strip(),
+        name=_text(row.get("ACA_NM")) or "",
+        kind=_text(row.get("ACA_INSTI_SC_NM")),
+        field=_text(row.get("REALM_SC_NM")),
+        course=_text(row.get("LE_CRSE_NM")),
+        address=(road + detail).strip(),
+        road_address=road,
+        tel=_text(row.get("FA_TELNO")),
     )
 
 
@@ -152,7 +181,7 @@ class _Http:
 
 
 class NeisSchoolClient(_Http):
-    """나이스 교육정보 개방 포털. 한 번에 최대 1,000행."""
+    """나이스 교육정보 개방 포털(학교·학원). 한 번에 최대 1,000행."""
 
     def __init__(
         self,
@@ -166,14 +195,23 @@ class NeisSchoolClient(_Http):
     ):
         super().__init__(http, retries, backoff_seconds, sleep)
         self._key = key
-        self._url = f"{base_url.rstrip('/')}/schoolInfo"
+        self._base = base_url.rstrip("/")
 
     async def schools(self, office: str = BUSAN_EDU_OFFICE) -> list[SchoolItem]:
+        return [school_from_row(r) for r in await self._rows("schoolInfo", office)]
+
+    async def academies(self, office: str = BUSAN_EDU_OFFICE) -> list[AcademyItem]:
+        """개원 중인 학원·교습소만 온다(휴원·폐원은 원천에서 빠진다)."""
+        rows = await self._rows("acaInsTiInfo", office)
+        return [academy_from_row(r) for r in rows if _text(r.get("REG_STTUS_NM")) in (None, "개원")]
+
+    async def _rows(self, service: str, office: str) -> list[dict]:
+        url = f"{self._base}/{service}"
         rows: list[dict] = []
         for page in range(1, MAX_PAGES + 1):
             params = {"KEY": self._key, "Type": "json", "ATPT_OFCDC_SC_CODE": office, "pIndex": page, "pSize": 1000}
-            data = await self.get_json(self._url, params, "나이스")
-            if "schoolInfo" not in data:
+            data = await self.get_json(url, params, "나이스")
+            if service not in data:
                 result = data.get("RESULT") or {}
                 code = result.get("CODE", "")
                 if code == "INFO-200":  # 데이터 없음(마지막 페이지 다음)
@@ -183,13 +221,13 @@ class NeisSchoolClient(_Http):
                 if code == "ERROR-337":
                     raise QuotaExceeded(f"나이스 호출 한도 초과: {result.get('MESSAGE')}")
                 raise SourceUnavailable(f"나이스 오류 {code}: {result.get('MESSAGE')}")
-            head, body = data["schoolInfo"][0]["head"], data["schoolInfo"][1]["row"]
+            head, body = data[service][0]["head"], data[service][1]["row"]
             rows.extend(body)
             if len(rows) >= int(head[0]["list_total_count"]) or not body:
                 break
         else:
             raise SourceUnavailable(f"나이스 페이지가 {MAX_PAGES}개를 넘었습니다")
-        return [school_from_row(r) for r in rows]
+        return rows
 
 
 class HiraHospitalClient(_Http):

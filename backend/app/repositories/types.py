@@ -415,3 +415,91 @@ class Nearby:
     hospital_counts: dict[HospitalTier, int]
     nearest_general: Hospital | None
     nearest_hospitals: list[Hospital]
+
+
+# ── 정비사업 구역 (부산광역시 정비사업 정보) ─────────────
+
+
+class RedevelopmentKind(StrEnum):
+    """구역명(areaName)에 들어 있는 사업 이름으로 나눈다."""
+
+    redevelopment = "redevelopment"  # 재개발
+    reconstruction = "reconstruction"  # 재건축
+    small_reconstruction = "small_reconstruction"  # 소규모재건축
+    small_redevelopment = "small_redevelopment"  # 소규모재개발
+    street_housing = "street_housing"  # 가로주택정비
+    residential_improvement = "residential_improvement"  # 주거환경개선
+    urban_environment = "urban_environment"  # 도시환경정비
+    other = "other"
+
+
+class RedevelopmentStage(StrEnum):
+    """사업추진단계(step) 원문을 순서 있는 단계로 맞춘 것. 순서는 adapters/redevelopment.py의 표에 있다."""
+
+    cancelled = "cancelled"  # 0 해제·취소
+    planned = "planned"  # 1 예정구역·기본계획
+    designated = "designated"  # 2 정비구역 지정·정비계획
+    committee = "committee"  # 3 추진위원회
+    association = "association"  # 4 조합설립인가
+    review = "review"  # 5 건축심의·통합심의
+    project_approved = "project_approved"  # 6 사업시행계획인가
+    disposal_approved = "disposal_approved"  # 7 관리처분계획
+    construction = "construction"  # 8 착공·이주·철거
+    completed = "completed"  # 9 준공
+    transferred = "transferred"  # 10 이전고시
+    dissolved = "dissolved"  # 11 조합해산·청산
+    unknown = "unknown"  # 표에 없는 원문
+
+
+class LocationKind(StrEnum):
+    """원천 위치 텍스트의 종류. 지번(lot)만 지오코딩한다."""
+
+    lot = "lot"  # 구역 지번(예: "가야동 410번지 일원")
+    office = "office"  # 조합 사무실 주소(층·호·빌딩·도로명 건물번호)
+    none = "none"  # 비었거나 위치로 쓸 수 없음
+
+
+@dataclass(frozen=True)
+class RedevelopmentFilter:
+    bbox: BBox | None = None
+    kinds: tuple[RedevelopmentKind, ...] = ()
+    stages: tuple[RedevelopmentStage, ...] = ()
+    include_closed: bool = False
+
+
+@dataclass(frozen=True)
+class Redevelopment:
+    id: str
+    area_name: str
+    kind: RedevelopmentKind
+    step_raw: str | None
+    stage: RedevelopmentStage
+    stage_order: int | None
+    location: str | None
+    location_kind: LocationKind
+    lat: float | None
+    lng: float | None
+    location_precise: bool
+    area_m2: float | None
+    households: int | None
+    buildings: int | None
+    union_members: int | None
+    floor_area_ratio: float | None
+    building_coverage_ratio: float | None
+    scale: str | None
+    business_entity: str | None
+    contractor: str | None
+    engineer: str | None
+    architect: str | None
+    specialists: str | None
+    tel: str | None
+    images: dict[str, str]
+    first_seen_at: datetime
+    last_seen_at: datetime
+    closed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class RedevelopmentPage:
+    items: list[Redevelopment]
+    total: int

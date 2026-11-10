@@ -16,6 +16,7 @@ from datetime import date
 
 import httpx
 
+from app.adapters.json_http import JsonApiClient
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError
 from app.repositories.ports import SourceUnavailable
 
@@ -108,50 +109,7 @@ def hospital_from_row(row: dict) -> HospitalItem:
     )
 
 
-class _Http:
-    def __init__(self, http, retries, backoff, sleep):
-        self._http = http or httpx.AsyncClient(timeout=30)
-        self._retries, self._backoff, self._sleep = retries, backoff, sleep
-        self.calls_made = 0
-
-    async def get_json(self, url: str, params: dict, name: str) -> dict:
-        last: Exception | None = None
-        for attempt in range(self._retries + 1):
-            self.calls_made += 1
-            try:
-                response = await self._http.get(url, params=params)
-            except httpx.TransportError as e:
-                last = e
-            else:
-                code = response.status_code
-                if code in (401, 403):
-                    raise SourceAuthError(f"{name} 인증 거부(HTTP {code})")
-                if code == 429:
-                    raise QuotaExceeded(f"{name} 호출 한도 초과(HTTP 429)")
-                if code >= 500:
-                    last = SourceUnavailable(f"{name} 서버 오류(HTTP {code})")
-                elif code >= 400:
-                    raise SourceUnavailable(f"{name} 요청 오류(HTTP {code})")
-                else:
-                    try:
-                        return response.json()
-                    except ValueError:
-                        # 공공데이터포털은 키 오류를 XML로 돌려준다
-                        text = response.text
-                        if "SERVICE_KEY" in text or "SERVICE KEY" in text:
-                            raise SourceAuthError(f"{name} 인증키 오류") from None
-                        if "LIMITED" in text:
-                            raise QuotaExceeded(f"{name} 호출 한도 초과") from None
-                        raise SourceUnavailable(f"{name} 응답이 JSON이 아닙니다") from None
-            if attempt < self._retries:
-                await self._sleep(self._backoff * 2**attempt)
-        raise SourceUnavailable(f"{name} 호출 실패: {last}") from last
-
-    async def aclose(self) -> None:
-        await self._http.aclose()
-
-
-class NeisSchoolClient(_Http):
+class NeisSchoolClient(JsonApiClient):
     """나이스 교육정보 개방 포털. 한 번에 최대 1,000행."""
 
     def __init__(
@@ -192,7 +150,7 @@ class NeisSchoolClient(_Http):
         return [school_from_row(r) for r in rows]
 
 
-class HiraHospitalClient(_Http):
+class HiraHospitalClient(JsonApiClient):
     """건강보험심사평가원 병원정보서비스(공공데이터포털). 한 번에 최대 1,000행."""
 
     def __init__(

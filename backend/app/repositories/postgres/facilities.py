@@ -1,4 +1,4 @@
-"""학교·병원 조회. 데이터는 `python -m app.ingestion facilities`(worker가 매일)로 채운 테이블에만 있다.
+"""학교·병원·학원 조회. 데이터는 `python -m app.ingestion facilities`(worker가 매일)로 채운 테이블에만 있다.
 
 거리는 직선거리(m)다. 학교는 **배정 학교(학구도)가 아니라 가까운 학교**다.
 """
@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.geo import BBox
-from app.repositories.types import Hospital, HospitalTier, Nearby, School, SchoolLevel
+from app.repositories.types import Academy, AcademyCategory, Hospital, HospitalTier, Nearby, School, SchoolLevel
 
 _LEVEL_BY_KIND = {
     "초등학교": SchoolLevel.elementary,
@@ -31,6 +31,19 @@ _TIER_BY_CLASS = {c: tier for tier, classes in _CLASSES_BY_TIER.items() for c in
 _KNOWN_CLASSES = list(_TIER_BY_CLASS)
 
 
+_CATEGORY_BY_FIELD = {
+    "입시.검정 및 보습": AcademyCategory.tutoring,
+    "예능(대)": AcademyCategory.arts,
+    "국제화": AcademyCategory.language,
+    "독서실": AcademyCategory.reading_room,
+}
+_FIELDS_BY_CATEGORY = {c: [f for f, v in _CATEGORY_BY_FIELD.items() if v == c] for c in AcademyCategory}
+
+
+def academy_category(field: str | None) -> AcademyCategory:
+    return _CATEGORY_BY_FIELD.get(field or "", AcademyCategory.other)
+
+
 def school_level(kind: str | None) -> SchoolLevel:
     return _LEVEL_BY_KIND.get(kind or "", SchoolLevel.other)
 
@@ -46,6 +59,7 @@ _SCHOOL_OPEN = "closed_at IS NULL AND location IS NOT NULL AND (opened_on IS NUL
 _SCHOOL_COLS = (
     "id, name, kind, foundation, coed, address, ST_Y(location) AS lat, ST_X(location) AS lng, tel, homepage, opened_on"
 )
+_ACADEMY_COLS = "id, name, kind, field, course, address, ST_Y(location) AS lat, ST_X(location) AS lng, tel"
 _HOSPITAL_COLS = "id, name, class_name, address, ST_Y(location) AS lat, ST_X(location) AS lng, tel, homepage, doctors"
 
 _DATA_AS_OF = text(
@@ -74,6 +88,7 @@ class PostgresFacilityRepository:
         schools_per_level: int,
         hospital_radius_m: int,
         nearest_hospitals: int,
+        academy_radius_m: int,
     ) -> Nearby:
         point = {"lat": lat, "lng": lng}
         async with self._engine.connect() as conn:
@@ -136,6 +151,13 @@ class PostgresFacilityRepository:
                 # 각도(<->) 순서와 미터 순서가 조금 달라서, 넉넉히 뽑은 뒤 실제 거리로 다시 정렬한다
                 {**point, "limit": nearest_hospitals, "candidates": nearest_hospitals * 4},
             )
+            academy_rows = await conn.execute(
+                text(f"SELECT field, count(*) FROM academies WHERE {within} GROUP BY field"),
+                {**point, "radius": academy_radius_m},
+            )
+            academy_counts = {c: 0 for c in AcademyCategory}
+            for field, n in academy_rows.all():
+                academy_counts[academy_category(field)] += n
             return Nearby(
                 schools=schools,
                 school_radius_m=school_radius_m,
@@ -143,6 +165,8 @@ class PostgresFacilityRepository:
                 hospital_counts=counts,
                 nearest_general=_hospital(general) if general else None,
                 nearest_hospitals=[_hospital(r) for r in nearest.mappings()],
+                academy_radius_m=academy_radius_m,
+                academy_counts=academy_counts,
             )
 
     async def schools_in(self, bbox: BBox, levels: tuple[SchoolLevel, ...], *, today: date, limit: int) -> list[School]:
@@ -179,6 +203,25 @@ class PostgresFacilityRepository:
                 {**params, "limit": limit},
             )
             return [_hospital(r) for r in rows.mappings()]
+
+    async def academies_in(self, bbox: BBox, categories: tuple[AcademyCategory, ...], *, limit: int) -> list[Academy]:
+        where, params = self._box(bbox)
+        if categories:
+            fields = [f for c in categories for f in _FIELDS_BY_CATEGORY[c]]
+            other = AcademyCategory.other in categories
+            where += " AND (field = ANY(CAST(:fields AS text[]))" + (
+                " OR field IS NULL OR NOT (field = ANY(CAST(:known AS text[]))))" if other else ")"
+            )
+            params.update(fields=fields, known=list(_CATEGORY_BY_FIELD))
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    f"SELECT {_ACADEMY_COLS} FROM academies WHERE closed_at IS NULL AND {where} "
+                    "ORDER BY id LIMIT :limit"
+                ),
+                {**params, "limit": limit},
+            )
+            return [_academy(r) for r in rows.mappings()]
 
     @staticmethod
     def _box(b: BBox) -> tuple[str, dict]:
@@ -218,5 +261,21 @@ def _hospital(r) -> Hospital:
         tel=r["tel"],
         homepage=r["homepage"],
         doctors=r["doctors"],
+        distance_m=r.get("distance_m"),
+    )
+
+
+def _academy(r) -> Academy:
+    return Academy(
+        id=r["id"],
+        name=r["name"],
+        kind=r["kind"],
+        field=r["field"],
+        category=academy_category(r["field"]),
+        course=r["course"],
+        address=r["address"],
+        lat=r["lat"],
+        lng=r["lng"],
+        tel=r["tel"],
         distance_m=r.get("distance_m"),
     )

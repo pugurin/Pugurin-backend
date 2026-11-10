@@ -461,6 +461,26 @@ CREATE UNIQUE INDEX mv_monthly_stats_key
 - 원천 목록에서 빠지면 지우지 않고 `closed_at`을 채운다(폐교·폐업). 받기에 실패한 쪽은 손대지 않는다.
 - **학군(배정 학교)은 아니다.** 나이스는 학교 위치·정보만 주고 통학구역(학구도)은 주지 않는다. 지금은 "가까운 학교"까지만 보여 줄 수 있다.
 
+### 4.3 정비사업 구역 `redevelopments` (마이그레이션 0010)
+
+부산광역시 정비사업 정보(공공데이터포털)에서 부산 재개발·재건축 등 구역과 사업추진단계를 매일 받는다(350건 안팎, 호출 약 4회). 코드는 `app/ingestion/redevelopment.py`, 실행은 `python -m app.ingestion redevelopments`(worker는 학교·병원 다음에 자동 실행). 설계는 [`REDEVELOPMENT.md`](./REDEVELOPMENT.md).
+
+| 컬럼 | 설명 |
+|---|---|
+| `id` | 원천 `aCode`(예: `BARA_0000000000056`, 시 홈페이지 구역 페이지 주소). 비었으면 `NOCODE_` + 구역명 해시 |
+| `area_name`, `kind` | 구역명, 구역명에서 읽은 사업 유형(`redevelopment`·`reconstruction`·`small_reconstruction`·`small_redevelopment`·`street_housing`·`residential_improvement`·`urban_environment`·`other`) |
+| `step_raw`, `stage`, `stage_order` | 단계 원문, 맞춘 단계(`cancelled` 0 … `dissolved` 11, 모르면 `unknown`/NULL) |
+| `location`, `location_kind` | 위치 원문과 종류(`lot` 지번 / `office` 조합 사무실 주소 / `none`). `lot`만 지오코딩한다 |
+| `lat`, `lng`, `geom`, `location_precise` | 카카오 지오코딩 결과. `geom`은 GiST 인덱스 |
+| `area_m2`, `households`, `buildings`, `union_members`, `floor_area_ratio`, `building_coverage_ratio`, `scale` | 구역 면적·세대수·동수·조합원수·용적률·건폐율·규모. 못 읽으면 NULL |
+| `business_entity`, `contractor`, `engineer`, `architect`, `specialists`, `tel` | 사업주체·시공자·감리자·설계자·정비사업전문관리업체·전화(`telNo`). `phone`은 개인 휴대전화일 수 있어 저장하지 않는다 |
+| `images` | `{view, location, panorama, layout}` 원본 주소, 있는 것만 |
+| `first_seen_at`, `last_seen_at`, `closed_at` | 원천 목록에서 빠지면 지우지 않고 `closed_at`을 채운다. 다시 나타나면 비운다 |
+
+- **수집이 실패하거나 0건이면 아무것도 닫지 않는다.** 그 실행은 `etl_runs.status = 'failed'`라 `data_as_of`도 그대로다.
+- 구역명에 "테스트"가 들어간 원천 시험 행은 저장하지 않는다. 버린 건수, 중복 ID, 모르는 단계, 위치 종류별 건수는 `etl_runs.report`에 남는다.
+- `etl_runs.job`에 `'redevelopment'`를 더했다(0010).
+
 ## 5. 2·3차 테이블 윤곽
 
 ```mermaid

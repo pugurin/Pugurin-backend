@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     building_api_key: str = ""
     building_daily_calls: int = 9_000  # 개발계정 하루 1만 회 안에서 남겨 둔다
 
+    # 공공데이터포털 "부산광역시_정비사업 정보" 키(재개발·재건축 구역). 비우면 worker가 정비사업 동기화를 건너뛴다
+    redevelopment_api_key: str = ""
+
     # 실데이터 위치: PUGURIN_DATABASE_URL이 있으면 DB, 없으면 data_dir(.cache).
     # 둘 다 없으면 가짜로 채우지 않고 "데이터 없음"으로 응답한다
     data_dir: Path = Path(".cache")

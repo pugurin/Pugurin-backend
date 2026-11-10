@@ -375,6 +375,14 @@ class HospitalTier(StrEnum):
     other = "other"
 
 
+class AcademyCategory(StrEnum):
+    tutoring = "tutoring"  # 입시.검정 및 보습
+    arts = "arts"  # 예능(음악·미술·무용)
+    language = "language"  # 국제화(외국어)
+    reading_room = "reading_room"  # 독서실
+    other = "other"  # 종합·직업기술·기예·인문사회 등
+
+
 @dataclass(frozen=True)
 class School:
     id: str
@@ -408,6 +416,21 @@ class Hospital:
 
 
 @dataclass(frozen=True)
+class Academy:
+    id: str
+    name: str
+    kind: str | None
+    field: str | None
+    category: AcademyCategory
+    course: str | None
+    address: str
+    lat: float | None
+    lng: float | None
+    tel: str | None
+    distance_m: int | None = None
+
+
+@dataclass(frozen=True)
 class Nearby:
     schools: dict[SchoolLevel, list[School]]
     school_radius_m: int
@@ -415,6 +438,8 @@ class Nearby:
     hospital_counts: dict[HospitalTier, int]
     nearest_general: Hospital | None
     nearest_hospitals: list[Hospital]
+    academy_radius_m: int
+    academy_counts: dict[AcademyCategory, int]
 
 
 # ── 정비사업 구역 (부산광역시 정비사업 정보) ─────────────

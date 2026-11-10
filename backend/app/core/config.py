@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # 학교(나이스 교육정보 개방 포털)·병원(공공데이터포털 건강보험심사평가원) 키. 비우면 worker가 그쪽을 건너뛴다
     neis_api_key: str = ""
     hospital_api_key: str = ""
+    # 학원(나이스 학원교습소정보). 비우면 neis_api_key를 쓴다(나이스 키는 서비스 구분 없이 쓸 수 있다)
+    academy_api_key: str = ""
+
+    # 건축물대장(공공데이터포털 "국토교통부_건축HUB_건축물대장정보 서비스") — 아파트 공급면적. 비우면 건너뛴다
+    building_api_key: str = ""
+    building_daily_calls: int = 9_000  # 개발계정 하루 1만 회 안에서 남겨 둔다
 
     # 공공데이터포털 "부산광역시_정비사업 정보" 키(재개발·재건축 구역). 비우면 worker가 정비사업 동기화를 건너뛴다
     redevelopment_api_key: str = ""

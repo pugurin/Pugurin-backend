@@ -14,7 +14,7 @@ from app.ingestion.geocode import GeocodeCache
 from tests.conftest import API, FIXED_NOW, create_database
 from tests.fakes.app import create_app
 from tests.fakes.madangs import FakeLookup
-from tests.test_facilities import FakeHospitals, FakeSchools, hospital, school
+from tests.test_facilities import FakeAcademies, FakeHospitals, FakeSchools, academy, hospital, school
 
 # FakeLookup은 "…가상로 n"을 (35.16 + n/100000, 129.16 + n/100000)에 둔다
 ORIGIN = {"lat": 35.16, "lng": 129.16}
@@ -47,11 +47,22 @@ def hospital_rows() -> list[dict]:
     ]
 
 
+def academy_rows() -> list[dict]:
+    return [
+        academy(1),  # 약 14m
+        academy(2, ACA_INSTI_SC_NM="교습소"),
+        academy(3, REALM_SC_NM="예능(대)", LE_CRSE_NM="음악"),
+        academy(4, REALM_SC_NM="국제화"),
+        academy(5, REALM_SC_NM="직업기술"),
+        academy(900, REALM_SC_NM="독서실"),  # 약 1.3km: 반경 밖
+    ]
+
+
 async def _populate(url: str, cache: GeocodeCache) -> None:
     engine = make_engine(url)
     await sync_facilities(
         engine, FakeSchools(schools_rows()), FakeHospitals(hospital_rows()), FakeLookup(), cache,
-        now=FIXED_NOW, out=lambda _: None,
+        academies=FakeAcademies(academy_rows()), now=FIXED_NOW, out=lambda _: None,
     )  # fmt: skip
     await engine.dispose()
 
@@ -94,6 +105,9 @@ def test_nearby_lists_closest_open_schools_per_level_and_counts_hospitals(facili
         "가상7의원",
     ]
     assert [h["distance_m"] for h in hospitals["nearest"]] == sorted(h["distance_m"] for h in hospitals["nearest"])
+    academies = body["data"]["academies"]
+    assert (academies["radius_m"], academies["total"]) == (1000, 5)
+    assert academies["counts"] == {"tutoring": 2, "arts": 1, "language": 1, "reading_room": 0, "other": 1}
     meta = body["meta"]
     assert meta["school_notice"].startswith("배정 학교")
     assert meta["source_attribution"] == ["나이스 교육정보 개방 포털", "건강보험심사평가원"]
@@ -113,6 +127,17 @@ def test_map_layers_filter_by_level_and_tier(facility_api_db):
     assert bad.status_code == 400 and bad.json()["error"]["field"] == "tier"
 
 
+def test_academy_layer_filters_by_category(facility_api_db):
+    with client(facility_api_db) as c:
+        tutoring = c.get(f"{API}/academies", params={"bbox": AROUND, "category": "tutoring"}).json()["data"]
+        other = c.get(f"{API}/academies", params={"bbox": AROUND, "category": "other,reading_room"}).json()["data"]
+        bad = c.get(f"{API}/academies", params={"bbox": AROUND, "category": "piano"})
+    assert [(a["name"], a["kind"]) for a in tutoring] == [("가상1학원", "학원"), ("가상2학원", "교습소")]
+    assert tutoring[0]["address"].endswith("3층 301호 (우동)") and tutoring[0]["tel"] is None
+    assert {(a["name"], a["category"]) for a in other} == {("가상5학원", "other"), ("가상900학원", "reading_room")}
+    assert bad.status_code == 400 and bad.json()["error"]["field"] == "category"
+
+
 def test_points_outside_busan_are_rejected(facility_api_db):
     with client(facility_api_db) as c:
         r = c.get(f"{API}/nearby", params={"lat": 37.56, "lng": 126.97})
@@ -126,7 +151,7 @@ def test_complex_nearby_uses_the_complex_location(facility_api_db):
         assert ids
         r = c.get(f"{API}/complexes/{ids[0]}/nearby")
         missing = c.get(f"{API}/complexes/{uuid4()}/nearby")
-    assert r.status_code == 200 and set(r.json()["data"]) == {"schools", "hospitals"}
+    assert r.status_code == 200 and set(r.json()["data"]) == {"schools", "hospitals", "academies"}
     assert missing.status_code == 404
 
 
@@ -135,7 +160,7 @@ def test_before_the_first_sync_it_says_there_is_no_data(postgis):
     migrate.upgrade(url)
     with client(url) as c:
         r = c.get(f"{API}/nearby", params=ORIGIN)
-    assert r.status_code == 503 and "학교·병원" in r.json()["error"]["message"]
+    assert r.status_code == 503 and "학원" in r.json()["error"]["message"]
 
 
 def test_without_a_database_it_says_there_is_no_data():
@@ -177,3 +202,20 @@ def test_hospital_classes_map_to_tiers(value, expected):
     from app.repositories.postgres.facilities import hospital_tier
 
     assert hospital_tier(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("입시.검정 및 보습", "tutoring"),
+        ("예능(대)", "arts"),
+        ("국제화", "language"),
+        ("독서실", "reading_room"),
+        ("종합(대)", "other"),
+        (None, "other"),
+    ],
+)
+def test_academy_fields_map_to_categories(value, expected):
+    from app.repositories.postgres.facilities import academy_category
+
+    assert academy_category(value) == expected

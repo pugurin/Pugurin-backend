@@ -3,18 +3,18 @@
 원천 목록에서 빠진 구역은 지우지 않고 `closed_at`을 채운다. 수집이 실패하거나 0건이면 아무것도 닫지 않는다.
 설계: docs/REDEVELOPMENT.md
 
-Revision ID: 0008
-Revises: 0007
+Revision ID: 0010
+Revises: 0009
 """
 
 from alembic import op
 
-revision = "0008"
-down_revision = "0007"
+revision = "0010"
+down_revision = "0009"
 branch_labels = None
 depends_on = None
 
-JOBS_BEFORE = "'collect', 'backfill', 'aggregate', 'auction', 'facility'"
+JOBS_BEFORE = "'collect', 'backfill', 'aggregate', 'auction', 'facility', 'building'"
 
 
 def upgrade() -> None:

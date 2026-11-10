@@ -144,7 +144,7 @@ uv run uvicorn --factory app.main:create_app
 
 - 12개월 수집은 실거래가 API 약 1,350회, 카카오 약 12,000곳 조회(캐시에 없는 주소만)다. 3개월은 약 340회, 60개월은 약 6,800회다.
 - **토지이용계획·필지(`/parcels`)는 공급처가 없다.** 가짜 필지 대신 항상 `source_unavailable`로 응답한다. 건폐율·용적률도 조례 표 확인 전이라 내지 않는다.
-- 세대수·공급면적은 원천에 없어 `null`이다. 토지는 지분거래·지목 '도로'를 집계에서 제외한다(`PUGURIN_EXCLUDE_SHARE_DEALS`, `PUGURIN_EXCLUDE_ROAD_LAND`).
+- 세대수는 원천에 없어 `null`이다. 아파트 공급 평형은 건축물대장으로 채운다(`python -m app.ingestion supply`, worker가 매일 `PUGURIN_BUILDING_DAILY_CALLS`회까지). 토지는 지분거래·지목 '도로'를 집계에서 제외한다(`PUGURIN_EXCLUDE_SHARE_DEALS`, `PUGURIN_EXCLUDE_ROAD_LAND`).
 - 카카오 지오코딩 결과(`.cache/geocode.json`)는 약관 확인 전이라 커밋하거나 배포하지 않는다.
 
 **Docker:** `docker compose up --build`는 api가 DB에서 조회한다. 처음엔 DB가 비어 있으니 `.cache`를 `load`로 넣거나 worker로 수집한다(README "DB에 거래 넣기"). 데이터가 있는지는 모든 응답의 `X-Data-Mode` 헤더(`real`/`none`)와 readiness의 `data` 검사에 나온다.

@@ -22,6 +22,7 @@
 
 - **경매·공매 조회 추가:** `GET /auctions`, `GET /auctions/{id}` (6.1장). 데이터는 DB에만 있고, 동기화 전에는 `503 DATA_NOT_READY`
 - **주변 학교·병원 추가:** `GET /nearby`, `GET /complexes/{id}/nearby`, `GET /schools`, `GET /hospitals` (6.2장)
+- **정비사업 구역 추가:** `GET /redevelopments`, `GET /redevelopments/{id}` (6.3장). 동기화 전에는 `503 DATA_NOT_READY`
 
 ### v0.4 보충 (1차 mock 구현 중 확인)
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
@@ -674,6 +675,88 @@
 - `nearest`: 종류와 상관없이 가장 가까운 5곳
 
 **오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 단지는 `404`, 잘못된 `level`·`tier`·좌표는 `400 VALIDATION_ERROR`.
+
+### 6.3 정비사업 구역 (Redevelopments) [추가]
+
+부산광역시 정비사업 정보(공공데이터포털)의 재개발·재건축·가로주택·소규모재건축 등 구역과 현재 사업추진단계다. worker가 매일 동기화한다. 설계는 [`REDEVELOPMENT.md`](./REDEVELOPMENT.md).
+화면에 출처 `meta.source_attribution`을 표시한다.
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/redevelopments` | 구역 목록. 지도(좌표 있는 구역)와 목록 화면용 |
+| GET | `/redevelopments/{id}` | 구역 1건. `id`는 원천 `aCode`(예: `BARA_0000000000056`) |
+
+**쿼리 (`/redevelopments`)**
+
+| 이름 | 기본 | 설명 |
+|---|---|---|
+| `bbox` | | `min_lng,min_lat,max_lng,max_lat`. 주면 좌표가 있는 구역 중 화면 안만 |
+| `kind` | 전부 | 쉼표 구분: `redevelopment`(재개발), `reconstruction`(재건축), `small_reconstruction`(소규모재건축), `small_redevelopment`(소규모재개발), `street_housing`(가로주택정비), `residential_improvement`(주거환경개선), `urban_environment`(도시환경정비), `other` |
+| `stage` | 전부 | 쉼표 구분: 아래 단계 표의 값, 그리고 `unknown` |
+| `include_closed` | false | 원천 목록에서 빠진 구역도 포함 |
+| `page`, `page_size` | 1, 100 | `page_size` 최대 500 |
+
+정렬은 단계가 많이 나간 순(`stage_order` 큰 순, 모르는 단계는 뒤), 같으면 구역명 순이다.
+
+| `stage` | `stage_order` | 뜻 |
+|---|---|---|
+| `cancelled` | 0 | 해제·취소 |
+| `planned` | 1 | 정비예정구역·기본계획 |
+| `designated` | 2 | 정비계획 수립·정비구역 지정 |
+| `committee` | 3 | 추진위원회 구성 |
+| `association` | 4 | 조합설립인가 |
+| `review` | 5 | 건축심의·통합심의 |
+| `project_approved` | 6 | 사업시행계획인가 |
+| `disposal_approved` | 7 | 관리처분계획 |
+| `construction` | 8 | 착공·이주·철거 |
+| `completed` | 9 | 준공 |
+| `transferred` | 10 | 이전고시 |
+| `dissolved` | 11 | 조합해산·청산 |
+| `unknown` | null | 표에 없는 원문(`step_raw`를 그대로 보여 준다) |
+
+**응답 (목록 항목 = 상세 `data`)**
+```json
+{
+  "data": [{
+    "id": "BARA_0000000000056",
+    "area_name": "○○구역 재개발",
+    "kind": "redevelopment",
+    "step_raw": "조합설립인가",
+    "stage": "association",
+    "stage_order": 4,
+    "location": "가야동 410번지 일원(○○초교 남측 일원)",
+    "location_kind": "lot",
+    "lat": 35.15, "lng": 129.04, "location_precise": true,
+    "area_m2": 45123.5, "area_pyeong": 13649.8,
+    "households": 1234, "buildings": 12, "union_members": 800,
+    "floor_area_ratio": 299.9, "building_coverage_ratio": 19.5,
+    "scale": "지하3층지상32층",
+    "business_entity": "○○구역 재개발정비사업조합",
+    "contractor": "○○건설", "engineer": null, "architect": null, "specialists": "○○정비",
+    "tel": "051-…",
+    "images": { "view": "http://dynamice.busan.go.kr/data/busi_ara/BARA_….jpg", "location": null, "panorama": null, "layout": null },
+    "source_url": "https://dynamice.busan.go.kr/home/BARA_0000000000056/main.do",
+    "is_closed": false
+  }],
+  "meta": {
+    "data_as_of": "2026-11-10T04:40:00+09:00",
+    "reporting_lag_notice": false,
+    "source_attribution": "부산광역시 정비사업 정보(공공데이터포털)",
+    "page": 1, "page_size": 100, "total": 349, "total_pages": 4
+  }
+}
+```
+- `location_kind`: 원천 위치 텍스트의 종류다. 좌표는 `lot`일 때만 있다.
+  - `lot`: 구역 지번이다. 카카오로 지오코딩한다. `location_precise`가 false면 법정동 중심점이다
+  - `office`: 조합 사무실 주소다(원천 위치의 약 절반). 구역 위치가 아니라서 좌표를 비운다
+  - `none`: 위치가 비었거나 지번이 없다
+  - 좌표가 없는 구역은 지도(`bbox`)에는 안 나오고 목록에만 나온다. 화면에서 "위치 정보 없음(사무실 주소만 있음)"처럼 안내한다
+- 숫자 항목은 원천 값을 읽을 수 없거나 "미선정"이면 `null`이다. `engineer`·`contractor` 등 글자 항목도 "미선정"이면 `null`이다
+- `images`: 조감도·위치도·전경·배치도 원본 주소(시 홈페이지, http). 없으면 `null`
+- `source_url`: 부산시 정비사업 통합홈페이지의 구역 페이지. 원천에 `aCode`가 없던 구역(`NOCODE_…`)은 `null`
+- 구역 경계(폴리곤)와 단계별 인가 날짜는 원천에 없다
+
+**오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 id는 `404 RESOURCE_NOT_FOUND`, 잘못된 `kind`·`stage`·`bbox`는 `400 VALIDATION_ERROR`(field는 그 이름).
 
 ## 7. 용어 해설 (Glossary) [1차]
 

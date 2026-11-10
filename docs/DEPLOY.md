@@ -79,6 +79,11 @@ nano backend/.env
 - `PUGURIN_DATA_GO_KR_RENT_KEY`
 - `PUGURIN_KAKAO_REST_KEY`
 
+아래는 선택이다. 비우면 worker가 그 동기화만 건너뛴다.
+- `PUGURIN_AUCTION_API_KEY` (경매·공매)
+- `PUGURIN_NEIS_API_KEY`, `PUGURIN_HOSPITAL_API_KEY` (학교·병원)
+- `PUGURIN_REDEVELOPMENT_API_KEY` (정비사업 구역)
+
 나머지는 compose가 정한다. 데이터 모드는 DB를 읽는 `auto`다.
 
 두 파일 모두 git에 올리지 않는다(`.gitignore`). 채팅이나 이슈에도 붙여 넣지 않는다.

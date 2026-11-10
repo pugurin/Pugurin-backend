@@ -103,6 +103,8 @@
 - 학교: 나이스 교육정보 개방 포털(https://open.neis.go.kr) `schoolInfo`, 키 `PUGURIN_NEIS_API_KEY`. 학구도(배정 학교)는 없다
 - 병원: 공공데이터포털 건강보험심사평가원 병원정보서비스, 키 `PUGURIN_HOSPITAL_API_KEY`
 
+**정비사업 구역** — 공공데이터포털 "부산광역시_정비사업 정보"(재개발·재건축 등 구역과 사업추진단계, 출처 표시 필요). worker가 매일 동기화한다(`python -m app.ingestion redevelopments`). 키는 `PUGURIN_REDEVELOPMENT_API_KEY`. 좌표가 없어 지번처럼 보이는 위치만 지오코딩한다. 설계는 [`docs/REDEVELOPMENT.md`](./docs/REDEVELOPMENT.md)
+
 **VWorld는 쓰지 않기로 했다.** 그래서 토지이용계획, 토지특성(공시지가·지목·도로접면·형상), 연속지적도, 부동산중개업 조회에는 현재 공급처가 없다.
 
 **트래픽 한도:** 공공데이터포털 개발계정·카카오 로컬 모두 일일 호출 한도가 있다. 백필(수년치 × 16개 구·군 × 7종)은 한도를 넘으므로 운영계정 신청 또는 분할 백필 계획이 필요하다.

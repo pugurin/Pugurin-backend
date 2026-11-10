@@ -419,6 +419,9 @@ class Nearby:
 
 # ── 정비사업 구역 (부산광역시 정비사업 정보) ─────────────
 
+# aCode가 빈 구역의 ID 접두어(뒤는 구역명 해시). 이런 구역은 시 홈페이지 구역 페이지 주소를 만들 수 없다
+REDEVELOPMENT_NO_CODE_PREFIX = "NOCODE_"
+
 
 class RedevelopmentKind(StrEnum):
     """구역명(areaName)에 들어 있는 사업 이름으로 나눈다."""

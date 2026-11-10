@@ -25,6 +25,7 @@ from app.repositories.ports import (
 from app.repositories.postgres.auctions import PostgresAuctionRepository
 from app.repositories.postgres.facilities import PostgresFacilityRepository
 from app.repositories.postgres.market import PostgresMarketRepository
+from app.repositories.postgres.redevelopments import PostgresRedevelopmentRepository
 from app.services.analysis_service import AnalysisService
 from app.services.auction_service import AuctionService
 from app.services.complex_service import ComplexService
@@ -33,6 +34,7 @@ from app.services.glossary_service import GlossaryService
 from app.services.map_service import MapService
 from app.services.parcel_service import ParcelService
 from app.services.readiness_service import ReadinessService
+from app.services.redevelopment_service import RedevelopmentService
 from app.services.search_service import SearchService
 from app.services.stats_service import StatsService
 from app.services.transaction_service import TransactionService
@@ -55,6 +57,7 @@ class Container:
     readiness_service: ReadinessService
     auction_service: AuctionService
     facility_service: FacilityService
+    redevelopment_service: RedevelopmentService
     address_search: AddressSearch | None = None
     db_engine: AsyncEngine | None = None
     redis: Redis | None = None
@@ -139,6 +142,7 @@ def build_container(
         # 경매·공매는 DB에만 있다(파일 캐시 모드에서는 503 DATA_NOT_READY)
         auction_service=AuctionService(PostgresAuctionRepository(db_engine) if db_engine else None, clock),
         facility_service=FacilityService(PostgresFacilityRepository(db_engine) if db_engine else None, clock),
+        redevelopment_service=RedevelopmentService(PostgresRedevelopmentRepository(db_engine) if db_engine else None),
         address_search=address_search,
         db_engine=db_engine,
         redis=redis,

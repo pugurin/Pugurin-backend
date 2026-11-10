@@ -20,11 +20,15 @@ import httpx
 from app.adapters.json_http import JsonApiClient
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError
 from app.repositories.ports import SourceUnavailable
-from app.repositories.types import LocationKind, RedevelopmentKind, RedevelopmentStage
+from app.repositories.types import (
+    REDEVELOPMENT_NO_CODE_PREFIX,
+    LocationKind,
+    RedevelopmentKind,
+    RedevelopmentStage,
+)
 
 PAGE_SIZE = 100
 MAX_PAGES = 50
-NO_CODE_PREFIX = "NOCODE_"  # aCode가 빈 구역의 ID 접두어. 이런 구역은 시 홈페이지 주소를 만들 수 없다
 _NULL_TEXT = {"", "-", "미선정"}
 
 # 긴 말부터 검사한다("소규모재건축"이 "재건축"보다 먼저)
@@ -166,7 +170,7 @@ def zone_id(code, area_name: str) -> str:
     if c:
         return c
     normalized = "".join(area_name.split())
-    return NO_CODE_PREFIX + hashlib.sha1(normalized.encode()).hexdigest()[:16]
+    return REDEVELOPMENT_NO_CODE_PREFIX + hashlib.sha1(normalized.encode()).hexdigest()[:16]
 
 
 def zone_from_row(row: dict) -> RedevelopmentItem:

@@ -62,13 +62,15 @@ def _group_case() -> str:
 # 한 필지에 단지가 여럿이면 같은 유형·전용면적이 가장 가까운 평형이 있는 곳, 그다음 id 순.
 # 경매 건물면적은 전용면적이다(운영 데이터에서 아파트·오피스텔의 95% 이상이 단지 평형과 0.5㎡ 안에서 일치).
 # 최근 실거래: 그 평형(area_bucket)의 최근 12개월 매매 중 가장 최근 1건. 해제·직거래·삭제된 거래는 뺀다.
+# 같은 거래들의 평균가(원 단위 반올림)와 거래 수도 함께 낸다. 평균은 창 함수라 LIMIT 1 전에 계산된다.
 _FROM = f"""
     FROM auctions a
     LEFT JOIN LATERAL (
-        SELECT c.id, at.area_bucket
+        SELECT c.id, at.area_bucket, at.supply_area_pyeong
         FROM complexes c
         LEFT JOIN LATERAL (
-            SELECT t.area_bucket, abs(t.exclusive_area_m2 - a.building_area_m2) AS diff
+            SELECT t.area_bucket, t.supply_area_pyeong::float8 AS supply_area_pyeong,
+                   abs(t.exclusive_area_m2 - a.building_area_m2) AS diff
             FROM complex_area_types t
             WHERE t.complex_id = c.id AND a.building_area_m2 IS NOT NULL
               AND c.property_type = ({_group_case()})
@@ -79,7 +81,8 @@ _FROM = f"""
         ORDER BY at.diff IS NULL, at.diff, c.id LIMIT 1
     ) cx ON true
     LEFT JOIN LATERAL (
-        SELECT t.price, t.contract_date, t.exclusive_area_m2::float8 AS exclusive_area_m2, count(*) OVER () AS n
+        SELECT t.price, t.contract_date, t.exclusive_area_m2::float8 AS exclusive_area_m2, count(*) OVER () AS n,
+               round(avg(t.price) OVER ())::bigint AS avg_price
         FROM transactions t
         WHERE cx.area_bucket IS NOT NULL AND t.complex_id = cx.id
           AND t.deleted_at IS NULL AND NOT t.is_cancelled
@@ -97,7 +100,8 @@ _SELECT = f"""
            a.land_area_m2::float8 AS land_area_m2, a.building_area_m2::float8 AS building_area_m2,
            a.is_share, a.status, a.closed_at, a.schedule, a.results,
            rt.price AS recent_trade_price, rt.contract_date AS recent_trade_date,
-           rt.exclusive_area_m2 AS recent_trade_area_m2, rt.n AS recent_trade_count
+           rt.exclusive_area_m2 AS recent_trade_area_m2, rt.n AS recent_trade_count,
+           rt.avg_price AS recent_trade_avg_price, cx.supply_area_pyeong AS recent_trade_supply_area_pyeong
     {_FROM}
 """
 
@@ -105,8 +109,8 @@ _ORDER = {
     AuctionSort.sale_date: "a.sale_date NULLS LAST, a.id",
     AuctionSort.min_price_ratio: "a.min_price::float8 / NULLIF(a.appraisal_price, 0) NULLS LAST, a.id",
     AuctionSort.min_price: "a.min_price NULLS LAST, a.id",
-    # 최근 실거래 대비 많이 싼 순 = 최저가 ÷ 최근 실거래가가 작은 순. 비교할 거래가 없으면 뒤로
-    AuctionSort.recent_trade_discount: "a.min_price::float8 / NULLIF(rt.price, 0) NULLS LAST, a.id",
+    # 실거래 대비 많이 싼 순 = 최저가 ÷ 같은 평형 최근 12개월 평균가가 작은 순. 비교할 거래가 없으면 뒤로
+    AuctionSort.recent_trade_discount: "a.min_price::float8 / NULLIF(rt.avg_price, 0) NULLS LAST, a.id",
 }
 AREA_TOLERANCE_M2 = 3.0
 RECENT_TRADE_MONTHS = 12
@@ -222,6 +226,8 @@ def _auction(r) -> Auction:
                 contract_date=r["recent_trade_date"],
                 exclusive_area_m2=r["recent_trade_area_m2"],
                 count=r["recent_trade_count"],
+                avg_price=r["recent_trade_avg_price"],
+                supply_area_pyeong=r["recent_trade_supply_area_pyeong"],
             )
             if r["recent_trade_price"] is not None
             else None

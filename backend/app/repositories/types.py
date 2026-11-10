@@ -299,12 +299,14 @@ class AuctionSort(StrEnum):
 
 @dataclass(frozen=True)
 class RecentTrade:
-    """같은 단지·같은 평형의 최근 12개월 매매(해제·직거래 제외) 중 가장 최근 1건과 그 기간 거래 수."""
+    """같은 단지·같은 평형의 최근 12개월 매매(해제·직거래 제외) 중 가장 최근 1건, 그 기간 거래 수와 평균가."""
 
     price: int
     contract_date: date
     exclusive_area_m2: float
     count: int
+    avg_price: int  # 같은 거래들의 평균가(원 단위 반올림)
+    supply_area_pyeong: float | None = None  # 그 평형의 공급 평형. 건축물대장으로 못 채웠으면 None
 
 
 @dataclass(frozen=True)

@@ -23,7 +23,7 @@
   - 구역: `areaName`(구역명), `location`(위치 텍스트), `areaUnit`(구역면적㎡), `step`(사업추진단계, 예: "조합설립인가")
   - 규모: `scale`(예: "지하3층지상32층"), `wingNum`(동수), `generationJoo`(세대수), `gage`(용적률%), `longPyeyul`(건폐율%), `guildMemNum`(조합원수)
   - 관계자: `businessEntities`(사업주체), `telNo`, `phone`, `contractor`(시공자), `engineer`(감리자), `architect`(설계자), `specialists`(정비사업전문관리업체)
-  - 이미지: `viewImgPath`(조감도), `loctImgPath`(위치도), `panoImgPath`(전경), `placeImgPath`(배치도). 실제 값은 `http://dynamice.busan.go.kr/data/busi_ara/BARA_….jpg` 꼴이다. 받은 그대로 저장한다.
+  - 이미지: `viewImgPath`(조감도), `loctImgPath`(위치도), `panoImgPath`(전경), `placeImgPath`(배치도). 실제 값은 `http://dynamice.busan.go.kr/data/busi_ara/BARA_….jpg` 꼴이다. 그런데 http 주소는 401을 돌려주고 https만 열려서(2026-11 확인) `https://`로 바꿔 저장한다.
   - 기타: `openInfoCnt`(입출금공개건수). 저장하지 않는다.
 - 주의:
   - 사업 유형 필드가 없다. 유형은 `areaName`에서 읽는다(예: "… 소규모재건축", "… 재개발").
@@ -76,7 +76,8 @@
   - 지오코딩은 기존 카카오 지오코더로 `"부산광역시 " + 정리한 지번`을 주소 검색한다. 부산 결과가 있으면 `lat`, `lng`을 넣고, 지번까지 맞으면 `location_precise=true`, 법정동 중심점이면 `false`다. 없으면 좌표를 비운다(지도에는 안 보이고 목록에만 나온다).
   - 지오코딩 캐시(`GeocodeCache`)를 재사용해 매일 같은 주소를 다시 부르지 않는다.
   - 리포트에 `lot`/`office`/`none` 건수와 위치를 못 찾은 건수를 남긴다.
-- **숫자:** 면적, 세대수, 동수, 조합원수, 용적률, 건폐율은 숫자로 바꾸고, 바꿀 수 없으면 null이다. 쉼표와 단위(㎡, %, 세대, 동, 명)는 떼고 읽는다. "미선정", "-", 빈 문자열은 null이다(글자 항목도 마찬가지).
+  - 실제 351건(2026-11 받은 것)에 돌려 본 결과: lot 95, office 169, none 87(시험 행 2건 포함 전체 기준). lot은 "부산시 동구 …"를 "부산광역시 동구 …"로, "대평동 1가"를 "대평동1가"로, "칠산동246"을 "칠산동 246"으로 고쳐서 검색한다.
+- **숫자:** 면적, 세대수, 동수, 조합원수, 용적률, 건폐율은 숫자로 바꾸고, 바꿀 수 없으면 null이다. 쉼표와 단위(㎡, %, 세대, 동, 명)는 떼고 읽는다. "미선정", "미정", "-", 빈 문자열은 null이다(글자 항목도 마찬가지). "1,174(임대 60)"처럼 괄호 설명이나 "261%이하"처럼 "이하"가 뒤에 붙으면 앞의 숫자를 읽는다.
 - **연락처:** `tel`은 `telNo`만 쓴다. `phone`은 개인 휴대전화일 수 있어 저장하지 않는다.
 
 ## DB (alembic `0008_redevelopments`)

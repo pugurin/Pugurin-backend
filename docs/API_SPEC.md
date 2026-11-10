@@ -734,7 +734,7 @@
     "business_entity": "○○구역 재개발정비사업조합",
     "contractor": "○○건설", "engineer": null, "architect": null, "specialists": "○○정비",
     "tel": "051-…",
-    "images": { "view": "http://dynamice.busan.go.kr/data/busi_ara/BARA_….jpg", "location": null, "panorama": null, "layout": null },
+    "images": { "view": "https://dynamice.busan.go.kr/data/busi_ara/BARA_….jpg", "location": null, "panorama": null, "layout": null },
     "source_url": "https://dynamice.busan.go.kr/home/BARA_0000000000056/main.do",
     "is_closed": false
   }],

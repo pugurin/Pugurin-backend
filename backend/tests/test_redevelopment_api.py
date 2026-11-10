@@ -110,8 +110,8 @@ def test_a_zone_carries_stage_location_numbers_and_the_city_page(redevelopment_a
         "specialists": "가상정비",
         "tel": "051-000-0000",
         "images": {
-            "view": "http://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_view.jpg",
-            "location": "http://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_loct.jpg",
+            "view": "https://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_view.jpg",
+            "location": "https://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_loct.jpg",
             "panorama": None,
             "layout": None,
         },

@@ -29,7 +29,7 @@ from app.repositories.types import (
 
 PAGE_SIZE = 100
 MAX_PAGES = 50
-_NULL_TEXT = {"", "-", "미선정"}
+_NULL_TEXT = {"", "-", "미선정", "미정"}
 
 # 긴 말부터 검사한다("소규모재건축"이 "재건축"보다 먼저)
 _KIND_WORDS: tuple[tuple[str, RedevelopmentKind], ...] = (
@@ -83,6 +83,9 @@ _STAGE_ORDERED = sorted(_STAGE_WORDS.items(), key=lambda kv: -len(kv[0]))
 
 _NUMBER = re.compile(r"(-?\d+(?:\.\d+)?)(?:㎡|m2|%|세대|동|명)?")
 _PAREN = re.compile(r"\([^)]*\)?")
+_TRAILING_NOTE = re.compile(r"\(.*\)$|이하$")  # "1,174(임대 60)", "261%이하": 앞의 숫자만 읽는다
+_DONG_GA = re.compile(r"(동)\s+(\d+가)")  # "대평동 1가" → "대평동1가"
+_DONG_LOT = re.compile(r"(동|리)(\d+(?:-\d+)?)(?![\d가])")  # "칠산동246" → "칠산동 246"
 # 사무실 주소 표시: n층, n호, 빌딩, 상가, 도로명 + 건물번호("냉정로 266", "법원로32번길 15")
 _OFFICE = re.compile(r"\d+\s*층|\d+\s*호|빌딩|상가|[가-힣0-9]+(?:로|길)\s*\d")
 # 구역 지번: 동·가·리 이름 + (산) 지번. "감천1동 202", "중앙동4가 33", "영주동 산 10-3"
@@ -126,7 +129,7 @@ def parse_number(v) -> float | None:
     s = _text(v)
     if s is None:
         return None
-    m = _NUMBER.fullmatch(s.replace(",", "").replace(" ", ""))
+    m = _NUMBER.fullmatch(_TRAILING_NOTE.sub("", s.replace(",", "").replace(" ", "")))
     return float(m.group(1)) if m else None
 
 
@@ -154,6 +157,9 @@ def classify_location(location) -> tuple[LocationKind, str | None]:
     if s is None:
         return LocationKind.none, None
     bare = " ".join(_PAREN.sub(" ", s).split())
+    bare = _DONG_LOT.sub(r"\1 \2", _DONG_GA.sub(r"\1\2", bare))
+    if bare.startswith("부산시 "):
+        bare = "부산광역시 " + bare.removeprefix("부산시 ")
     if _OFFICE.search(bare):
         return LocationKind.office, None
     lot = _LOT.search(bare)
@@ -163,6 +169,14 @@ def classify_location(location) -> tuple[LocationKind, str | None]:
     if not query.startswith(("부산광역시", "부산 ")):  # "부산진구"는 접두어가 아니다
         query = f"부산광역시 {query}"
     return LocationKind.lot, query
+
+
+def _image_url(v) -> str | None:
+    """원천은 http로 주지만 그 주소는 401이고 https만 열린다. https로 바꿔 둔다(https 화면에서도 쓸 수 있게)."""
+    url = _text(v)
+    if url and url.startswith("http://"):
+        return "https://" + url.removeprefix("http://")
+    return url
 
 
 def zone_id(code, area_name: str) -> str:
@@ -187,7 +201,7 @@ def zone_from_row(row: dict) -> RedevelopmentItem:
             ("panorama", "panoImgPath"),
             ("layout", "placeImgPath"),
         )
-        if (url := _text(row.get(field)))
+        if (url := _image_url(row.get(field)))
     }
     return RedevelopmentItem(
         id=zone_id(row.get("aCode"), name),
@@ -278,4 +292,6 @@ class BusanRedevelopmentClient(JsonApiClient):
                 break
         else:
             raise SourceUnavailable(f"정비사업 정보 페이지가 {MAX_PAGES}개를 넘었습니다")
+        if rows and len(rows) < total:  # 중간 쪽이 비면 나머지 구역이 닫히지 않게 실패로 본다
+            raise SourceUnavailable(f"정비사업 정보가 {total}건 중 {len(rows)}건에서 끊겼습니다")
         return [zone_from_row(r) for r in rows]

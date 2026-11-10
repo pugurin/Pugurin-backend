@@ -53,11 +53,17 @@ def test_a_row_keeps_the_code_numbers_and_images_and_drops_blanks():
     )
     assert z.tel == "051-000-0000"  # phone(휴대전화일 수 있다)은 옮기지 않는다
     assert "010-0000-0000" not in repr(z)
+    # 원천은 http로 주지만 http는 401이고 https만 열린다(2026-11 확인). https로 바꿔 저장한다
     assert z.images == {
-        "view": "http://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_view.jpg",
-        "location": "http://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_loct.jpg",
+        "view": "https://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_view.jpg",
+        "location": "https://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_loct.jpg",
     }
     assert (z.location_kind, z.geocode_query) == ("lot", "부산광역시 부산진구 가야동 101")
+
+
+def test_undecided_text_fields_are_null():
+    z = zone_from_row(zone_row(1, contractor="미정"))
+    assert z.contractor is None
 
 
 def test_a_row_without_a_code_gets_a_stable_id_from_the_normalized_name():
@@ -82,6 +88,11 @@ def test_a_row_without_a_code_gets_a_stable_id_from_the_normalized_name():
         (None, None),
         ("약 300", None),
         ("300~400", None),
+        ("미정", None),
+        # 실데이터: 괄호 설명이나 "이하"가 붙으면 앞의 숫자를 읽는다
+        ("1,174(임대 60)", 1174.0),
+        ("998세대(임대50)", 998.0),
+        ("261%이하", 261.0),
     ],
 )
 def test_numbers_are_read_or_left_null(value, expected):
@@ -145,6 +156,11 @@ def test_unknown_or_blank_steps_are_unknown_without_order(step):
         ("동구 범일동 830-1번지, 830-2번지", "lot", "부산광역시 동구 범일동 830-1"),
         ("부산광역시 남구 용호동 123", "lot", "부산광역시 남구 용호동 123"),  # '호'가 들어간 동 이름
         ("중앙동4가 33", "lot", "부산광역시 중앙동4가 33"),
+        # 실데이터에서 본 모양
+        ("부산시 동구 범일동 330-190번지 일원", "lot", "부산광역시 동구 범일동 330-190"),
+        ("대평동 1가 1번지 일원", "lot", "부산광역시 대평동1가 1"),
+        ("동래구 칠산동246번지 일원", "lot", "부산광역시 동래구 칠산동 246"),
+        ("부산광역시 해운대구 중동 785-8번지, 1층", "office", None),
         ("부산광역시 부산진구 냉정로 266, 2층(가야동)", "office", None),
         ("연제구 법원로32번길 15,502호", "office", None),
         ("우암로 134, 3층 (감만동, 삼진빌딩)", "office", None),
@@ -234,6 +250,18 @@ async def test_client_stops_on_an_empty_page_even_if_the_total_says_more():
     client, seen = client_for(lambda r: httpx.Response(200, json=page_body("", 10)))
     assert await client.zones() == []
     assert len(seen) == 1
+
+
+async def test_client_refuses_a_list_that_ends_before_the_total():
+    # 둘째 쪽이 비어 버리면 나머지 구역이 닫히지 않게 실패로 본다
+    def handler(request):
+        page = int(request.url.params["pageNo"])
+        items = [zone_row(n) for n in range(1, 101)] if page == 1 else ""
+        return httpx.Response(200, json=page_body(items, "351"))
+
+    client, _ = client_for(handler)
+    with pytest.raises(SourceUnavailable):
+        await client.zones()
 
 
 async def test_client_maps_key_errors_returned_as_xml():

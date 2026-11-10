@@ -90,12 +90,20 @@ _UPSERT = text(
         stage_order = excluded.stage_order,
         location = excluded.location,
         location_kind = excluded.location_kind,
-        -- 지오코딩을 이번에 못 해 봤으면(한도·장애) 예전 좌표를 둔다. 해 봤으면 결과(없으면 NULL)로 바꾼다
-        lat = CASE WHEN CAST(:keep_location AS boolean) THEN redevelopments.lat ELSE excluded.lat END,
-        lng = CASE WHEN CAST(:keep_location AS boolean) THEN redevelopments.lng ELSE excluded.lng END,
-        location_precise = CASE WHEN CAST(:keep_location AS boolean) THEN redevelopments.location_precise
-                                ELSE excluded.location_precise END,
-        geom = CASE WHEN CAST(:keep_location AS boolean) THEN redevelopments.geom ELSE excluded.geom END,
+        -- 지오코딩을 이번에 못 해 봤으면(한도·장애) 위치 문구가 그대로일 때만 예전 좌표를 둔다.
+        -- 문구가 바뀌었으면 옛 좌표는 틀린 자리라 비운다. 해 봤으면 결과(없으면 NULL)로 바꾼다
+        lat = CASE WHEN CAST(:keep_location AS boolean)
+                        AND redevelopments.location IS NOT DISTINCT FROM excluded.location
+                   THEN redevelopments.lat ELSE excluded.lat END,
+        lng = CASE WHEN CAST(:keep_location AS boolean)
+                        AND redevelopments.location IS NOT DISTINCT FROM excluded.location
+                   THEN redevelopments.lng ELSE excluded.lng END,
+        location_precise = CASE WHEN CAST(:keep_location AS boolean)
+                        AND redevelopments.location IS NOT DISTINCT FROM excluded.location
+                                THEN redevelopments.location_precise ELSE excluded.location_precise END,
+        geom = CASE WHEN CAST(:keep_location AS boolean)
+                        AND redevelopments.location IS NOT DISTINCT FROM excluded.location
+                    THEN redevelopments.geom ELSE excluded.geom END,
         area_m2 = excluded.area_m2,
         households = excluded.households,
         buildings = excluded.buildings,

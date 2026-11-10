@@ -261,8 +261,13 @@ def parse_page(data: dict) -> tuple[list[dict], int]:
         rows = [rows]
     if not isinstance(rows, list):  # "" 또는 None: 데이터 없음
         rows = []
+    rows = [r for r in rows if isinstance(r, dict)]
     total = parse_number(body.get("totalCount"))
-    return [r for r in rows if isinstance(r, dict)], int(total or 0)
+    if total is None:
+        if rows:  # 전체 건수를 모르면 끝까지 받았는지 알 수 없다. 나머지 구역이 닫히지 않게 실패로 본다
+            raise SourceUnavailable("정비사업 정보 응답에 totalCount가 없습니다")
+        total = 0
+    return rows, int(total)
 
 
 class BusanRedevelopmentClient(JsonApiClient):
@@ -288,10 +293,12 @@ class BusanRedevelopmentClient(JsonApiClient):
             params = {"serviceKey": self._key, "pageNo": page, "numOfRows": PAGE_SIZE, "resultType": "json"}
             page_rows, total = parse_page(await self.get_json(self._url, params, "정비사업 정보"))
             rows.extend(page_rows)
-            if not page_rows or len(rows) >= total:
+            # 행 수가 아니라 고유 구역 수로 센다. 쪽 사이에 같은 행이 끼면 끝 쪽 구역을 놓치지 않게
+            unique = len({zone_id(r.get("aCode"), _text(r.get("areaName")) or "") for r in rows})
+            if not page_rows or unique >= total:
                 break
         else:
             raise SourceUnavailable(f"정비사업 정보 페이지가 {MAX_PAGES}개를 넘었습니다")
-        if rows and len(rows) < total:  # 중간 쪽이 비면 나머지 구역이 닫히지 않게 실패로 본다
-            raise SourceUnavailable(f"정비사업 정보가 {total}건 중 {len(rows)}건에서 끊겼습니다")
+        if rows and unique < total:  # 중간 쪽이 비면 나머지 구역이 닫히지 않게 실패로 본다
+            raise SourceUnavailable(f"정비사업 정보가 {total}건 중 {unique}건에서 끊겼습니다")
         return [zone_from_row(r) for r in rows]

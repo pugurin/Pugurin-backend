@@ -187,6 +187,15 @@ def test_page_accepts_a_list_a_single_object_or_no_items():
     assert parse_page(page_body([], 0)) == ([], 0)
 
 
+@pytest.mark.parametrize("total", [None, "", "모름"])
+def test_rows_without_a_readable_total_are_refused(total):
+    # totalCount를 못 읽으면 1쪽만 받고 나머지 구역을 닫게 되므로 실패로 본다
+    data = page_body([zone_row(1)])
+    data["response"]["body"]["totalCount"] = total
+    with pytest.raises(SourceUnavailable):
+        parse_page(data)
+
+
 def test_page_reads_a_top_level_header_too():
     data = {"header": {"resultCode": "00"}, "body": {"totalCount": 1, "items": [zone_row(1)]}}
     rows, total = parse_page(data)
@@ -262,6 +271,20 @@ async def test_client_refuses_a_list_that_ends_before_the_total():
     client, _ = client_for(handler)
     with pytest.raises(SourceUnavailable):
         await client.zones()
+
+
+async def test_client_counts_unique_codes_so_a_repeated_row_does_not_end_the_list_early():
+    # 둘째 쪽 첫 행이 첫 쪽 끝과 겹치면 행 수로는 200에 닿지만 고유 구역은 199곳뿐이다
+    def handler(request):
+        page = int(request.url.params["pageNo"])
+        starts = {1: 1, 2: 100}
+        items = [zone_row(n) for n in range(starts[page], starts[page] + 100)] if page in starts else ""
+        return httpx.Response(200, json=page_body(items, "200"))
+
+    client, seen = client_for(handler)
+    with pytest.raises(SourceUnavailable):
+        await client.zones()
+    assert len(seen) == 3
 
 
 async def test_client_maps_key_errors_returned_as_xml():
@@ -435,6 +458,15 @@ async def test_geocoder_quota_keeps_known_points_and_marks_the_run(engine, tmp_p
         ("BARA_0000000000001", True),
         ("BARA_0000000000002", False),
     ]
+
+
+async def test_a_changed_location_that_could_not_be_geocoded_drops_the_old_point(engine, tmp_path):
+    await sync(engine, FakeRedevelopmentSource([zone_row(1)]), GeocodeCache(tmp_path / "a.json"))
+    moved = [zone_row(1, location="부산진구 가야동 999번지 일원")]
+    await sync(
+        engine, FakeRedevelopmentSource(moved), GeocodeCache(tmp_path / "b.json"), minutes=1, lookup=QuotaLookup()
+    )
+    assert await fetch(engine, "SELECT location, lat FROM redevelopments") == [("부산진구 가야동 999번지 일원", None)]
 
 
 class DongCenterLookup:

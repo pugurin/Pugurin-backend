@@ -53,6 +53,21 @@ class ComplexLatest(BaseModel):
     contract_date: date
 
 
+class ComplexTypical(BaseModel):
+    """대표 평형: 같은 필터의 거래 중 가장 많이 거래된 평형과 그 평균(원 단위 반올림).
+
+    매매는 avg_price, 전세는 avg_deposit, 월세는 avg_deposit·avg_monthly_rent만 채우고 나머지는 null.
+    """
+
+    exclusive_area_m2: float
+    exclusive_area_pyeong: float
+    supply_area_pyeong: float | None  # 건축물대장으로 채운 공급 평형. 없으면 null(앱은 전용 평으로 표시)
+    transaction_count: int
+    avg_price: int | None
+    avg_deposit: int | None
+    avg_monthly_rent: int | None
+
+
 class ComplexMarker(BaseModel):
     kind: Literal["complex"] = "complex"
     complex_id: UUID
@@ -60,6 +75,7 @@ class ComplexMarker(BaseModel):
     lat: float
     lng: float
     latest: ComplexLatest
+    typical: ComplexTypical | None
     transaction_count: int
 
     @classmethod
@@ -82,6 +98,17 @@ class ComplexMarker(BaseModel):
                 floor=tx.floor,
                 contract_date=tx.contract_date,
             ),
+            typical=ComplexTypical(
+                exclusive_area_m2=t.exclusive_area_m2,
+                exclusive_area_pyeong=m2_to_pyeong(t.exclusive_area_m2),
+                supply_area_pyeong=t.supply_area_pyeong,
+                transaction_count=t.transaction_count,
+                avg_price=t.avg_price,
+                avg_deposit=t.avg_deposit,
+                avg_monthly_rent=t.avg_monthly_rent,
+            )
+            if (t := row.typical)
+            else None,
         )
 
 

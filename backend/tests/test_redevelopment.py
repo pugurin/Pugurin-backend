@@ -1,8 +1,12 @@
 """정비사업 구역 동기화: 원천 응답 해석(유형·단계·위치·숫자), 페이지 넘김, 사라진 구역 처리."""
 
+from datetime import timedelta
+
 import httpx
 import pytest
+from sqlalchemy import text
 
+from app.adapters.kakao import GeoResult
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError
 from app.adapters.redevelopment import (
     BusanRedevelopmentClient,
@@ -13,8 +17,15 @@ from app.adapters.redevelopment import (
     parse_page,
     zone_from_row,
 )
+from app.db import migrate
+from app.db.engine import make_engine
+from app.ingestion.geocode import GeocodeCache
+from app.ingestion.load import LoadBusy
+from app.ingestion.redevelopment import REDEVELOPMENT_LOCK_KEY, sync_redevelopments
 from app.repositories.ports import SourceUnavailable
-from tests.fakes.redevelopment import page_body, zone_row
+from tests.conftest import FIXED_NOW, create_database
+from tests.fakes.madangs import FakeLookup
+from tests.fakes.redevelopment import FakeRedevelopmentSource, page_body, zone_row
 
 pytestmark = pytest.mark.anyio
 
@@ -237,3 +248,219 @@ async def test_client_retries_server_errors_then_gives_up():
     with pytest.raises(SourceUnavailable):
         await client.zones()
     assert len(seen) == 3
+
+
+# ── 동기화 (실제 PostGIS) ─────────────────────────────────────
+
+OFFICE = "부산광역시 부산진구 가상로 266, 2층(가야동)"
+
+
+@pytest.fixture(scope="module")
+def redevelopment_db(postgis: str) -> str:
+    url = create_database(postgis, "redevelopments")
+    migrate.upgrade(url)
+    return url
+
+
+@pytest.fixture
+async def engine(redevelopment_db):
+    engine = make_engine(redevelopment_db)
+    async with engine.begin() as conn:
+        await conn.execute(text("TRUNCATE redevelopments, etl_runs RESTART IDENTITY CASCADE"))
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+def cache(tmp_path) -> GeocodeCache:
+    return GeocodeCache(tmp_path / "geocode.json")
+
+
+async def sync(engine, source, cache, *, minutes=0, lookup=None):
+    return await sync_redevelopments(
+        engine, source, lookup or FakeLookup(), cache, now=FIXED_NOW + timedelta(minutes=minutes), out=lambda _: None
+    )
+
+
+async def fetch(engine, sql: str):
+    async with engine.connect() as conn:
+        return [tuple(r) for r in (await conn.execute(text(sql))).all()]
+
+
+async def test_first_sync_stores_zones_and_geocodes_only_lot_addresses(engine, cache):
+    rows = [zone_row(1), zone_row(2, location=OFFICE, step="착공"), zone_row(3, location="", step="준공")]
+    lookup = FakeLookup()
+    report = await sync(engine, FakeRedevelopmentSource(rows), cache, lookup=lookup)
+    assert (report.status, report.fetched, report.inserted, report.closed) == ("success", 3, 3, 0)
+    assert (report.lot, report.office, report.none, report.without_location) == (1, 1, 1, 2)
+    assert lookup.queries == ["부산광역시 부산진구 가야동 101"]
+    got = await fetch(
+        engine,
+        "SELECT id, kind, stage, stage_order, location_kind, location_precise, round(lat::numeric, 5)::float8, "
+        "geom IS NOT NULL FROM redevelopments ORDER BY id",
+    )
+    assert got == [
+        ("BARA_0000000000001", "redevelopment", "association", 4, "lot", True, 35.16101, True),
+        ("BARA_0000000000002", "redevelopment", "construction", 8, "office", False, None, False),
+        ("BARA_0000000000003", "redevelopment", "completed", 9, "none", False, None, False),
+    ]
+    [(images, households, engineer, area)] = await fetch(
+        engine, "SELECT images, households, engineer, area_m2 FROM redevelopments WHERE id = 'BARA_0000000000001'"
+    )
+    assert set(images) == {"view", "location"} and (households, engineer, area) == (1234, None, 45123.5)
+    [(job, status, report_json)] = await fetch(engine, "SELECT job, status, report FROM etl_runs")
+    assert (job, status) == ("redevelopment", "success")
+    assert report_json["location_kinds"] == {"lot": 1, "office": 1, "none": 1}
+
+
+async def test_test_rows_are_skipped_and_counted(engine, cache):
+    rows = [zone_row(1), zone_row(2, areaName="교리테스트 재개발"), zone_row(3, areaName="가상 테스트구역")]
+    report = await sync(engine, FakeRedevelopmentSource(rows), cache)
+    assert (report.fetched, report.skipped_test) == (1, 2)
+    assert await fetch(engine, "SELECT id FROM redevelopments") == [("BARA_0000000000001",)]
+
+
+async def test_a_repeated_id_keeps_the_first_row_and_warns(engine, cache):
+    rows = [zone_row(1), zone_row(1, areaName="가상1구역 재건축"), zone_row(2)]
+    report = await sync(engine, FakeRedevelopmentSource(rows), cache)
+    assert report.duplicates == ["BARA_0000000000001"] and report.fetched == 2
+    assert await fetch(engine, "SELECT kind FROM redevelopments WHERE id = 'BARA_0000000000001'") == [
+        ("redevelopment",)
+    ]
+    [(status, report_json)] = await fetch(engine, "SELECT status, report FROM etl_runs")
+    assert status == "success" and report_json["duplicates"] == ["BARA_0000000000001"]
+
+
+async def test_unknown_steps_are_kept_raw_and_listed_in_the_report(engine, cache):
+    rows = [zone_row(1, step="안전진단 통과"), zone_row(2, step="안전진단 통과"), zone_row(3, step="미선정")]
+    report = await sync(engine, FakeRedevelopmentSource(rows), cache)
+    assert report.unknown_steps == {"안전진단 통과": 2}
+    assert await fetch(engine, "SELECT step_raw, stage, stage_order FROM redevelopments ORDER BY id") == [
+        ("안전진단 통과", "unknown", None),
+        ("안전진단 통과", "unknown", None),
+        (None, "unknown", None),
+    ]
+
+
+async def test_second_sync_uses_the_geocode_cache_closes_what_disappeared_and_reopens_returns(engine, cache):
+    await sync(engine, FakeRedevelopmentSource([zone_row(1), zone_row(2)]), cache)
+    lookup = FakeLookup()
+    report = await sync(engine, FakeRedevelopmentSource([zone_row(1, step="착공")]), cache, minutes=1, lookup=lookup)
+    assert lookup.queries == []
+    assert (report.updated, report.closed) == (1, 1)
+    assert await fetch(engine, "SELECT id, stage FROM redevelopments WHERE closed_at IS NULL") == [
+        ("BARA_0000000000001", "construction")
+    ]
+    back = await sync(engine, FakeRedevelopmentSource([zone_row(1), zone_row(2)]), cache, minutes=2)
+    assert (back.closed, back.inserted, back.updated) == (0, 0, 2)
+    got = await fetch(engine, "SELECT first_seen_at, last_seen_at FROM redevelopments WHERE id = 'BARA_0000000000002'")
+    assert got == [(FIXED_NOW, FIXED_NOW + timedelta(minutes=2))]
+    assert await fetch(engine, "SELECT count(*) FROM redevelopments WHERE closed_at IS NULL") == [(2,)]
+
+
+async def test_a_failed_fetch_neither_writes_nor_closes(engine, cache):
+    source = FakeRedevelopmentSource([zone_row(1)])
+    await sync(engine, source, cache)
+    source.error = SourceUnavailable("정비사업 정보 서버 오류(HTTP 503)")
+    report = await sync(engine, source, cache, minutes=1)
+    assert (report.status, report.closed) == ("failed", 0)
+    assert await fetch(engine, "SELECT count(*) FROM redevelopments WHERE closed_at IS NULL") == [(1,)]
+    assert await fetch(engine, "SELECT status FROM etl_runs ORDER BY id") == [("success",), ("failed",)]
+
+
+@pytest.mark.parametrize("rows", [[], [zone_row(9, areaName="교리테스트 재개발")]])
+async def test_a_zero_result_run_closes_nothing_and_counts_as_failed(engine, cache, rows):
+    await sync(engine, FakeRedevelopmentSource([zone_row(1), zone_row(2)]), cache)
+    report = await sync(engine, FakeRedevelopmentSource(rows), cache, minutes=1)
+    assert (report.status, report.closed) == ("failed", 0)
+    assert any("0건" in e for e in report.errors)
+    assert await fetch(engine, "SELECT count(*) FROM redevelopments WHERE closed_at IS NULL") == [(2,)]
+    assert await fetch(engine, "SELECT status FROM etl_runs ORDER BY id") == [("success",), ("failed",)]
+
+
+async def test_location_that_turns_into_an_office_address_drops_the_old_point(engine, cache):
+    await sync(engine, FakeRedevelopmentSource([zone_row(1)]), cache)
+    await sync(engine, FakeRedevelopmentSource([zone_row(1, location=OFFICE)]), cache, minutes=1)
+    assert await fetch(engine, "SELECT location_kind, lat, geom IS NULL, location_precise FROM redevelopments") == [
+        ("office", None, True, False)
+    ]
+
+
+class QuotaLookup:
+    def __init__(self):
+        self.queries: list[str] = []
+
+    async def lookup(self, query: str):
+        self.queries.append(query)
+        raise QuotaExceeded("카카오 호출 한도 초과(HTTP 429)")
+
+
+async def test_geocoder_quota_keeps_known_points_and_marks_the_run(engine, tmp_path):
+    await sync(engine, FakeRedevelopmentSource([zone_row(1)]), GeocodeCache(tmp_path / "a.json"))
+    lookup = QuotaLookup()
+    rows = [zone_row(1), zone_row(2)]
+    report = await sync(
+        engine, FakeRedevelopmentSource(rows), GeocodeCache(tmp_path / "b.json"), minutes=1, lookup=lookup
+    )
+    assert report.status == "quota_exceeded" and len(lookup.queries) == 1  # 한도에 닿으면 더 부르지 않는다
+    assert await fetch(engine, "SELECT id, lat IS NOT NULL FROM redevelopments ORDER BY id") == [
+        ("BARA_0000000000001", True),
+        ("BARA_0000000000002", False),
+    ]
+
+
+class DongCenterLookup:
+    async def lookup(self, query: str):
+        return GeoResult(35.15, 129.05, "2623010100", None, precise=False)
+
+
+async def test_a_dong_center_result_is_not_precise_and_outside_busan_is_dropped(engine, cache):
+    rows = [zone_row(1), zone_row(2, location="서울 가상동 12")]
+    await sync(engine, FakeRedevelopmentSource(rows[:1]), cache, lookup=DongCenterLookup())
+    report = await sync(engine, FakeRedevelopmentSource(rows), cache, minutes=1)
+    assert report.without_location == 1
+    assert await fetch(engine, "SELECT id, lat, location_precise FROM redevelopments ORDER BY id") == [
+        ("BARA_0000000000001", 35.15, False),
+        ("BARA_0000000000002", None, False),
+    ]
+
+
+async def test_a_second_sync_refuses_to_run_while_one_is_in_progress(engine, cache):
+    async with engine.connect() as holder:
+        await holder.execute(text("SELECT pg_advisory_lock(:k)"), {"k": REDEVELOPMENT_LOCK_KEY})
+        with pytest.raises(LoadBusy):
+            await sync(engine, FakeRedevelopmentSource([]), cache)
+        await holder.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": REDEVELOPMENT_LOCK_KEY})
+    assert await fetch(engine, "SELECT count(*) FROM etl_runs") == [(0,)]
+
+
+# ── 명령·worker 일과 ──────────────────────────────────────────
+
+
+async def test_the_command_skips_without_a_key(capsys):
+    from app.core.config import Settings
+    from app.ingestion.__main__ import _redevelopments
+
+    assert await _redevelopments(Settings(redevelopment_api_key="")) == 2
+    assert "PUGURIN_REDEVELOPMENT_API_KEY" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(("key", "expected"), [("", []), ("k", ["redevelopments"])])
+async def test_the_daily_routine_runs_the_sync_only_with_a_key(monkeypatch, key, expected):
+    from app.core.config import Settings
+    from app.ingestion import __main__ as cli
+
+    calls: list[str] = []
+
+    async def fake_refresh(settings, args):
+        return 0
+
+    async def fake_redevelopments(settings):
+        calls.append("redevelopments")
+        return 0
+
+    monkeypatch.setattr(cli, "_refresh", fake_refresh)
+    monkeypatch.setattr(cli, "_redevelopments", fake_redevelopments)
+    settings = Settings(redevelopment_api_key=key, auction_api_key="", neis_api_key="", hospital_api_key="")
+    assert await cli._daily(settings, None) == 0
+    assert calls == expected

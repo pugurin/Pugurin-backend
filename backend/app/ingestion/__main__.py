@@ -8,6 +8,7 @@ from app.adapters.kakao import KakaoGeocoder
 from app.adapters.madangs import MadangsClient
 from app.adapters.molit.client import MolitClient
 from app.adapters.molit.types import SourceKind
+from app.adapters.redevelopment import BusanRedevelopmentClient
 from app.core.config import Settings
 from app.core.dates import KST
 from app.db.engine import make_engine
@@ -18,6 +19,7 @@ from app.ingestion.geocode import GeocodeCache
 from app.ingestion.load import LoadBusy, LoadReport, load_into_db
 from app.ingestion.rawcache import RawCache
 from app.ingestion.real import RealDataMissing, load_real_data
+from app.ingestion.redevelopment import sync_redevelopments
 from app.ingestion.refresh import refresh
 from app.ingestion.worker import run_daily
 
@@ -164,13 +166,50 @@ async def _facilities(settings: Settings) -> int:
     return 0 if r.status == "success" else 3
 
 
+async def _redevelopments(settings: Settings) -> int:
+    if not settings.redevelopment_api_key:
+        print("PUGURIN_REDEVELOPMENT_API_KEY가 없어 정비사업 동기화를 건너뜁니다 (backend/.env)")
+        return 2
+    if not settings.database_url:
+        print("정비사업 동기화에는 PUGURIN_DATABASE_URL이 필요합니다")
+        return 2
+    source = BusanRedevelopmentClient(settings.redevelopment_api_key)
+    geocoder = KakaoGeocoder(settings.kakao_rest_key) if settings.kakao_rest_key else None
+    engine = make_engine(settings.database_url)
+    try:
+        cache = GeocodeCache(settings.data_dir / "geocode.json")
+        r = await sync_redevelopments(engine, source, geocoder, cache, now=datetime.now(KST))
+    except LoadBusy as e:
+        print(e)
+        return 4
+    finally:
+        await source.aclose()
+        if geocoder:
+            await geocoder.aclose()
+        await engine.dispose()
+    print(f"정비사업 동기화 {r.status}: 구역 {r.fetched:,}곳 (시험 행 {r.skipped_test}건 제외)")
+    print(f"  새로 {r.inserted:,} · 갱신 {r.updated:,} · 사라짐 {r.closed:,}", end="")
+    print(f" · 위치 없음 {r.without_location:,}", end="")
+    print(f" (지번 {r.lot} · 사무실 주소 {r.office} · 없음 {r.none})")
+    if r.duplicates:
+        print(f"  같은 ID가 두 번 나와 뒤의 것을 버림: {', '.join(r.duplicates[:10])}")
+    if r.unknown_steps:
+        steps = ", ".join(f"{step}({n})" for step, n in list(r.unknown_steps.items())[:10])
+        print(f"  단계 표에 없는 원문: {steps} → app/adapters/redevelopment.py의 표를 보강하세요")
+    for e in r.errors[:5]:
+        print(f"  - {e}")
+    return 0 if r.status == "success" else 3
+
+
 async def _daily(settings: Settings, args: argparse.Namespace) -> int:
-    """worker 하루치: 실거래가 수집·적재, 그다음 경매·학교·병원 동기화(키가 있을 때)."""
+    """worker 하루치: 실거래가 수집·적재, 그다음 경매·학교·병원·정비사업 동기화(키가 있을 때)."""
     code = await _refresh(settings, args)
     if settings.auction_api_key:
         code = max(code, await _auctions(settings))
     if settings.neis_api_key or settings.hospital_api_key:
         code = max(code, await _facilities(settings))
+    if settings.redevelopment_api_key:
+        code = max(code, await _redevelopments(settings))
     return code
 
 
@@ -199,9 +238,11 @@ def main() -> int:
     load.add_argument("--force", action="store_true", help="이미 적재한 단위도 다시 적재")
     sub.add_parser("auctions", help="부산 경매·공매 물건을 경매마당에서 받아 DB에 맞춘다")
     sub.add_parser("facilities", help="부산 학교(나이스)·병원(심평원) 목록을 받아 DB에 맞춘다")
+    sub.add_parser("redevelopments", help="부산 정비사업(재개발·재건축) 구역과 단계를 받아 DB에 맞춘다")
     sub.add_parser(
         "worker",
-        help="refresh(수집 → 지오코딩 → DB 적재)와 경매·학교·병원 동기화를 지금 한 번, 이후 매일 정해진 시각에 실행",
+        help="refresh(수집 → 지오코딩 → DB 적재)와 경매·학교·병원·정비사업 동기화를 지금 한 번, "
+        "이후 매일 정해진 시각에 실행",
     )
     args = parser.parse_args()
     settings = Settings()
@@ -216,6 +257,8 @@ def main() -> int:
         return asyncio.run(_auctions(settings))
     if args.command == "facilities":
         return asyncio.run(_facilities(settings))
+    if args.command == "redevelopments":
+        return asyncio.run(_redevelopments(settings))
     if args.command == "worker":
         args.months = args.kinds = args.districts = None
         args.skip_geocode = args.no_db = False

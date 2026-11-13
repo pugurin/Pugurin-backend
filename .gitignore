@@ -6,3 +6,5 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .cache/
+# 내려받은 원본 파일(학구도 등). 크기가 커서 올리지 않는다
+data/

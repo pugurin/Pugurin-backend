@@ -64,6 +64,7 @@ def test_openapi_schema_builds_for_all_endpoints(client):
         f"{API}/nearby",
         f"{API}/complexes/{{complex_id}}/nearby",
         f"{API}/schools",
+        f"{API}/schools/{{school_id}}/zone",
         f"{API}/hospitals",
         f"{API}/academies",
         f"{API}/redevelopments",

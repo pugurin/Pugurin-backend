@@ -449,6 +449,26 @@ class Academy:
     distance_m: int | None = None
 
 
+# 학구도 통학구역 구분. 공동통학구역은 배정 학교가 여럿이다
+ZONE = "통학구역"
+SHARED_ZONE = "공동통학구역"
+
+
+@dataclass(frozen=True)
+class SchoolZoneInfo:
+    """적재한 학구도(초등학교 통학구역)의 원천 기준일과 적재 시각."""
+
+    base_date: date | None
+    loaded_at: datetime
+
+
+@dataclass(frozen=True)
+class SchoolZone:
+    school_id: str
+    kind: str  # 통학구역 / 공동통학구역
+    geometry: dict  # WGS84 GeoJSON Polygon 또는 MultiPolygon
+
+
 @dataclass(frozen=True)
 class Nearby:
     schools: dict[SchoolLevel, list[School]]
@@ -459,6 +479,9 @@ class Nearby:
     nearest_hospitals: list[Hospital]
     academy_radius_m: int
     academy_counts: dict[AcademyCategory, int]
+    # 학구도를 실었으면 그 정보와 좌표가 든 통학구역의 배정 초등학교(구역 밖이면 None). 안 실었으면 둘 다 None
+    zone_info: SchoolZoneInfo | None = None
+    assigned_elementary: School | None = None
 
 
 # ── 정비사업 구역 (부산광역시 정비사업 정보) ─────────────

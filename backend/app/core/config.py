@@ -56,6 +56,10 @@ class Settings(BaseSettings):
     # 공공데이터포털 "부산광역시_정비사업 정보" 키(재개발·재건축 구역). 비우면 worker가 정비사업 동기화를 건너뛴다
     redevelopment_api_key: str = ""
 
+    # 학구도(초등학교 통학구역) 파일을 내려받아 둔 곳(`zones/*.shp`, `links/*.csv`). git에 올리지 않는다.
+    # 비우면 작업 폴더와 상관없이 backend/data/schoolzone(Docker 마운트) → 저장소 루트 data/schoolzone 순서로 찾는다
+    school_zone_dir: Path | None = None
+
     # 실데이터 위치: PUGURIN_DATABASE_URL이 있으면 DB, 없으면 data_dir(.cache).
     # 둘 다 없으면 가짜로 채우지 않고 "데이터 없음"으로 응답한다
     data_dir: Path = Path(".cache")

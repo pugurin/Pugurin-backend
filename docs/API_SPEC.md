@@ -22,6 +22,7 @@
 
 - **경매·공매 조회 추가:** `GET /auctions`, `GET /auctions/{id}` (6.1장). 데이터는 DB에만 있고, 동기화 전에는 `503 DATA_NOT_READY`
 - **주변 학교·병원 추가:** `GET /nearby`, `GET /complexes/{id}/nearby`, `GET /schools`, `GET /hospitals` (6.2장)
+- **초등학교 통학구역(학구도) 추가:** `GET /schools/{school_id}/zone`, 주변 요약의 `schools.assigned_elementary` (6.2장)
 - **정비사업 구역 추가:** `GET /redevelopments`, `GET /redevelopments/{id}` (6.3장). 동기화 전에는 `503 DATA_NOT_READY`
 - **같은 평형 평균가 추가:**
   - 지도 단지 마커에 `typical`(거래가 가장 많은 평형과 그 평균가, 2장) 추가. `latest`는 그대로
@@ -651,13 +652,15 @@
 ### 6.2 주변 학교·병원·학원 (Facilities) [추가]
 
 학교·학원은 나이스 교육정보 개방 포털, 병원은 건강보험심사평가원 자료다. worker가 매일 동기화한다. 거리는 모두 **직선거리(m)**다.
-**학교는 배정 학교(학군)가 아니다.** 통학구역(학구도) 데이터가 없어서 가까운 학교만 보여 준다. 화면에 `meta.school_notice`를 같이 표시한다.
+**학교 목록은 배정 학교(학군)가 아니다.** 직선거리로 가까운 학교다. 화면에 `meta.school_notice`를 같이 표시한다.
+배정 초등학교는 따로 `schools.assigned_elementary`와 `/schools/{school_id}/zone`으로 준다(아래 "초등학교 통학구역").
 
 | Method | Path | 설명 |
 |---|---|---|
 | GET | `/nearby?lat=&lng=` | 좌표 주변 학교·병원·학원 요약. 부산 밖 좌표는 400 |
 | GET | `/complexes/{id}/nearby` | 단지 위치로 같은 요약. 단지 상세 화면용 |
 | GET | `/schools?bbox=&level=` | 지도 화면 안의 학교(최대 500). `level`: `elementary,middle,high,special,other` |
+| GET | `/schools/{school_id}/zone` | 초등학교 통학구역 경계(GeoJSON). 아래 "초등학교 통학구역" |
 | GET | `/hospitals?bbox=&tier=` | 지도 화면 안의 병원(의사 많은 순 최대 500). `tier`: `general,hospital,clinic,dental,oriental,public,other` |
 | GET | `/academies?bbox=&category=` | 지도 화면 안의 학원·교습소(최대 500). `category`: `tutoring,arts,language,reading_room,other` |
 
@@ -703,6 +706,11 @@
 }
 ```
 - `schools.elementary`·`middle`·`high`: 각각 반경 3km 안에서 가까운 순 최대 3곳
+- `schools.assigned_elementary`: 좌표(단지)가 들어 있는 통학구역의 배정 초등학교. 학교 항목과 같은 모양(`distance_m` 포함)이다.
+  통학구역 밖이면 `null`, **학구도를 아직 싣지 않았으면 키가 없다**. 공동통학구역처럼 배정 학교가 여럿이면 가장 가까운 1곳.
+  배정 학교의 좌표가 없으면 `lat`·`lng`·`distance_m`이 `null`이다.
+  학구도를 실었으면 `meta.source_attribution`에 `"한국교육시설안전원 학구도(기준일 2026-09-20)"`가 붙고
+  `meta.zone_notice`(`"교육청 고시 통학구역 기준이며 실제 배정과 다를 수 있습니다"`)가 온다. 안 실었으면 `zone_notice`는 `null`
 - `hospitals.counts`·`total`: 반경 1km 안의 수
 - `nearest_general`: 반경과 상관없이 가장 가까운 종합병원급 1곳
 - `nearest`: 종류와 상관없이 가장 가까운 5곳
@@ -717,6 +725,33 @@
 - `kind`: `학원` 또는 `교습소`. `course`(교습과정)·`tel`은 없으면 `null`
 
 **오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 단지는 `404`, 잘못된 `level`·`tier`·`category`·좌표는 `400 VALIDATION_ERROR`.
+
+**초등학교 통학구역 (`/schools/{school_id}/zone`)**
+
+출처는 한국교육시설안전원 학구도(초등학교 통학구역 + 학교학구도연계정보)다. **교육청 고시 통학구역 기준이며 실제 배정과 다를 수 있다.**
+내려받은 파일을 `python -m app.ingestion school-zones`로 싣는다(부산만, 파일은 git에 올리지 않는다). 학교는 연계정보의 학교명으로 나이스 학교에 맞추고, 같은 이름이 여럿이면(송정초 둘) 구역 안에 있는 학교, 없으면 구역에서 2km 안의 가장 가까운 학교로 고르고, 한 학교가 학구도의 서로 다른 학교 둘에 붙지 않게 한다. 고르지 못하면 연결하지 않는다(404).
+
+```json
+{
+  "data": {
+    "school_id": "7241023",
+    "kind": "통학구역",
+    "geometry": { "type": "Polygon", "coordinates": [[[129.158, 35.161], …]] }
+  },
+  "meta": {
+    "data_as_of": "2026-11-13T10:00:00+09:00",
+    "reporting_lag_notice": false,
+    "source_attribution": ["한국교육시설안전원 학구도(기준일 2026-09-20)"],
+    "zone_notice": "교육청 고시 통학구역 기준이며 실제 배정과 다를 수 있습니다"
+  }
+}
+```
+- `school_id`: 나이스 학교코드(`/schools`·`/nearby`의 `id`)
+- `kind`: `통학구역` 또는 `공동통학구역`. 학교가 여러 구역에 걸치면 합친 경계이고, 하나라도 공동통학구역이면 `공동통학구역`
+- `geometry`: WGS84 GeoJSON `Polygon` 또는 `MultiPolygon`(소수 6자리)
+- `data_as_of`: 학구도를 실은 시각. 원천 기준일은 `source_attribution`에 있다
+
+**오류:** 통학구역이 없는 학교(사립·국립, 중·고등학교, 학교명을 못 맞춘 학교 등)는 `404 RESOURCE_NOT_FOUND`, 학구도를 아직 싣지 않았으면 `503 DATA_NOT_READY`.
 
 ### 6.3 정비사업 구역 (Redevelopments) [추가]
 

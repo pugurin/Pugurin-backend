@@ -87,6 +87,12 @@ def test_complex_by_name(client):
     assert data(client, "해운대 아이파크")[0]["complex_id"] == first["complex_id"]
 
 
+@pytest.mark.parametrize("q", ["해운대ipark", "해운대 I PARK", "해운대 I-PARK"])
+def test_complex_by_english_brand_spelling(client, q):
+    # 단지 이름이 한글이어도 영문 브랜드로 찾는다(반대도 같은 키로 맞춘다)
+    assert data(client, q)[0]["name"] == "해운대아이파크"
+
+
 def test_complex_by_address_text(client):
     found = data(client, "해운대아이파크")[0]
     address = client.get(f"{API}/complexes/{found['complex_id']}").json()["data"]["address"]

@@ -7,7 +7,7 @@ from uuid import UUID
 
 from app.core.dates import months_ago
 from app.core.geo import BBox, area_bucket, pyeong_exact
-from app.core.text import normalize
+from app.core.text import normalize, search_key
 from app.repositories.memory.dataset import MarketData, RegionDirectory
 from app.repositories.types import (
     AreaStats,
@@ -98,8 +98,11 @@ def region_boxes(
 def search_complex_hits(
     index: list[tuple[str, str, Complex]], popularity: dict[UUID, int], query: str, limit: int
 ) -> list[ComplexSearchHit]:
-    """index: (정규화한 이름, 정규화한 주소, 단지). 이름 일치 > 접두 > 포함 > 주소 포함, 같으면 거래 많은 순."""
-    q = normalize(query)
+    """index: (검색 키 이름, 검색 키 주소, 단지). 이름 일치 > 접두 > 포함 > 주소 포함, 같으면 거래 많은 순.
+
+    검색 키(search_key)는 영문을 한글 표기로 바꾼 것이라, 영문·한글 어느 쪽으로 쳐도 찾는다.
+    """
+    q = search_key(query)
     hits = []
     for name, address, complex_ in index:
         score = match_score(q, name) or (40 if q in address else 0)
@@ -190,7 +193,7 @@ class InMemoryMarketRepository:
                 self._by_complex[tx.complex_id].append(tx)
         self._by_id = {t.id: t for t in transactions}
         self._popularity = {cid: sum(1 for t in txs if not t.is_cancelled) for cid, txs in self._by_complex.items()}
-        self._search_index = [(normalize(c.name), normalize(c.address), c) for c in self._market.complexes]
+        self._search_index = [(search_key(c.name), search_key(c.address), c) for c in self._market.complexes]
         self._region_boxes = self._build_region_boxes()
 
     @property

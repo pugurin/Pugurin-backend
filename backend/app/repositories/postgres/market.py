@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 from app.core.busan import SIGUNGU, SIGUNGU_BY_CODE
 from app.core.dates import KST, months_ago
 from app.core.geo import SQM_PER_PYEONG, BBox, area_bucket
-from app.core.text import normalize
+from app.core.text import search_key
 from app.repositories.memory.dataset import RegionDirectory
 from app.repositories.memory.market import (
     MIN_MONTH_SAMPLE,
@@ -262,7 +262,7 @@ class PostgresMarketRepository:
             boxes=region_boxes(regions, ordered),
             complexes=complexes,
             popularity=popularity,
-            search_index=[(normalize(c.name), normalize(c.address), c) for c in ordered],
+            search_index=[(search_key(c.name), search_key(c.address), c) for c in ordered],
         )
 
     @staticmethod

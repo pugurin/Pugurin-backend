@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from app.adapters.building import BuildingRegisterClient
 from app.adapters.facilities import HiraHospitalClient, NeisSchoolClient
@@ -22,6 +23,7 @@ from app.ingestion.rawcache import RawCache
 from app.ingestion.real import RealDataMissing, load_real_data
 from app.ingestion.redevelopment import sync_redevelopments
 from app.ingestion.refresh import refresh
+from app.ingestion.school_zones import NoElementarySchools, find_zone_files, load_school_zones
 from app.ingestion.supply import sync_supply_areas
 from app.ingestion.worker import run_daily
 
@@ -207,6 +209,34 @@ async def _redevelopments(settings: Settings) -> int:
     return 0 if r.status == "success" else 3
 
 
+async def _school_zones(settings: Settings, directory: Path | None) -> int:
+    directory = directory or settings.school_zone_dir
+    if find_zone_files(directory) is None:
+        print(f"학구도 파일이 없어 건너뜁니다({directory}). 한국교육시설안전원 학구도를 내려받아 두세요:")
+        print("  zones/초등학교통학구역.shp(.shx·.dbf), links/…학교학구도연계정보….csv (다른 곳이면 --dir)")
+        return 0
+    if not settings.database_url:
+        print("학구도 적재에는 PUGURIN_DATABASE_URL이 필요합니다")
+        return 2
+    engine = make_engine(settings.database_url)
+    try:
+        r = await load_school_zones(engine, directory, now=datetime.now(KST))
+    except NoElementarySchools as e:
+        print(e)
+        return 3
+    finally:
+        await engine.dispose()
+    base = r.base_date.isoformat() if r.base_date else "모름"
+    print(f"학구도 적재: 부산 통학구역 {r.zones:,}곳, 학교 연결 {r.links:,}개 (기준일 {base})")
+    if r.without_geometry:
+        print(f"  도형이 없어 뺀 구역 {len(r.without_geometry)}곳: {', '.join(r.without_geometry[:10])}")
+    if r.unmatched:
+        print(f"  학교 목록에 없는 이름이라 연결하지 않음 {len(r.unmatched)}곳: {', '.join(r.unmatched[:20])}")
+    if r.ambiguous:
+        print(f"  같은 이름 학교가 여럿이라 연결하지 않음 {len(r.ambiguous)}곳: {', '.join(r.ambiguous[:20])}")
+    return 0
+
+
 async def _supply(settings: Settings, max_calls: int | None = None) -> int:
     if not settings.building_api_key:
         print("PUGURIN_BUILDING_API_KEY가 없어 공급면적 동기화를 건너뜁니다 (backend/.env)")
@@ -273,6 +303,10 @@ def main() -> int:
     sub.add_parser("auctions", help="부산 경매·공매 물건을 경매마당에서 받아 DB에 맞춘다")
     sub.add_parser("facilities", help="부산 학교·학원(나이스)·병원(심평원) 목록을 받아 DB에 맞춘다")
     sub.add_parser("redevelopments", help="부산 정비사업(재개발·재건축) 구역과 단계를 받아 DB에 맞춘다")
+    zones = sub.add_parser(
+        "school-zones", help="내려받아 둔 학구도(초등학교 통학구역) 파일에서 부산 구역을 DB에 통째로 갈아 끼운다"
+    )
+    zones.add_argument("--dir", type=Path, help="학구도 파일 위치 (기본: PUGURIN_SCHOOL_ZONE_DIR, data/schoolzone)")
     supply = sub.add_parser(
         "supply", help="건축물대장으로 아파트 평형별 공급면적을 채운다 (하루 호출 한도 안에서 나눠 받음)"
     )
@@ -296,6 +330,8 @@ def main() -> int:
         return asyncio.run(_facilities(settings))
     if args.command == "redevelopments":
         return asyncio.run(_redevelopments(settings))
+    if args.command == "school-zones":
+        return asyncio.run(_school_zones(settings, args.dir))
     if args.command == "supply":
         return asyncio.run(_supply(settings, args.max_calls))
     if args.command == "worker":

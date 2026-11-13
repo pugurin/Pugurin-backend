@@ -1,11 +1,12 @@
 """초등학교 통학구역(한국교육시설안전원 학구도) 파일을 `school_zones`·`school_zone_schools`에 통째로 갈아 끼운다.
 
-원천은 내려받아 둔 파일이다(API 호출 없음, 기본 위치 `data/schoolzone`, git 제외).
+원천은 내려받아 둔 파일이다(API 호출 없음, 기본 위치는 `default_zone_dir()`의 `data/schoolzone`, git 제외).
 - `zones/*.shp|.shx|.dbf`: 전국 통학구역 다각형. 좌표계 EPSG:5186, DBF는 cp949. 부산(SD_CD='26')만 싣는다.
 - `links/*.csv`(학교학구도연계정보, UTF-8 BOM): 학구ID ↔ 학교. 학교ID는 학구도 자체 코드(B…)라
   나이스 학교코드와 다르므로 **학교명**으로 `schools`의 초등학교에 맞춘다. 같은 이름이 여럿이면(부산 송정초 둘)
-  구역 안에 좌표가 든 학교, 그런 학교가 하나가 아니면 구역에서 가장 가까운 학교에 연결한다.
-  못 맞춘 이름·좌표 있는 후보가 없는 학교는 연결하지 않고 리포트에 남긴다.
+  학구도 학교ID마다 그 구역 안에 좌표가 든 학교, 그런 학교가 하나가 아니면 2km 안에서 가장 가까운 학교에 연결한다.
+  우리 학교 하나가 서로 다른 학구도 학교ID 둘에 붙으면(일대일이 깨지면) 둘 다 연결하지 않는다.
+  못 맞춘 이름·위치로 고르지 못한 학교는 연결하지 않고 리포트에 남긴다.
 
 SHP는 다각형(Polygon, 유형 5)만 쓰므로 의존성을 더하지 않고 여기서 직접 읽는다.
 고리(ring)를 그대로 넘기고 PostGIS `ST_BuildArea`가 바깥 고리·구멍을 맞춘다.
@@ -28,6 +29,8 @@ BUSAN_SD_CD = "26"
 ELEMENTARY = "초등학교"
 DBF_ENCODING = "cp949"  # .cpg는 EUC-KR. cp949가 그 상위 집합이다
 SOURCE_SRID = 5186  # Korea 2000 / Central Belt 2010
+NEAREST_MAX_M = 2000  # 구역 안에 든 학교가 없을 때 "가장 가까운 학교"로 인정하는 거리
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 # HAKGUDO_GB. 실제 파일에서 '1'인 부산 22곳은 모두 이름에 '공동'이 들어 있고 학교가 둘 이상 연결된 구역과 정확히 같다
 # (전국의 '1'에는 광역통학구역도 섞여 있지만 학교가 여럿에 걸친 구역이라 같이 공동통학구역으로 본다)
@@ -67,10 +70,11 @@ class LinkRow:
 
 @dataclass(frozen=True)
 class LocationLink:
-    """이름만으로 정할 수 없어 구역 위치로 고를 연결."""
+    """이름만으로 정할 수 없어 구역 위치로 고를 학구도 학교 하나."""
 
-    zone_id: str
+    source_id: str  # 학구도 학교ID(B…)
     school_name: str
+    zone_ids: tuple[str, ...]  # 그 학교의 구역(자기 구역 + 공동통학구역)
     candidates: tuple[str, ...]  # 같은 이름의 우리 학교 ID
 
 
@@ -94,9 +98,17 @@ class SchoolZoneReport:
     links: int = 0
     without_geometry: list[str] = field(default_factory=list)
     unmatched: list[str] = field(default_factory=list)
-    ambiguous: list[str] = field(default_factory=list)  # 같은 이름이 여럿인데 좌표 있는 후보가 없어 연결하지 않음
+    # 같은 이름이 여럿인데 위치로 고르지 못함(후보 좌표 없음·2km 밖·일대일 깨짐). "학교명(학구도 학교ID)"
+    ambiguous: list[str] = field(default_factory=list)
     by_location: list[tuple[str, str, str]] = field(default_factory=list)  # (학교명, zone_id, schools.id)
+    linked_without_location: list[str] = field(default_factory=list)  # 연결됐지만 좌표가 없는 학교명
     base_date: date | None = None
+
+
+def default_zone_dir(backend_dir: Path = BACKEND_DIR) -> Path:
+    """작업 폴더와 상관없이 찾는다. Docker(/app)에 마운트한 `backend/data/schoolzone`이 먼저, 없으면 저장소 루트."""
+    inside = backend_dir / "data" / "schoolzone"
+    return inside if inside.is_dir() else backend_dir.parent / "data" / "schoolzone"
 
 
 def find_zone_files(directory: Path) -> ZoneFiles | None:
@@ -216,27 +228,43 @@ def match_schools(links: list[LinkRow], schools: Iterable[tuple[str, str]]) -> S
         theirs[r.school_name].add(r.school_id)
     pairs: list[tuple[str, str]] = []
     unmatched: set[str] = set()
-    by_location: list[LocationLink] = []
+    zones_by_source: dict[str, list[str]] = {}
     for r in links:
         found = ours.get(r.school_name, [])
         if not found:
             unmatched.add(r.school_name)
         elif len(found) > 1 or len(theirs[r.school_name]) > 1:
-            located = LocationLink(r.zone_id, r.school_name, tuple(sorted(found)))
-            if located not in by_location:
-                by_location.append(located)
+            zone_ids = zones_by_source.setdefault(r.school_id, [])
+            if r.zone_id not in zone_ids:
+                zone_ids.append(r.zone_id)
         elif (r.zone_id, found[0]) not in pairs:
             pairs.append((r.zone_id, found[0]))
+    names = {r.school_id: r.school_name for r in links}
+    by_location = [
+        LocationLink(source_id, names[source_id], tuple(zone_ids), tuple(sorted(ours[names[source_id]])))
+        for source_id, zone_ids in zones_by_source.items()
+    ]
     return SchoolMatch(pairs, sorted(unmatched), by_location)
 
 
-def pick_school(candidates: list[Candidate]) -> str | None:
-    """구역 안에 든 학교가 정확히 하나면 그 학교, 아니면 구역에서 가장 가까운 학교(같으면 ID 순). 후보가 없으면 None."""
+def pick_school(candidates: list[Candidate], max_distance_m: float = NEAREST_MAX_M) -> str | None:
+    """구역 안에 든 학교가 정확히 하나면 그 학교, 아니면 `max_distance_m` 안에서 가장 가까운 학교(같으면 ID 순).
+    그런 학교가 없으면 None."""
     inside = [c for c in candidates if c.inside]
     if len(inside) == 1:
         return inside[0].school_id
-    nearest = min(candidates, key=lambda c: (c.distance_m, c.school_id), default=None)
+    near = [c for c in candidates if c.distance_m <= max_distance_m]
+    nearest = min(near, key=lambda c: (c.distance_m, c.school_id), default=None)
     return nearest.school_id if nearest else None
+
+
+def one_to_one(picks: dict[str, str]) -> tuple[dict[str, str], set[str]]:
+    """학구도 학교ID → 우리 학교ID. 우리 학교 하나가 학구도 학교ID 둘 이상에 붙으면 그 연결을 모두 뺀다."""
+    sources: dict[str, list[str]] = defaultdict(list)
+    for source_id, school_id in picks.items():
+        sources[school_id].append(source_id)
+    conflicts = {s for ids in sources.values() if len(ids) > 1 for s in ids}
+    return {s: school_id for s, school_id in picks.items() if s not in conflicts}, conflicts
 
 
 _ELEMENTARY_SCHOOLS = text("SELECT id, name FROM schools WHERE kind = :kind AND closed_at IS NULL")
@@ -252,13 +280,20 @@ _INSERT_ZONE = text(
     WHERE g IS NOT NULL AND NOT ST_IsEmpty(g)
     """
 )
-# 좌표 없는 학교는 후보에서 뺀다
+# 학구도 학교 하나의 구역(들)을 합친 면 기준. 좌표 없는 학교는 후보에서 뺀다
 _CANDIDATES = text(
     """
-    SELECT s.id AS school_id, ST_Contains(z.geom, s.location) AS inside,
-           ST_Distance(z.geom::geography, s.location::geography) AS distance_m
-    FROM school_zones z JOIN schools s ON s.id = ANY(CAST(:ids AS text[]))
-    WHERE z.zone_id = :zone_id AND s.location IS NOT NULL
+    WITH u AS (SELECT ST_Union(geom) AS g FROM school_zones WHERE zone_id = ANY(CAST(:zone_ids AS text[])))
+    SELECT s.id AS school_id, ST_Contains(u.g, s.location) AS inside,
+           ST_Distance(u.g::geography, s.location::geography) AS distance_m
+    FROM u JOIN schools s ON s.id = ANY(CAST(:ids AS text[]))
+    WHERE u.g IS NOT NULL AND s.location IS NOT NULL
+    """
+)
+_LINKED_WITHOUT_LOCATION = text(
+    """
+    SELECT DISTINCT s.name FROM school_zone_schools zs JOIN schools s ON s.id = zs.school_id
+    WHERE s.location IS NULL ORDER BY s.name
     """
 )
 _INSERT_LINK = text(
@@ -304,27 +339,40 @@ async def load_school_zones(
         await conn.execute(text("DELETE FROM school_zones"))
         if zone_rows:
             await conn.execute(_INSERT_ZONE, zone_rows)
-        pairs = list(match.pairs)
-        by_location: list[tuple[str, str, str]] = []
+        loaded = {r[0] for r in (await conn.execute(text("SELECT zone_id FROM school_zones"))).all()}
+        wants = {w.source_id: w for w in match.by_location}
+        picks: dict[str, str] = {}
         unresolved: set[str] = set()
         for want in match.by_location:
-            rows = await conn.execute(_CANDIDATES, {"zone_id": want.zone_id, "ids": list(want.candidates)})
+            zone_ids = [z for z in want.zone_ids if z in loaded]
+            if not zone_ids:
+                continue  # 구역 도형이 없다. without_geometry로 따로 집계한다
+            rows = await conn.execute(_CANDIDATES, {"zone_ids": zone_ids, "ids": list(want.candidates)})
             picked = pick_school([Candidate(r.school_id, r.inside, r.distance_m) for r in rows])
             if picked is None:
-                unresolved.add(want.school_name)
-            elif (want.zone_id, picked) not in pairs:
-                pairs.append((want.zone_id, picked))
-                by_location.append((want.school_name, want.zone_id, picked))
+                unresolved.add(want.source_id)
+            else:
+                picks[want.source_id] = picked
+        kept, conflicts = one_to_one(picks)
+        unresolved |= conflicts
+        pairs = list(match.pairs)
+        by_location: list[tuple[str, str, str]] = []
+        for source_id, school_id in kept.items():
+            for zone_id in wants[source_id].zone_ids:
+                if zone_id in loaded and (zone_id, school_id) not in pairs:
+                    pairs.append((zone_id, school_id))
+                    by_location.append((wants[source_id].school_name, zone_id, school_id))
         if pairs:
             await conn.execute(_INSERT_LINK, [{"zone_id": z, "school_id": s} for z, s in pairs])
-        loaded = {r[0] for r in (await conn.execute(text("SELECT zone_id FROM school_zones"))).all()}
         links_loaded = (await conn.execute(text("SELECT count(*) FROM school_zone_schools"))).scalar_one()
+        unlocated = [r[0] for r in (await conn.execute(_LINKED_WITHOUT_LOCATION)).all()]
     return SchoolZoneReport(
         zones=len(loaded),
         links=links_loaded,
         without_geometry=[z.zone_id for z in zones if z.zone_id not in loaded],  # 도형이 없거나 면이 안 나온 구역
         unmatched=match.unmatched,
-        ambiguous=sorted(unresolved),
-        by_location=by_location,
+        ambiguous=sorted(f"{wants[s].school_name}({s})" for s in unresolved),
+        by_location=sorted(by_location),
+        linked_without_location=unlocated,
         base_date=max((z.base_date for z in zones if z.base_date), default=None),
     )

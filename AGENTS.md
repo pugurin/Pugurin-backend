@@ -101,7 +101,7 @@
 
 **학교·병원·학원** — 단지 주변 생활 시설. worker가 매일 동기화한다(`python -m app.ingestion facilities`).
 - 학교: 나이스 교육정보 개방 포털(https://open.neis.go.kr) `schoolInfo`, 키 `PUGURIN_NEIS_API_KEY`
-- 배정 초등학교: 한국교육시설안전원 학구도(초등학교 통학구역 SHP + 학교학구도연계정보 CSV, 출처 표시 필요). 내려받은 파일을 `data/schoolzone`(git 제외)에 두고 `python -m app.ingestion school-zones`로 부산 구역만 싣는다(학교 동기화 뒤, worker는 돌리지 않음). 학교는 학교명으로 맞추고(같은 이름이 여럿이면 구역 위치로 고름), 교육청 고시 기준이라 실제 배정과 다를 수 있다
+- 배정 초등학교: 한국교육시설안전원 학구도(초등학교 통학구역 SHP + 학교학구도연계정보 CSV, 출처 표시 필요). 내려받은 파일을 `data/schoolzone`(git 제외)에 두고 `python -m app.ingestion school-zones`로 부산 구역만 싣는다(학교 동기화 뒤, worker는 돌리지 않음, 원천이 3월·9월에 갱신되면 다시 싣는다. 운영 절차는 README "학구도 넣기"). 학교는 학교명으로 맞추고(같은 이름이 여럿이면 구역 위치로 고름, 2km·일대일 제한), 교육청 고시 기준이라 실제 배정과 다를 수 있다
 - 병원: 공공데이터포털 건강보험심사평가원 병원정보서비스, 키 `PUGURIN_HOSPITAL_API_KEY`
 - 학원: 나이스 `acaInsTiInfo`(학원·교습소), 키 `PUGURIN_ACADEMY_API_KEY`(비우면 나이스 키). 수강료 등 다른 칸은 저장하지 않는다
 

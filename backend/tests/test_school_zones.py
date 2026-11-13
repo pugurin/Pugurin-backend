@@ -12,8 +12,10 @@ from app.ingestion.school_zones import (
     LocationLink,
     busan_links,
     busan_zones,
+    default_zone_dir,
     find_zone_files,
     match_schools,
+    one_to_one,
     pick_school,
     read_dbf,
     read_links,
@@ -137,9 +139,22 @@ def test_schools_are_matched_by_exact_name():
     assert m.unmatched == ["연학초등학교"]
     # 같은 이름이 여럿이면 이름만으로 정하지 않고, 구역 위치로 고를 후보(우리 학교)를 넘긴다
     assert m.by_location == [
-        LocationLink("Z5", "송정초등학교", ("7240006",)),
-        LocationLink("Z6", "송정초등학교", ("7240006",)),
-        LocationLink("Z7", "다솜초등학교", ("7240008", "7240009")),
+        LocationLink("B6", "송정초등학교", ("Z5",), ("7240006",)),
+        LocationLink("B7", "송정초등학교", ("Z6",), ("7240006",)),
+        LocationLink("B8", "다솜초등학교", ("Z7",), ("7240008", "7240009")),
+    ]
+
+
+def test_a_same_named_school_in_several_zones_is_picked_once():
+    links = [
+        LinkRow("Z1", "B1", "송정초등학교", "초등학교"),
+        LinkRow("Z2", "B1", "송정초등학교", "초등학교"),  # 자기 구역 + 공동통학구역
+        LinkRow("Z3", "B2", "송정초등학교", "초등학교"),
+    ]
+    m = match_schools(links, [("7240001", "송정초등학교"), ("7240002", "송정초등학교")])
+    assert m.by_location == [
+        LocationLink("B1", "송정초등학교", ("Z1", "Z2"), ("7240001", "7240002")),
+        LocationLink("B2", "송정초등학교", ("Z3",), ("7240001", "7240002")),
     ]
 
 
@@ -148,12 +163,49 @@ def test_same_named_schools_go_to_the_one_inside_the_zone():
     assert pick_school(candidates) == "B"
 
 
-def test_without_exactly_one_school_inside_the_nearest_wins():
+def test_without_exactly_one_school_inside_the_nearest_within_2km_wins():
     outside = [Candidate("A", inside=False, distance_m=800.0), Candidate("B", inside=False, distance_m=120.5)]
     assert pick_school(outside) == "B"
     both_inside = [Candidate("B", inside=True, distance_m=0.0), Candidate("A", inside=True, distance_m=0.0)]
     assert pick_school(both_inside) == "A"  # 거리가 같으면 ID 순
 
 
+def test_the_nearest_school_farther_than_2km_is_not_picked():
+    assert pick_school([Candidate("A", inside=False, distance_m=2000.0)]) == "A"
+    assert pick_school([Candidate("A", inside=False, distance_m=2000.1)]) is None
+
+
+def test_one_school_cannot_take_two_different_source_schools():
+    kept, conflicts = one_to_one({"B1": "7240001", "B2": "7240001", "B3": "7240003"})
+    assert kept == {"B3": "7240003"}
+    assert conflicts == {"B1", "B2"}
+
+
 def test_no_located_candidate_means_no_link():
     assert pick_school([]) is None
+
+
+# ── 학구도 파일 위치 ──
+
+
+def test_default_dir_is_found_from_the_backend_folder_or_its_parent(tmp_path):
+    backend = tmp_path / "repo" / "backend"
+    backend.mkdir(parents=True)
+    # 저장소에서 돌릴 때: backend/의 부모(저장소 루트)의 data/schoolzone
+    (tmp_path / "repo" / "data" / "schoolzone").mkdir(parents=True)
+    assert default_zone_dir(backend) == tmp_path / "repo" / "data" / "schoolzone"
+    # Docker(/app = backend)에 마운트했을 때: /app/data/schoolzone이 먼저
+    (backend / "data" / "schoolzone").mkdir(parents=True)
+    assert default_zone_dir(backend) == backend / "data" / "schoolzone"
+
+
+def test_cli_fails_only_when_an_explicit_dir_has_no_files(tmp_path, monkeypatch):
+    import asyncio
+
+    from app.core.config import Settings
+    from app.ingestion import __main__ as cli
+
+    monkeypatch.setattr(cli, "default_zone_dir", lambda: tmp_path / "기본")
+    assert asyncio.run(cli._school_zones(Settings(), None)) == 0  # 기본 위치에 없으면 안내만
+    assert asyncio.run(cli._school_zones(Settings(), tmp_path / "없음")) == 2
+    assert asyncio.run(cli._school_zones(Settings(school_zone_dir=tmp_path / "없음"), None)) == 2

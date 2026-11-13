@@ -270,4 +270,31 @@ uv run python -m app.db status           # 스키마 버전, 거래 건수, 마�
   docker compose logs -f worker
   ```
 
+### 학구도(초등학교 통학구역) 넣기
+
+배정 초등학교(`/nearby`의 `schools.assigned_elementary`, `/schools/{id}/zone`)는 한국교육시설안전원 학구도 파일로 채웁니다. API가 아니라 내려받은 파일이고, 원천은 3월·9월쯤 갱신됩니다. 갱신되면 같은 절차로 다시 넣습니다(통째로 갈아 끼움).
+
+1. 학구도 "초등학교통학구역"(SHP)과 "학교학구도연계정보"(CSV)를 받아 저장소 루트에 둡니다. 크기가 커서 git에는 올리지 않습니다(`data/`는 `.gitignore`).
+   ```
+   data/schoolzone/zones/초등학교통학구역.shp (.shx·.dbf·.prj·.cpg)
+   data/schoolzone/links/한국교육시설안전원_학교학구도연계정보_YYYYMMDD.csv
+   ```
+2. 학교 목록이 먼저 있어야 합니다(`python -m app.ingestion facilities` 또는 worker가 한 번 돈 뒤). 학교명으로 연결하기 때문입니다.
+3. 넣기
+   ```bash
+   cd backend
+   uv run python -m app.ingestion school-zones                 # 기본: 저장소 루트 data/schoolzone (작업 폴더와 상관없음)
+   uv run python -m app.ingestion school-zones --dir /어딘가   # 다른 위치. 거기에 파일이 없으면 실패(종료 코드 2)
+   ```
+   기본 위치에 파일이 없으면 안내만 하고 넘어갑니다. 위치를 `--dir`나 `PUGURIN_SCHOOL_ZONE_DIR`로 정했는데 없으면 실패합니다.
+
+**운영 서버:** 파일을 서버의 저장소 루트 `data/schoolzone`에 올리고(예: `scp -r data/schoolzone 서버:~/Pugurin-backend/data/`), worker 이미지로 한 번 돌립니다. 이미지 안에는 파일이 없으니 읽기 전용으로 마운트합니다.
+
+```bash
+docker compose -f compose.yaml -f compose.prod.yaml run --rm \
+  -v ./data/schoolzone:/app/data/schoolzone:ro worker python -m app.ingestion school-zones
+```
+
+출력에 연결하지 못한 학교(이름이 학교 목록에 없음, 같은 이름인데 위치로 고르지 못함)와 좌표가 없는 학교가 나오니 확인합니다.
+
 개발 규칙은 [`backend/AGENTS.md`](./backend/AGENTS.md)를 따릅니다.

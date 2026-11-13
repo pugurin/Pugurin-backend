@@ -23,7 +23,7 @@ from app.ingestion.rawcache import RawCache
 from app.ingestion.real import RealDataMissing, load_real_data
 from app.ingestion.redevelopment import sync_redevelopments
 from app.ingestion.refresh import refresh
-from app.ingestion.school_zones import NoElementarySchools, find_zone_files, load_school_zones
+from app.ingestion.school_zones import NoElementarySchools, default_zone_dir, find_zone_files, load_school_zones
 from app.ingestion.supply import sync_supply_areas
 from app.ingestion.worker import run_daily
 
@@ -210,11 +210,13 @@ async def _redevelopments(settings: Settings) -> int:
 
 
 async def _school_zones(settings: Settings, directory: Path | None) -> int:
-    directory = directory or settings.school_zone_dir
+    """위치를 명시했는데(--dir, PUGURIN_SCHOOL_ZONE_DIR) 파일이 없으면 2, 기본 위치에 없으면 안내만 하고 0."""
+    explicit = directory or settings.school_zone_dir
+    directory = explicit or default_zone_dir()
     if find_zone_files(directory) is None:
-        print(f"학구도 파일이 없어 건너뜁니다({directory}). 한국교육시설안전원 학구도를 내려받아 두세요:")
+        print(f"학구도 파일이 없습니다({directory}). 한국교육시설안전원 학구도를 내려받아 두세요:")
         print("  zones/초등학교통학구역.shp(.shx·.dbf), links/…학교학구도연계정보….csv (다른 곳이면 --dir)")
-        return 0
+        return 2 if explicit else 0
     if not settings.database_url:
         print("학구도 적재에는 PUGURIN_DATABASE_URL이 필요합니다")
         return 2
@@ -237,7 +239,11 @@ async def _school_zones(settings: Settings, directory: Path | None) -> int:
         print(f"  같은 이름 학교를 구역 위치로 골라 연결 {len(r.by_location)}개: {picked}")
     if r.ambiguous:
         names = ", ".join(r.ambiguous[:20])
-        print(f"  같은 이름 학교 중 좌표 있는 후보가 없어 연결하지 않음 {len(r.ambiguous)}곳: {names}")
+        print(f"  같은 이름 학교를 위치로 고르지 못해 연결하지 않음 {len(r.ambiguous)}곳: {names}")
+        print("    (후보 좌표 없음, 2km 안에 후보 없음, 또는 우리 학교 하나가 학구도 학교 둘에 걸림)")
+    if r.linked_without_location:
+        names = ", ".join(r.linked_without_location[:20])
+        print(f"  연결됐지만 좌표가 없는 학교 {len(r.linked_without_location)}곳(거리 없이 배정): {names}")
     return 0
 
 
@@ -310,7 +316,9 @@ def main() -> int:
     zones = sub.add_parser(
         "school-zones", help="내려받아 둔 학구도(초등학교 통학구역) 파일에서 부산 구역을 DB에 통째로 갈아 끼운다"
     )
-    zones.add_argument("--dir", type=Path, help="학구도 파일 위치 (기본: PUGURIN_SCHOOL_ZONE_DIR, data/schoolzone)")
+    zones.add_argument(
+        "--dir", type=Path, help="학구도 파일 위치 (기본: PUGURIN_SCHOOL_ZONE_DIR, 없으면 data/schoolzone을 찾음)"
+    )
     supply = sub.add_parser(
         "supply", help="건축물대장으로 아파트 평형별 공급면적을 채운다 (하루 호출 한도 안에서 나눠 받음)"
     )

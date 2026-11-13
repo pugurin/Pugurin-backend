@@ -11,6 +11,7 @@ from app.db import migrate
 from app.db.engine import make_engine
 from app.ingestion.geocode import GeocodeCache
 from app.ingestion.school_zones import NoElementarySchools, load_school_zones
+from app.repositories.postgres.facilities import PostgresFacilityRepository
 from app.repositories.types import (
     AcademyCategory,
     HospitalTier,
@@ -240,29 +241,24 @@ def test_assigned_elementary_key_follows_the_zone_load_state():
 
 # ── 같은 이름 학교(부산 송정초 둘)는 구역 위치로 구분해 연결한다 ──
 
-_SAME_NAME_SCHOOLS = [
-    # (id, 위도, 경도). ORIGIN 구역 안 / NORTH 구역 안 / 좌표 없음
-    ("7249001", 35.1601, 129.1601),
-    ("7249002", 35.1701, 129.1601),
-    ("7249003", None, None),
-]
+# (id, 이름, 위도, 경도). ORIGIN 구역 안 / NORTH 구역 안 / 좌표 없음
+DONGMYEONG_ORIGIN = ("7249001", "동명초등학교", 35.1601, 129.1601)
+DONGMYEONG_NORTH = ("7249002", "동명초등학교", 35.1701, 129.1601)
+DONGMYEONG_NOWHERE = ("7249003", "동명초등학교", None, None)
 
 
-async def _insert_same_named_schools(url: str, *, located: bool = True) -> None:
+async def _insert_schools(url: str, schools: list[tuple[str, str, float | None, float | None]]) -> None:
     engine = make_engine(url)
     async with engine.begin() as conn:
         await conn.execute(
             text(
                 """
                 INSERT INTO schools (id, name, kind, address, location, last_seen_at)
-                VALUES (:id, '동명초등학교', '초등학교', '부산',
+                VALUES (:id, :name, '초등학교', '부산',
                         ST_SetSRID(ST_MakePoint(CAST(:lng AS float8), CAST(:lat AS float8)), 4326), now())
                 """
             ),
-            [
-                {"id": i, "lat": lat if located else None, "lng": lng if located else None}
-                for i, lat, lng in _SAME_NAME_SCHOOLS
-            ],
+            [{"id": i, "name": n, "lat": lat, "lng": lng} for i, n, lat, lng in schools],
         )
     await engine.dispose()
 
@@ -275,40 +271,101 @@ async def _links(url: str) -> list[tuple[str, str]]:
     return [tuple(r) for r in rows]
 
 
-def test_same_named_schools_are_linked_to_their_own_zone(postgis, tmp_path):
-    url = create_database(postgis, f"school_zone_same_name_{uuid4().hex[:8]}")
+def _fresh_db(postgis: str, name: str, schools) -> str:
+    url = create_database(postgis, f"school_zone_{name}_{uuid4().hex[:8]}")
     migrate.upgrade(url)
-    asyncio.run(_insert_same_named_schools(url))
+    asyncio.run(_insert_schools(url, schools))
+    return url
+
+
+def test_same_named_schools_are_linked_to_their_own_zone(postgis, tmp_path):
+    url = _fresh_db(postgis, "same_name", [DONGMYEONG_ORIGIN, DONGMYEONG_NORTH, DONGMYEONG_NOWHERE])
     zones = [
         FakeZone("Z000000011", "동명초통학구역", rings=[square(ORIGIN_5186, 300)]),
         FakeZone("Z000000012", "동명초통학구역", rings=[square(NORTH_5186, 300)]),
-        # 어느 학교도 안에 없는 구역은 가장 가까운 학교(NORTH 쪽 7249002)에 연결한다
-        FakeZone("Z000000013", "동명초통학구역", rings=[square(FAR_5186, 200)]),
+        FakeZone("Z000000014", "동명초통학구역"),  # 도형 없음: 위치로 고를 수 없지만 ambiguous가 아니다
     ]
     links = [
         link("Z000000011", "B11", "동명초등학교"),
         link("Z000000012", "B12", "동명초등학교"),
-        link("Z000000013", "B13", "동명초등학교"),
+        link("Z000000014", "B14", "동명초등학교"),
     ]
     report = asyncio.run(_load(url, write_zone_files(tmp_path, zones, links)))
-    assert asyncio.run(_links(url)) == [
-        ("Z000000011", "7249001"),
-        ("Z000000012", "7249002"),
-        ("Z000000013", "7249002"),
-    ]
-    assert report.ambiguous == []
+    assert asyncio.run(_links(url)) == [("Z000000011", "7249001"), ("Z000000012", "7249002")]
+    assert report.ambiguous == [] and report.without_geometry == ["Z000000014"]
     assert report.by_location == [
         ("동명초등학교", "Z000000011", "7249001"),
         ("동명초등학교", "Z000000012", "7249002"),
-        ("동명초등학교", "Z000000013", "7249002"),
     ]
 
 
+def test_a_far_zone_of_another_source_school_is_not_linked(postgis, tmp_path):
+    # 우리 목록에는 동명초가 하나뿐인데 학구도에는 학교ID가 다른 동명초가 둘(하나는 약 5km 떨어진 구역)
+    url = _fresh_db(postgis, "far", [DONGMYEONG_ORIGIN])
+    zones = [
+        FakeZone("Z000000011", "동명초통학구역", rings=[square(ORIGIN_5186, 300)]),
+        FakeZone("Z000000013", "동명초통학구역", rings=[square(FAR_5186, 200)]),
+    ]
+    links = [link("Z000000011", "B11", "동명초등학교"), link("Z000000013", "B13", "동명초등학교")]
+    report = asyncio.run(_load(url, write_zone_files(tmp_path, zones, links)))
+    assert asyncio.run(_links(url)) == [("Z000000011", "7249001")]
+    assert report.ambiguous == ["동명초등학교(B13)"]
+
+
+def test_one_school_is_not_given_to_two_source_schools(postgis, tmp_path):
+    # 하나뿐인 우리 학교가 두 구역 모두에서 2km 안이라 둘 다 고르면 일대일이 깨진다 → 둘 다 연결하지 않는다
+    url = _fresh_db(postgis, "one_to_one", [DONGMYEONG_ORIGIN])
+    zones = [
+        FakeZone("Z000000011", "동명초통학구역", rings=[square(ORIGIN_5186, 300)]),
+        FakeZone("Z000000012", "동명초통학구역", rings=[square(NORTH_5186, 300)]),
+    ]
+    links = [link("Z000000011", "B11", "동명초등학교"), link("Z000000012", "B12", "동명초등학교")]
+    report = asyncio.run(_load(url, write_zone_files(tmp_path, zones, links)))
+    assert asyncio.run(_links(url)) == []
+    assert report.ambiguous == ["동명초등학교(B11)", "동명초등학교(B12)"]
+
+
 def test_same_named_schools_without_locations_are_skipped(postgis, tmp_path):
-    url = create_database(postgis, f"school_zone_no_location_{uuid4().hex[:8]}")
-    migrate.upgrade(url)
-    asyncio.run(_insert_same_named_schools(url, located=False))
+    url = _fresh_db(
+        postgis, "no_location", [(i, n, None, None) for i, n, _, _ in [DONGMYEONG_ORIGIN, DONGMYEONG_NORTH]]
+    )
     zones = [FakeZone("Z000000011", "동명초통학구역", rings=[square(ORIGIN_5186, 300)])]
     report = asyncio.run(_load(url, write_zone_files(tmp_path, zones, [link("Z000000011", "B11", "동명초등학교")])))
     assert asyncio.run(_links(url)) == []
-    assert report.ambiguous == ["동명초등학교"]
+    assert report.ambiguous == ["동명초등학교(B11)"]
+
+
+# ── 구멍 뚫린 구역, 좌표 없는 배정 학교 ──
+
+
+def test_points_in_a_hole_are_outside_and_unlocated_schools_are_still_assigned(postgis, tmp_path):
+    url = _fresh_db(
+        postgis,
+        "hole",
+        [("7249101", "구멍초등학교", 35.1601, 129.1601), ("7249102", "무좌표초등학교", None, None)],
+    )
+    zones = [
+        # ORIGIN을 둘러싼 500m 구역에 가운데 100m 구멍
+        FakeZone("Z000000021", "구멍초통학구역", rings=[square(ORIGIN_5186, 500), square(ORIGIN_5186, 100)[::-1]]),
+        FakeZone("Z000000022", "무좌표초통학구역", rings=[square(NORTH_5186, 300)]),
+    ]
+    links = [link("Z000000021", "B21", "구멍초등학교"), link("Z000000022", "B22", "무좌표초등학교")]
+    report = asyncio.run(_load(url, write_zone_files(tmp_path, zones, links)))
+    assert report.linked_without_location == ["무좌표초등학교"]
+
+    async def assigned(lat: float, lng: float):
+        engine = make_engine(url)
+        try:
+            found = await PostgresFacilityRepository(engine).nearby(
+                lat, lng, today=FIXED_NOW.date(), school_radius_m=3000, schools_per_level=3,
+                hospital_radius_m=1000, nearest_hospitals=5, academy_radius_m=1000,
+            )  # fmt: skip
+        finally:
+            await engine.dispose()
+        assert found.zone_info is not None
+        return found.assigned_elementary
+
+    assert asyncio.run(assigned(35.16, 129.16)) is None  # 구멍 안
+    assert asyncio.run(assigned(35.16, 129.1633)).id == "7249101"  # 동쪽 약 300m, 구멍 밖 구역 안
+    unlocated = asyncio.run(assigned(35.17, 129.16))
+    assert (unlocated.id, unlocated.distance_m, unlocated.lat) == ("7249102", None, None)

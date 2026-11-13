@@ -77,15 +77,16 @@ _ACADEMY_COLS = "id, name, kind, field, course, address, ST_Y(location) AS lat, 
 _HOSPITAL_COLS = "id, name, class_name, address, ST_Y(location) AS lat, ST_X(location) AS lng, tel, homepage, doctors"
 
 _ZONE_INFO = text("SELECT max(base_date) AS base_date, max(loaded_at) AS loaded_at FROM school_zones")
-# 좌표가 든 통학구역(경계 포함)의 배정 학교 중 가장 가까운 곳. 공동통학구역은 학교가 여럿이다
+# 좌표가 든 통학구역(경계 포함)의 배정 학교 중 가장 가까운 곳. 공동통학구역은 학교가 여럿이다.
+# 학교 좌표가 없어도 구역으로 배정은 정해지므로 location 조건을 두지 않는다(distance_m은 null)
 _ASSIGNED_ELEMENTARY = text(
     f"""
     SELECT {_SCHOOL_COLS}, {_DIST} AS distance_m FROM schools
-    WHERE {_SCHOOL_OPEN} AND id IN (
+    WHERE closed_at IS NULL AND (opened_on IS NULL OR opened_on <= :today) AND id IN (
         SELECT zs.school_id FROM school_zones z JOIN school_zone_schools zs USING (zone_id)
         WHERE ST_Intersects(z.geom, {_POINT})
     )
-    ORDER BY distance_m, id LIMIT 1
+    ORDER BY distance_m NULLS LAST, id LIMIT 1
     """
 )
 # 한 학교가 여러 구역에 걸치면 합친다. 하나라도 공동통학구역이면 공동통학구역

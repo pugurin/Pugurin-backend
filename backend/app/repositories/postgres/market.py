@@ -26,6 +26,7 @@ from app.repositories.memory.market import (
     region_boxes,
     search_complex_hits,
     search_region_hits,
+    typical_area,
 )
 from app.repositories.types import (
     AreaStats,
@@ -366,16 +367,51 @@ class PostgresMarketRepository:
         w = self._matching(flt)
         w.add("t.complex_id IS NOT NULL")
         self._bbox(w, bbox)
+        # 한 문장으로: 필터에 맞는 거래(m)에서 단지별 최근 1건(latest)과 거래가 가장 많은 평형(typical)을 같이 낸다.
+        # typical 순서: 건수 많은 순 → 마지막 거래일 최근 순 → 작은 평형. 면적·공급 평형은 스냅샷 평형 표에서 찾는다
         rows = await self._fetch(
-            f"""SELECT DISTINCT ON (t.complex_id) count(*) OVER (PARTITION BY t.complex_id) AS n, {_TX_COLUMNS}
-                FROM transactions t WHERE {w.sql}
-                ORDER BY t.complex_id, {_LATEST_FIRST}""",
+            f"""WITH m AS (
+                    SELECT {_TX_COLUMNS}, floor(t.exclusive_area_m2 + 0.5)::int AS bucket
+                    FROM transactions t WHERE {w.sql}
+                ),
+                latest AS (
+                    SELECT DISTINCT ON (t.complex_id) count(*) OVER (PARTITION BY t.complex_id) AS n, t.*
+                    FROM m t ORDER BY t.complex_id, {_LATEST_FIRST}
+                ),
+                typical AS (
+                    SELECT DISTINCT ON (m.complex_id) m.complex_id, m.bucket AS typical_bucket,
+                           count(*) AS typical_n,
+                           round(avg(m.price))::bigint AS typical_price,
+                           round(avg(m.deposit))::bigint AS typical_deposit,
+                           round(avg(m.monthly_rent))::bigint AS typical_rent
+                    FROM m WHERE m.bucket IS NOT NULL
+                    GROUP BY m.complex_id, m.bucket
+                    ORDER BY m.complex_id, count(*) DESC, max(m.contract_date) DESC, m.bucket
+                )
+                SELECT latest.*, typical.typical_bucket, typical.typical_n, typical.typical_price,
+                       typical.typical_deposit, typical.typical_rent
+                FROM latest LEFT JOIN typical USING (complex_id)""",
             w.params,
         )
         markers = [
-            ComplexMarkerRow(snap.complexes[r.complex_id], r.n, self._transaction(snap, r))
+            ComplexMarkerRow(
+                c,
+                r.n,
+                self._transaction(snap, r),
+                None
+                if r.typical_bucket is None
+                else typical_area(
+                    c,
+                    flt.deal_type,
+                    r.typical_bucket,
+                    r.typical_n,
+                    r.typical_price,
+                    r.typical_deposit,
+                    r.typical_rent,
+                ),
+            )
             for r in rows
-            if r.complex_id in snap.complexes
+            if (c := snap.complexes.get(r.complex_id)) is not None
         ]
         return sorted(markers, key=lambda m: (-m.transaction_count, m.complex.name, str(m.complex.id)))
 

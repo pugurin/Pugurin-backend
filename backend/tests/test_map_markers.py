@@ -88,6 +88,34 @@ def test_complex_marker_for_jeonse_and_monthly(client):
     )
 
 
+def test_complex_marker_carries_the_most_traded_plan(client):
+    sale = get_markers(client, bbox=HAEUNDAE, zoom=15).json()["data"]["markers"]
+    assert sale
+    for m in sale:
+        typical = m["typical"]
+        assert set(typical) == {
+            "exclusive_area_m2",
+            "exclusive_area_pyeong",
+            "supply_area_pyeong",
+            "transaction_count",
+            "avg_price",
+            "avg_deposit",
+            "avg_monthly_rent",
+        }
+        assert 1 <= typical["transaction_count"] <= m["transaction_count"]
+        assert typical["avg_price"] > 0 and typical["avg_deposit"] is None and typical["avg_monthly_rent"] is None
+        assert typical["exclusive_area_pyeong"] == round(typical["exclusive_area_m2"] / 3.3058, 1)
+    # 가짜 시장의 아파트는 공급 평형이 있다
+    assert any(m["typical"]["supply_area_pyeong"] is not None for m in sale)
+    monthly = get_markers(client, bbox=HAEUNDAE, zoom=15, deal_type="monthly").json()["data"]["markers"]
+    assert monthly and all(
+        m["typical"]["avg_price"] is None and m["typical"]["avg_deposit"] > 0 and m["typical"]["avg_monthly_rent"] > 0
+        for m in monthly
+    )
+    jeonse = get_markers(client, bbox=HAEUNDAE, zoom=15, deal_type="jeonse").json()["data"]["markers"]
+    assert jeonse and all(m["typical"]["avg_deposit"] > 0 and m["typical"]["avg_monthly_rent"] is None for m in jeonse)
+
+
 def test_region_summary_shape_follows_deal_type(client):
     jeonse = get_markers(client, deal_type="jeonse").json()["data"]["markers"]
     assert all(set(m["summary"]) == {"median_deposit_per_pyeong"} for m in jeonse)

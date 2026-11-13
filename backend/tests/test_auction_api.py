@@ -68,11 +68,11 @@ async def _populate(url: str, cache: GeocodeCache) -> None:
             ),
             {"id": OFFICETEL_ID, "pnu": PNU_601},
         )
-        # 경매 1번(아파트, 전용 84.97㎡)과 같은 평형 85, 다른 평형 60
+        # 경매 1번(아파트, 전용 84.97㎡)과 같은 평형 85(공급 33.5평), 다른 평형 60
         await conn.execute(
             text(
-                "INSERT INTO complex_area_types (complex_id, area_bucket, exclusive_area_m2) "
-                "VALUES (:c, 85, 84.97), (:c, 60, 59.9), (:o, 85, 84.5)"
+                "INSERT INTO complex_area_types (complex_id, area_bucket, exclusive_area_m2, supply_area_pyeong) "
+                "VALUES (:c, 85, 84.97, 33.5), (:c, 60, 59.9, NULL), (:o, 85, 84.5, NULL)"
             ),
             {"c": COMPLEX_ID, "o": OFFICETEL_ID},
         )
@@ -233,13 +233,19 @@ def test_items_carry_the_latest_comparable_sale_of_the_same_plan(auction_api_db)
     assert apt["complex_id"] == str(COMPLEX_ID)  # 같은 필지의 오피스텔 단지가 아니라 아파트 단지
     assert (apt["recent_trade_price"], apt["recent_trade_date"]) == (520_000_000, "2026-08-01")
     assert (apt["recent_trade_area_m2"], apt["recent_trade_count"]) == (84.97, 2)
+    # 같은 평형 최근 12개월 두 건(5.2억·5억)의 평균과 그 평형의 공급 평형
+    assert (apt["recent_trade_avg_price"], apt["recent_trade_supply_area_pyeong"]) == (510_000_000, 33.5)
     assert detail["recent_trade_price"] == 520_000_000
+    assert detail["recent_trade_avg_price"] == 510_000_000
+    keys = (
+        "recent_trade_price",
+        "recent_trade_date",
+        "recent_trade_count",
+        "recent_trade_avg_price",
+        "recent_trade_supply_area_pyeong",
+    )
     for other in ("CA-41-2025-1002-1", "CA-41-2025-1003-1", "GO-2026-1000-000001"):
-        assert [data[other][k] for k in ("recent_trade_price", "recent_trade_date", "recent_trade_count")] == [
-            None,
-            None,
-            None,
-        ]
+        assert [data[other][k] for k in keys] == [None] * len(keys)
 
 
 def test_sorts_and_share_filter(auction_api_db):
@@ -256,3 +262,88 @@ def test_sorts_and_share_filter(auction_api_db):
     assert prices == sorted(prices)
     assert "CA-41-2025-1002-1" not in no_share and len(no_share) == 3
     assert bad.status_code == 400
+
+
+# ── 평균 비교 정렬 ─────────────────────────────────────────
+# 경매 5번 단지: 최근 1건은 7억이지만 평균은 약 4.33억. 경매 6번 단지: 6억 1건뿐
+COMPLEX_5 = UUID("6f1d2a8e-0000-4000-8000-000000000005")
+COMPLEX_6 = UUID("6f1d2a8e-0000-4000-8000-000000000006")
+AVG_TRADES = [
+    ("2026-09-01", 700_000_000, COMPLEX_5),
+    ("2026-05-01", 300_000_000, COMPLEX_5),
+    ("2026-04-01", 300_000_001, COMPLEX_5),  # 합 1,300,000,001 ÷ 3 = 433,333,333.67 → 반올림 433,333,334
+    ("2026-08-01", 600_000_000, COMPLEX_6),
+]
+
+
+async def _populate_avg(url: str, cache: GeocodeCache) -> None:
+    engine = make_engine(url)
+    async with engine.begin() as conn:
+        for complex_id, n in ((COMPLEX_5, 5), (COMPLEX_6, 6)):
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO complexes (id, property_type, name, name_key, region_code, jibun, pnu, location,
+                                           location_source)
+                    VALUES (:id, 'apartment', :name, :name, '2635010500', :jibun, :pnu,
+                            ST_SetSRID(ST_MakePoint(129.166, 35.166), 4326), 'geocode')
+                    """
+                ),
+                {"id": complex_id, "name": f"가상단지{n}", "jibun": f"60{n}", "pnu": f"26350105001060{n}0000"},
+            )
+            await conn.execute(
+                text(
+                    "INSERT INTO complex_area_types (complex_id, area_bucket, exclusive_area_m2) VALUES (:c, 85, 84.97)"
+                ),
+                {"c": complex_id},
+            )
+        run = (
+            await conn.execute(text("INSERT INTO etl_runs (job, status) VALUES ('collect', 'success') RETURNING id"))
+        ).scalar_one()
+        for n, (day, price, complex_id) in enumerate(AVG_TRADES):
+            await conn.execute(
+                text(
+                    """
+                    INSERT INTO transactions (id, source_key, source_kind, property_type, deal_type, complex_id,
+                        region_code, location, location_precision, price, exclusive_area_m2, contract_date,
+                        trade_method, first_seen_run_id, last_seen_run_id)
+                    VALUES (gen_random_uuid(), :key, 'apt_trade', 'apartment', 'sale', :complex_id, '2635010500',
+                        ST_SetSRID(ST_MakePoint(129.166, 35.166), 4326), 'parcel', :price, 84.97, :day,
+                        'broker', :run, :run)
+                    """
+                ),
+                {
+                    "key": f"{n:040d}",
+                    "complex_id": complex_id,
+                    "price": price,
+                    "day": date.fromisoformat(day),
+                    "run": run,
+                },
+            )
+    source = FakeAuctionSource([court_row(5), court_row(6)], [])
+    await sync_auctions(engine, source, FakeLookup(), cache, now=FIXED_NOW, out=lambda _: None)
+    await engine.dispose()
+
+
+@pytest.fixture(scope="module")
+def auction_avg_db(postgis: str, tmp_path_factory) -> str:
+    url = create_database(postgis, "auction_avg")
+    migrate.upgrade(url)
+    asyncio.run(_populate_avg(url, GeocodeCache(tmp_path_factory.mktemp("auction_avg_geo") / "geocode.json")))
+    return url
+
+
+def test_discount_sort_compares_the_minimum_price_with_the_average(auction_avg_db):
+    with client(auction_avg_db) as c:
+        data = {a["id"]: a for a in c.get(f"{API}/auctions").json()["data"]}
+        by_discount = ids(c.get(f"{API}/auctions", params={"sort": "recent_trade_discount"}))
+    five, six = data["CA-41-2025-1005-1"], data["CA-41-2025-1006-1"]
+    assert (five["recent_trade_price"], five["recent_trade_avg_price"], five["recent_trade_count"]) == (
+        700_000_000,
+        433_333_334,
+        3,
+    )
+    assert (six["recent_trade_price"], six["recent_trade_avg_price"]) == (600_000_000, 600_000_000)
+    assert five["recent_trade_supply_area_pyeong"] is None  # 건축물대장으로 못 채운 평형
+    # 최근 1건 기준이면 5번(0.50)이 먼저지만, 평균 기준이면 6번(0.58)이 5번(0.81)보다 먼저
+    assert by_discount == ["CA-41-2025-1006-1", "CA-41-2025-1005-1"]

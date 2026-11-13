@@ -189,6 +189,31 @@ async def test_search_matches(repos):
         assert sorted(got) == sorted(want) and [g[1:] for g in got] == [w[1:] for w in want], q
 
 
+async def test_typical_area_carries_the_supply_area_from_the_building_register(repos):
+    from dataclasses import replace
+
+    from sqlalchemy import text
+
+    from app.core.geo import area_bucket
+
+    _, postgres, _, _ = repos
+    flt = TransactionFilter(PropertyType.apartment, DealType.sale, period_months=24)
+    first = (await postgres.complex_markers(BUSAN, flt))[0]
+    assert first.typical is not None and first.typical.supply_area_pyeong is None
+    update = text("UPDATE complex_area_types SET supply_area_pyeong = :s WHERE complex_id = :c AND area_bucket = :b")
+    key = {"c": first.complex.id, "b": area_bucket(first.typical.exclusive_area_m2)}
+    async with postgres._engine.begin() as conn:  # noqa: SLF001 - 건축물대장 동기화가 채운 것처럼 직접 넣는다
+        assert (await conn.execute(update, {**key, "s": 34.2})).rowcount == 1
+    try:
+        await postgres.refresh(force=True)
+        got = next(m for m in await postgres.complex_markers(BUSAN, flt) if m.complex.id == first.complex.id)
+        assert got.typical == replace(first.typical, supply_area_pyeong=34.2)
+    finally:
+        async with postgres._engine.begin() as conn:  # noqa: SLF001
+            await conn.execute(update, {**key, "s": None})
+        await postgres.refresh(force=True)
+
+
 # ── 서버에 붙였을 때 ─────────────────────────────────────────
 
 

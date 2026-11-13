@@ -23,6 +23,9 @@
 - **경매·공매 조회 추가:** `GET /auctions`, `GET /auctions/{id}` (6.1장). 데이터는 DB에만 있고, 동기화 전에는 `503 DATA_NOT_READY`
 - **주변 학교·병원 추가:** `GET /nearby`, `GET /complexes/{id}/nearby`, `GET /schools`, `GET /hospitals` (6.2장)
 - **정비사업 구역 추가:** `GET /redevelopments`, `GET /redevelopments/{id}` (6.3장). 동기화 전에는 `503 DATA_NOT_READY`
+- **같은 평형 평균가 추가:**
+  - 지도 단지 마커에 `typical`(거래가 가장 많은 평형과 그 평균가, 2장) 추가. `latest`는 그대로
+  - 경매 목록·상세에 `recent_trade_avg_price`(같은 평형 최근 12개월 평균가), `recent_trade_supply_area_pyeong` 추가. `sort=recent_trade_discount`는 최근 1건 대신 평균가와 비교한다 (6.1장)
 
 ### v0.4 보충 (1차 mock 구현 중 확인)
 - MapLibre 줌 → 표준 줌 변환 규칙(`Math.floor(zoom + 1)`), 줌별 `level` 기본 임계치(12 / 14) 명시
@@ -199,6 +202,11 @@
           "exclusive_area_pyeong": 25.7, "supply_area_pyeong": 34.0,
           "floor": 21, "contract_date": "2026-08-14"
         },
+        "typical": {
+          "exclusive_area_m2": 84.97, "exclusive_area_pyeong": 25.7, "supply_area_pyeong": 34.0,
+          "transaction_count": 9,
+          "avg_price": 1412000000, "avg_deposit": null, "avg_monthly_rent": null
+        },
         "transaction_count": 21
       },
       {
@@ -219,6 +227,15 @@
 **`latest` 필드 규칙**
 - 가격 필드는 §0 "거래유형별 가격 필드 의미" 표를 따른다. 전세는 `deposit`, 월세는 `deposit` + `monthly_rent`가 채워지고 `price`는 null
 - `supply_area_pyeong`(공급 평형, "34평")은 아파트만, 산출 불가 시 null. 앱은 `supply_area_pyeong`이 있으면 우선 표시하고 없으면 `exclusive_area_pyeong`을 "전용 25.7평"으로 표시
+
+**`typical` (단지 마커의 대표 평형) 규칙**
+- 마커와 **같은 필터**(거래유형·기간·가격·면적·직거래·갱신 조건)에 맞는 그 단지 거래를 평형(전용면적을 반올림한 ㎡, 84.5~85.49㎡는 85)으로 묶어 **거래가 가장 많은 평형**을 고른다
+  - 건수가 같으면 마지막 거래일이 더 최근인 평형, 그것도 같으면 작은 평형
+- `transaction_count`: 그 평형의 거래 수(마커 `transaction_count`보다 작거나 같다)
+- 평균은 그 평형 거래의 산술 평균, 원 단위 반올림. 매매는 `avg_price`, 전세는 `avg_deposit`, 월세는 `avg_deposit` + `avg_monthly_rent`만 채우고 나머지는 null
+- `exclusive_area_m2`: 그 평형의 대표 전용면적(단지 평형 표의 값). 평형 표에 없으면 묶음 값(예: 85.0)
+- `supply_area_pyeong`: 건축물대장으로 채운 그 평형의 공급 평형. 아직 못 채운 단지는 null. 앱은 `latest`와 같은 규칙으로 공급 평형을 우선 표시하고 없으면 "전용 25.7평"
+- 면적이 없는 거래만 있으면 `typical`은 null
 
 **`summary` (구·동 집계 마커 대표값) — 요청 `deal_type`에 따라 달라진다**
 
@@ -561,7 +578,7 @@
 | `property_group` | 전부 | 쉼표 구분: `apartment,officetel,villa,land,other`. 물건용도 원문을 묶은 것(단독·다가구·상가·공장 등은 `other`) |
 | `include_closed` | `false` | 진행 목록에서 빠진(매각·취하 등으로 끝난) 물건도 포함 |
 | `exclude_share` | `false` | 지분 매각 물건 제외 |
-| `sort` | `sale_date` | `sale_date`(매각기일 빠른 순, 공매는 입찰 마감일) · `min_price_ratio`(감정가 대비 최저가 낮은 순) · `min_price`(최저가 낮은 순) · `recent_trade_discount`(최근 실거래 대비 많이 싼 순, 비교 거래가 없는 물건은 뒤) |
+| `sort` | `sale_date` | `sale_date`(매각기일 빠른 순, 공매는 입찰 마감일) · `min_price_ratio`(감정가 대비 최저가 낮은 순) · `min_price`(최저가 낮은 순) · `recent_trade_discount`(같은 평형 최근 12개월 평균가 대비 많이 싼 순 = 최저가 ÷ `recent_trade_avg_price`가 작은 순, 비교 거래가 없는 물건은 뒤) |
 | `page`, `page_size` | 1, 100 | `page_size` 최대 500 |
 
 같은 값이면 `id` 순이다.
@@ -595,7 +612,9 @@
     "recent_trade_price": 262000000,
     "recent_trade_date": "2026-01-16",
     "recent_trade_area_m2": 56.5488,
-    "recent_trade_count": 1
+    "recent_trade_count": 1,
+    "recent_trade_avg_price": 262000000,
+    "recent_trade_supply_area_pyeong": null
   }],
   "meta": {
     "data_as_of": "2026-11-02T04:30:00+09:00",
@@ -608,11 +627,14 @@
 ```
 - `min_price_ratio`: 최저가 ÷ 감정가(%, 반올림). 유찰될수록 내려간다. 감정가 대비 할인율은 `100 - min_price_ratio`
 - `building_area_m2`는 **전용면적**이다(운영 데이터에서 아파트·오피스텔의 95% 이상이 단지 평형과 0.5㎡ 안에서 일치)
-- `recent_trade_*`: 같은 단지·같은 평형의 최근 12개월 매매 중 **가장 최근 1건**과 그 기간 거래 수(`recent_trade_count`)
+- `recent_trade_*`: 같은 단지·같은 평형의 최근 12개월 매매
+  - `recent_trade_price`·`recent_trade_date`·`recent_trade_area_m2`: 그중 **가장 최근 1건**
+  - `recent_trade_count`: 그 기간 거래 수, `recent_trade_avg_price`: 그 거래들의 **평균가**(원 단위 반올림)
+  - `recent_trade_supply_area_pyeong`: 매칭된 평형의 공급 평형(건축물대장). 아직 못 채운 단지는 `null`
   - 단지: 같은 필지(PNU)에서 같은 유형(아파트·오피스텔·빌라)이고 전용면적이 ±3㎡ 안에 가장 가까운 평형이 있는 단지
   - 해제·직거래 거래는 뺀다(직거래는 가족 간 거래처럼 시세와 동떨어질 수 있다)
-  - 단지에 매칭이 안 되거나(상가·토지·단독 등) 기간 안에 거래가 없으면 넷 다 `null`
-  - 유찰이 많은 물건은 최근 실거래보다 90% 넘게 쌀 수 있다. 이런 물건은 인수해야 할 권리(대항력 있는 임차인 등)가 있는 경우가 많은데, 그 정보는 제공하지 않는다
+  - 단지에 매칭이 안 되거나(상가·토지·단독 등) 기간 안에 거래가 없으면 모두 `null`
+  - 유찰이 많은 물건은 실거래 평균가보다 90% 넘게 쌀 수 있다. 이런 물건은 인수해야 할 권리(대항력 있는 임차인 등)가 있는 경우가 많은데, 그 정보는 제공하지 않는다
 - `is_share`: 지분 매각. 법원 경매는 상세의 매각물건 지분 내용이 있는지로 판단한다(원문에는 이름이 섞여 있어 저장하지 않는다)
 - `lat`·`lng`가 `null`이면 주소를 지도에서 못 찾은 물건이다(약 0.4%). `bbox` 검색에는 나오지 않는다
 - 공매는 `title`(물건명), `bid_start_at`·`bid_end_at`(입찰 기간)이 있고 `court_name`·`deposit`이 `null`이다

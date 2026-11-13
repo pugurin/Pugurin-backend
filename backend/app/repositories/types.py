@@ -149,10 +149,27 @@ class RegionAggregate:
 
 
 @dataclass(frozen=True)
+class TypicalArea:
+    """단지 마커의 대표 평형: 마커와 같은 필터의 거래 중 가장 많이 거래된 평형(전용면적 반올림 ㎡)과 그 평균.
+
+    건수가 같으면 마지막 거래가 더 최근인 평형, 그것도 같으면 작은 평형. 평균은 원 단위 반올림(사사오입)이다.
+    매매는 avg_price, 전세는 avg_deposit, 월세는 avg_deposit·avg_monthly_rent만 채운다.
+    """
+
+    exclusive_area_m2: float  # 그 평형의 대표 전용면적(complex_area_types). 평형 표에 없으면 묶음 값
+    supply_area_pyeong: float | None  # 건축물대장으로 채운 공급 평형. 없으면 None
+    transaction_count: int
+    avg_price: int | None = None
+    avg_deposit: int | None = None
+    avg_monthly_rent: int | None = None
+
+
+@dataclass(frozen=True)
 class ComplexMarkerRow:
     complex: Complex
     transaction_count: int
     latest: Transaction
+    typical: TypicalArea | None = None
 
 
 @dataclass(frozen=True)
@@ -299,12 +316,14 @@ class AuctionSort(StrEnum):
 
 @dataclass(frozen=True)
 class RecentTrade:
-    """같은 단지·같은 평형의 최근 12개월 매매(해제·직거래 제외) 중 가장 최근 1건과 그 기간 거래 수."""
+    """같은 단지·같은 평형의 최근 12개월 매매(해제·직거래 제외) 중 가장 최근 1건, 그 기간 거래 수와 평균가."""
 
     price: int
     contract_date: date
     exclusive_area_m2: float
     count: int
+    avg_price: int  # 같은 거래들의 평균가(원 단위 반올림)
+    supply_area_pyeong: float | None = None  # 그 평형의 공급 평형. 건축물대장으로 못 채웠으면 None
 
 
 @dataclass(frozen=True)

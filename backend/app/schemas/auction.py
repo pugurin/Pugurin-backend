@@ -52,11 +52,13 @@ class AuctionOut(BaseModel):
     is_share: bool
     status: str | None
     is_closed: bool
-    # 같은 단지·같은 평형(전용면적)의 최근 12개월 매매 중 가장 최근 1건. 해제·직거래 제외. 없으면 넷 다 null
-    recent_trade_price: int | None
+    # 같은 단지·같은 평형(전용면적)의 최근 12개월 매매. 해제·직거래 제외. 거래가 없으면 모두 null
+    recent_trade_price: int | None  # 가장 최근 1건의 가격
     recent_trade_date: date | None
     recent_trade_area_m2: float | None
-    recent_trade_count: int | None
+    recent_trade_count: int | None  # 그 기간 거래 수
+    recent_trade_avg_price: int | None  # 그 기간 평균가(원 단위 반올림)
+    recent_trade_supply_area_pyeong: float | None  # 그 평형의 공급 평형. 건축물대장으로 못 채웠으면 null
 
     @classmethod
     def from_domain(cls, a: Auction) -> "AuctionOut":
@@ -93,6 +95,8 @@ class AuctionOut(BaseModel):
             recent_trade_date=a.recent_trade.contract_date if a.recent_trade else None,
             recent_trade_area_m2=a.recent_trade.exclusive_area_m2 if a.recent_trade else None,
             recent_trade_count=a.recent_trade.count if a.recent_trade else None,
+            recent_trade_avg_price=a.recent_trade.avg_price if a.recent_trade else None,
+            recent_trade_supply_area_pyeong=a.recent_trade.supply_area_pyeong if a.recent_trade else None,
         )
 
 

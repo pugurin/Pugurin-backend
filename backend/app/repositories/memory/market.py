@@ -30,6 +30,7 @@ from app.repositories.types import (
     Transaction,
     TransactionFilter,
     TransactionPage,
+    TypicalArea,
 )
 
 MIN_MONTH_SAMPLE = 3  # 월 표본이 이보다 적으면 중위값을 내지 않는다
@@ -168,6 +169,55 @@ def _series(deal_type: DealType, txs: list[Transaction], months: list[date]) -> 
         metrics = _metrics(deal_type, bucket) if len(bucket) >= MIN_MONTH_SAMPLE else StatsMetrics()
         trend.append(MonthStats(first.strftime("%Y-%m"), len(bucket), metrics))
     return StatsSeries(len(txs), _metrics(deal_type, txs), tuple(trend))
+
+
+def _avg_int(values: list[int]) -> int | None:
+    """정수 평균을 원 단위로 사사오입한다. DB의 round(avg(x))와 같은 값이다(값은 0 이상)."""
+    return (2 * sum(values) + len(values)) // (2 * len(values)) if values else None
+
+
+def typical_area(
+    complex_: Complex,
+    deal_type: DealType,
+    bucket: int,
+    count: int,
+    avg_price: int | None,
+    avg_deposit: int | None,
+    avg_monthly_rent: int | None,
+) -> TypicalArea:
+    """대표 평형 묶음과 그 평균으로 TypicalArea를 만든다. 면적·공급 평형은 단지 평형 표에서 찾는다."""
+    area = next((a for a in complex_.area_types if area_bucket(a.exclusive_area_m2) == bucket), None)
+    sale, monthly = deal_type == DealType.sale, deal_type == DealType.monthly
+    return TypicalArea(
+        exclusive_area_m2=area.exclusive_area_m2 if area else float(bucket),
+        supply_area_pyeong=area.supply_area_pyeong if area else None,
+        transaction_count=count,
+        avg_price=avg_price if sale else None,
+        avg_deposit=None if sale else avg_deposit,
+        avg_monthly_rent=avg_monthly_rent if monthly else None,
+    )
+
+
+def _typical(complex_: Complex, deal_type: DealType, txs: list[Transaction]) -> TypicalArea | None:
+    by_bucket: dict[int, list[Transaction]] = defaultdict(list)
+    for t in txs:
+        if t.exclusive_area_m2 is not None:
+            by_bucket[area_bucket(t.exclusive_area_m2)].append(t)
+    if not by_bucket:
+        return None
+    # 건수 많은 순 → 마지막 거래일 최근 순 → 작은 평형
+    bucket, inside = min(
+        by_bucket.items(), key=lambda kv: (-len(kv[1]), -max(t.contract_date for t in kv[1]).toordinal(), kv[0])
+    )
+    return typical_area(
+        complex_,
+        deal_type,
+        bucket,
+        len(inside),
+        _avg_int([t.price for t in inside if t.price is not None]),
+        _avg_int([t.deposit for t in inside if t.deposit is not None]),
+        _avg_int([t.monthly_rent for t in inside if t.monthly_rent is not None]),
+    )
 
 
 class InMemoryMarketRepository:
@@ -323,7 +373,12 @@ class InMemoryMarketRepository:
             if tx.complex_id and bbox.contains(tx.lat, tx.lng):
                 groups[tx.complex_id].append(tx)
         rows = [
-            ComplexMarkerRow(self._complexes[cid], len(txs), max(txs, key=lambda t: (t.contract_date, str(t.id))))
+            ComplexMarkerRow(
+                self._complexes[cid],
+                len(txs),
+                max(txs, key=lambda t: (t.contract_date, str(t.id))),
+                _typical(self._complexes[cid], flt.deal_type, txs),
+            )
             for cid, txs in groups.items()
         ]
         return sorted(rows, key=lambda r: (-r.transaction_count, r.complex.name, str(r.complex.id)))

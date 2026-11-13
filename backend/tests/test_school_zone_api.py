@@ -236,3 +236,79 @@ def test_assigned_elementary_key_follows_the_zone_load_state():
     assert "assigned_elementary" not in dumped(_nearby(None, None))
     assert dumped(_nearby(info, None))["assigned_elementary"] is None
     assert dumped(_nearby(info, school))["assigned_elementary"]["distance_m"] == 57
+
+
+# ── 같은 이름 학교(부산 송정초 둘)는 구역 위치로 구분해 연결한다 ──
+
+_SAME_NAME_SCHOOLS = [
+    # (id, 위도, 경도). ORIGIN 구역 안 / NORTH 구역 안 / 좌표 없음
+    ("7249001", 35.1601, 129.1601),
+    ("7249002", 35.1701, 129.1601),
+    ("7249003", None, None),
+]
+
+
+async def _insert_same_named_schools(url: str, *, located: bool = True) -> None:
+    engine = make_engine(url)
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO schools (id, name, kind, address, location, last_seen_at)
+                VALUES (:id, '동명초등학교', '초등학교', '부산',
+                        ST_SetSRID(ST_MakePoint(CAST(:lng AS float8), CAST(:lat AS float8)), 4326), now())
+                """
+            ),
+            [
+                {"id": i, "lat": lat if located else None, "lng": lng if located else None}
+                for i, lat, lng in _SAME_NAME_SCHOOLS
+            ],
+        )
+    await engine.dispose()
+
+
+async def _links(url: str) -> list[tuple[str, str]]:
+    engine = make_engine(url)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text("SELECT zone_id, school_id FROM school_zone_schools ORDER BY 1"))).all()
+    await engine.dispose()
+    return [tuple(r) for r in rows]
+
+
+def test_same_named_schools_are_linked_to_their_own_zone(postgis, tmp_path):
+    url = create_database(postgis, f"school_zone_same_name_{uuid4().hex[:8]}")
+    migrate.upgrade(url)
+    asyncio.run(_insert_same_named_schools(url))
+    zones = [
+        FakeZone("Z000000011", "동명초통학구역", rings=[square(ORIGIN_5186, 300)]),
+        FakeZone("Z000000012", "동명초통학구역", rings=[square(NORTH_5186, 300)]),
+        # 어느 학교도 안에 없는 구역은 가장 가까운 학교(NORTH 쪽 7249002)에 연결한다
+        FakeZone("Z000000013", "동명초통학구역", rings=[square(FAR_5186, 200)]),
+    ]
+    links = [
+        link("Z000000011", "B11", "동명초등학교"),
+        link("Z000000012", "B12", "동명초등학교"),
+        link("Z000000013", "B13", "동명초등학교"),
+    ]
+    report = asyncio.run(_load(url, write_zone_files(tmp_path, zones, links)))
+    assert asyncio.run(_links(url)) == [
+        ("Z000000011", "7249001"),
+        ("Z000000012", "7249002"),
+        ("Z000000013", "7249002"),
+    ]
+    assert report.ambiguous == []
+    assert report.by_location == [
+        ("동명초등학교", "Z000000011", "7249001"),
+        ("동명초등학교", "Z000000012", "7249002"),
+        ("동명초등학교", "Z000000013", "7249002"),
+    ]
+
+
+def test_same_named_schools_without_locations_are_skipped(postgis, tmp_path):
+    url = create_database(postgis, f"school_zone_no_location_{uuid4().hex[:8]}")
+    migrate.upgrade(url)
+    asyncio.run(_insert_same_named_schools(url, located=False))
+    zones = [FakeZone("Z000000011", "동명초통학구역", rings=[square(ORIGIN_5186, 300)])]
+    report = asyncio.run(_load(url, write_zone_files(tmp_path, zones, [link("Z000000011", "B11", "동명초등학교")])))
+    assert asyncio.run(_links(url)) == []
+    assert report.ambiguous == ["동명초등학교"]

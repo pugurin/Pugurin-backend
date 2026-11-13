@@ -232,8 +232,12 @@ async def _school_zones(settings: Settings, directory: Path | None) -> int:
         print(f"  도형이 없어 뺀 구역 {len(r.without_geometry)}곳: {', '.join(r.without_geometry[:10])}")
     if r.unmatched:
         print(f"  학교 목록에 없는 이름이라 연결하지 않음 {len(r.unmatched)}곳: {', '.join(r.unmatched[:20])}")
+    if r.by_location:
+        picked = ", ".join(f"{name} {zone_id} → {school_id}" for name, zone_id, school_id in r.by_location[:20])
+        print(f"  같은 이름 학교를 구역 위치로 골라 연결 {len(r.by_location)}개: {picked}")
     if r.ambiguous:
-        print(f"  같은 이름 학교가 여럿이라 연결하지 않음 {len(r.ambiguous)}곳: {', '.join(r.ambiguous[:20])}")
+        names = ", ".join(r.ambiguous[:20])
+        print(f"  같은 이름 학교 중 좌표 있는 후보가 없어 연결하지 않음 {len(r.ambiguous)}곳: {names}")
     return 0
 
 

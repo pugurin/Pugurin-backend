@@ -7,11 +7,14 @@ import pytest
 from app.ingestion.school_zones import (
     SHARED_ZONE,
     ZONE,
+    Candidate,
     LinkRow,
+    LocationLink,
     busan_links,
     busan_zones,
     find_zone_files,
     match_schools,
+    pick_school,
     read_dbf,
     read_links,
     read_polygons,
@@ -132,4 +135,25 @@ def test_schools_are_matched_by_exact_name():
     m = match_schools(links, ours)
     assert m.pairs == [("Z1", "7240001"), ("Z2", "7240002"), ("Z3", "7240002")]
     assert m.unmatched == ["연학초등학교"]
-    assert m.ambiguous == ["다솜초등학교", "송정초등학교"]
+    # 같은 이름이 여럿이면 이름만으로 정하지 않고, 구역 위치로 고를 후보(우리 학교)를 넘긴다
+    assert m.by_location == [
+        LocationLink("Z5", "송정초등학교", ("7240006",)),
+        LocationLink("Z6", "송정초등학교", ("7240006",)),
+        LocationLink("Z7", "다솜초등학교", ("7240008", "7240009")),
+    ]
+
+
+def test_same_named_schools_go_to_the_one_inside_the_zone():
+    candidates = [Candidate("A", inside=False, distance_m=800.0), Candidate("B", inside=True, distance_m=0.0)]
+    assert pick_school(candidates) == "B"
+
+
+def test_without_exactly_one_school_inside_the_nearest_wins():
+    outside = [Candidate("A", inside=False, distance_m=800.0), Candidate("B", inside=False, distance_m=120.5)]
+    assert pick_school(outside) == "B"
+    both_inside = [Candidate("B", inside=True, distance_m=0.0), Candidate("A", inside=True, distance_m=0.0)]
+    assert pick_school(both_inside) == "A"  # 거리가 같으면 ID 순
+
+
+def test_no_located_candidate_means_no_link():
+    assert pick_school([]) is None

@@ -12,11 +12,11 @@
 
 서버는 **가짜 데이터를 내보내지 않습니다.** 실데이터는 아래 순서로 찾습니다.
 
-| 우선순위 | 실데이터 위치 | 언제 |
-|---|---|---|
-| 1 | DB (`PUGURIN_DATABASE_URL`) | Docker로 띄우면 기본 |
-| 2 | 수집 캐시 폴더 `backend/.cache` | DB 없이 직접 실행할 때 |
-| 3 | 둘 다 없음 | 지도·거래·통계·검색·분석이 **`503 DATA_NOT_READY`**("실거래 데이터가 아직 없어요")로 응답 |
+| 우선순위 | 실데이터 위치                   | 언제                                                                                      |
+| -------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
+| 1        | DB (`PUGURIN_DATABASE_URL`)     | Docker로 띄우면 기본                                                                      |
+| 2        | 수집 캐시 폴더 `backend/.cache` | DB 없이 직접 실행할 때                                                                    |
+| 3        | 둘 다 없음                      | 지도·거래·통계·검색·분석이 **`503 DATA_NOT_READY`**("실거래 데이터가 아직 없어요")로 응답 |
 
 `backend/.cache`는 공공데이터포털에서 받은 실거래가와 카카오 지오코딩 결과(약 75MB)라서 **Git에 올리지 않습니다**(`.gitignore`). 레포를 클론해서 바로 실행하면 데이터가 없는 상태로 뜹니다.
 
@@ -51,10 +51,13 @@ curl -sI http://localhost:8000/api/v1/health | grep -i x-data-mode
 4. `X-Data-Mode: real`인지 확인합니다.
 
 > 백엔드 담당: 압축은 레포 루트에서 아래 명령으로 만들 수 있습니다.
+>
 > ```bash
 > tar -czf pugurin-cache.tar.gz -C backend .cache
 > ```
+>
 > 받은 쪽은 레포 루트에서 아래 명령으로 풉니다.
+>
 > ```bash
 > tar -xzf pugurin-cache.tar.gz -C backend
 > ```
@@ -65,11 +68,11 @@ API 키를 직접 받아서 실데이터를 모읍니다. 처음 한 번은 시�
 
 **1) API 키 발급**
 
-| 키 | 발급처 | `.env` 이름 |
-|---|---|---|
-| 공공데이터포털 매매 실거래가 | [data.go.kr](https://www.data.go.kr) — 아파트·오피스텔·연립다세대·토지 매매 API 활용신청 | `PUGURIN_DATA_GO_KR_TRADE_KEY` |
-| 공공데이터포털 전월세 실거래가 | [data.go.kr](https://www.data.go.kr) — 아파트·오피스텔·연립다세대 전월세 API 활용신청 | `PUGURIN_DATA_GO_KR_RENT_KEY` |
-| 카카오 로컬 REST 키 | [developers.kakao.com](https://developers.kakao.com) — 앱 생성 → REST API 키 | `PUGURIN_KAKAO_REST_KEY` |
+| 키                             | 발급처                                                                                   | `.env` 이름                    |
+| ------------------------------ | ---------------------------------------------------------------------------------------- | ------------------------------ |
+| 공공데이터포털 매매 실거래가   | [data.go.kr](https://www.data.go.kr) — 아파트·오피스텔·연립다세대·토지 매매 API 활용신청 | `PUGURIN_DATA_GO_KR_TRADE_KEY` |
+| 공공데이터포털 전월세 실거래가 | [data.go.kr](https://www.data.go.kr) — 아파트·오피스텔·연립다세대 전월세 API 활용신청    | `PUGURIN_DATA_GO_KR_RENT_KEY`  |
+| 카카오 로컬 REST 키            | [developers.kakao.com](https://developers.kakao.com) — 앱 생성 → REST API 키             | `PUGURIN_KAKAO_REST_KEY`       |
 
 공공데이터포털은 계정당 키가 하나라서 매매·전월세 키가 같으면 두 칸에 같은 값을 넣으면 됩니다.
 
@@ -191,37 +194,37 @@ curl -H "X-Device-Id: 3f2b8c1e-0000-4000-8000-000000000001" \
 
 ### 2. 기기별 서버 주소
 
-| 앱 실행 환경 | API 주소 |
-|---|---|
-| iOS 시뮬레이터, 웹(같은 PC) | `http://localhost:8000/api/v1` |
-| Android 에뮬레이터 | `http://10.0.2.2:8000/api/v1` |
-| 실제 휴대폰 | `http://<서버 PC의 IP>:8000/api/v1` (같은 와이파이 필요, 서버는 `--host 0.0.0.0`) |
+| 앱 실행 환경                | API 주소                                                                          |
+| --------------------------- | --------------------------------------------------------------------------------- |
+| iOS 시뮬레이터, 웹(같은 PC) | `http://localhost:8000/api/v1`                                                    |
+| Android 에뮬레이터          | `http://10.0.2.2:8000/api/v1`                                                     |
+| 실제 휴대폰                 | `http://<서버 PC의 IP>:8000/api/v1` (같은 와이파이 필요, 서버는 `--host 0.0.0.0`) |
 
 > Android는 기본적으로 `http://` 요청을 막습니다. 개발 중에는 `usesCleartextTraffic` 설정이 필요할 수 있습니다.
 
 ### 3. 아직 제공하지 않는 것
 
-| 기능 | 상태 | 이유 |
-|---|---|---|
-| 토지 정보 `/parcels` | 항상 `data: null`, `unavailable_reason: "source_unavailable"` | 토지이용계획·토지특성 공급처가 아직 정해지지 않았습니다 (VWorld 미사용) |
-| 주소 검색 (`/search`에 번지가 있는 검색어) | 카카오 REST 키가 있을 때만 결과가 나옵니다 | 키가 없으면 단지·동네 검색만 됩니다 |
-| 건폐율·용적률 한도 | 내지 않습니다 | 부산시 도시계획 조례 표를 확인하기 전이라 추정값을 내보내지 않습니다 |
-| 토지 실거래가 위치 | 동네(법정동) 단위로만 나옵니다 | 원천 데이터에서 지번이 가려져 있습니다 |
+| 기능                                       | 상태                                                          | 이유                                                                    |
+| ------------------------------------------ | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| 토지 정보 `/parcels`                       | 항상 `data: null`, `unavailable_reason: "source_unavailable"` | 토지이용계획·토지특성 공급처가 아직 정해지지 않았습니다 (VWorld 미사용) |
+| 주소 검색 (`/search`에 번지가 있는 검색어) | 카카오 REST 키가 있을 때만 결과가 나옵니다                    | 키가 없으면 단지·동네 검색만 됩니다                                     |
+| 건폐율·용적률 한도                         | 내지 않습니다                                                 | 부산시 도시계획 조례 표를 확인하기 전이라 추정값을 내보내지 않습니다    |
+| 토지 실거래가 위치                         | 동네(법정동) 단위로만 나옵니다                                | 원천 데이터에서 지번이 가려져 있습니다                                  |
 
 ---
 
 ## 문제 해결
 
-| 증상 | 원인 | 해결 |
-|---|---|---|
-| `503 DATA_NOT_READY`, `X-Data-Mode: none` (직접 실행) | `backend/.cache`가 없음 | 위 [A](#a-백엔드-담당에게-cache-폴더-받기-추천) 또는 [B](#b-직접-수집하기) 후 서버 재시작 |
-| `503 DATA_NOT_READY` (Docker) | DB가 비어 있음 | 아래 "DB에 거래 넣기"의 `load` 실행. 서버 재시작은 필요 없음 |
-| `.cache` 위치가 맞는지 모르겠음 | 폴더가 한 단계 더 들어가 있음 (`backend/.cache/.cache/...`) | `backend/.cache/molit`이 바로 보여야 합니다 |
-| 모든 요청이 `400`, `field: X-Device-Id` | 헤더 없음 또는 UUID가 아님 | UUID 형식 `X-Device-Id` 헤더 추가 |
-| 갑자기 `429 RATE_LIMITED` | 같은 기기에서 분당 300회 초과 (또는 같은 IP에서 3,000회) | `Retry-After` 초만큼 기다리면 풀립니다. 개발 중이면 `backend/.env`에 `PUGURIN_RATE_LIMIT_ENABLED=false` |
-| `refresh`가 키가 필요하다며 종료 | `.env`에 키가 비어 있음 | 매매·전월세 키 둘 다, 카카오 키까지 입력 |
-| `refresh` 중 한도 초과로 멈춤 | 공공데이터포털·카카오 일일 한도 | 다음 날 다시 실행하면 이어서 받습니다 |
-| 지도 영역은 맞는데 마커가 하나도 없음 | 조회 영역이 부산 밖이거나 필터가 너무 좁음 | `bbox` 순서 확인: `최소경도,최소위도,최대경도,최대위도` |
+| 증상                                                  | 원인                                                        | 해결                                                                                                    |
+| ----------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `503 DATA_NOT_READY`, `X-Data-Mode: none` (직접 실행) | `backend/.cache`가 없음                                     | 위 [A](#a-백엔드-담당에게-cache-폴더-받기-추천) 또는 [B](#b-직접-수집하기) 후 서버 재시작               |
+| `503 DATA_NOT_READY` (Docker)                         | DB가 비어 있음                                              | 아래 "DB에 거래 넣기"의 `load` 실행. 서버 재시작은 필요 없음                                            |
+| `.cache` 위치가 맞는지 모르겠음                       | 폴더가 한 단계 더 들어가 있음 (`backend/.cache/.cache/...`) | `backend/.cache/molit`이 바로 보여야 합니다                                                             |
+| 모든 요청이 `400`, `field: X-Device-Id`               | 헤더 없음 또는 UUID가 아님                                  | UUID 형식 `X-Device-Id` 헤더 추가                                                                       |
+| 갑자기 `429 RATE_LIMITED`                             | 같은 기기에서 분당 300회 초과 (또는 같은 IP에서 3,000회)    | `Retry-After` 초만큼 기다리면 풀립니다. 개발 중이면 `backend/.env`에 `PUGURIN_RATE_LIMIT_ENABLED=false` |
+| `refresh`가 키가 필요하다며 종료                      | `.env`에 키가 비어 있음                                     | 매매·전월세 키 둘 다, 카카오 키까지 입력                                                                |
+| `refresh` 중 한도 초과로 멈춤                         | 공공데이터포털·카카오 일일 한도                             | 다음 날 다시 실행하면 이어서 받습니다                                                                   |
+| 지도 영역은 맞는데 마커가 하나도 없음                 | 조회 영역이 부산 밖이거나 필터가 너무 좁음                  | `bbox` 순서 확인: `최소경도,최소위도,최대경도,최대위도`                                                 |
 
 ---
 
@@ -275,6 +278,15 @@ uv run python -m app.db status           # 스키마 버전, 거래 건수, 마�
 배정 초등학교(`/nearby`의 `schools.assigned_elementary`, `/schools/{id}/zone`)는 한국교육시설안전원 학구도 파일로 채웁니다. API가 아니라 내려받은 파일이고, 원천은 3월·9월쯤 갱신됩니다. 갱신되면 같은 절차로 다시 넣습니다(통째로 갈아 끼움).
 
 1. 학구도 "초등학교통학구역"(SHP)과 "학교학구도연계정보"(CSV)를 받아 저장소 루트에 둡니다. 크기가 커서 git에는 올리지 않습니다(`data/`는 `.gitignore`).
+   - [학구도안내서비스 공공데이터 목록](https://schoolzone.emac.kr/publicData/publicDataList.do)의 "초등학교 통학구역 및 공동통학구역(YYYY.MM.DD.)"과 "학교-학구도 연계정보(YYYY.MM.DD.)" 글에 붙은 **파일다운로드**가 그 파일입니다. 내려받으면 zip이고, 글 제목이나 파일 이름에 SHP라는 말은 없습니다(풀면 .shp 등이 나옵니다).
+   - 저장소 루트에서 바로 받을 수도 있습니다(2026.09.20 기준판 주소. 새 판이 나오면 목록에서 "파일다운로드" 링크의 `nttId`·`atchFileId`가 바뀝니다).
+     ```bash
+     mkdir -p data/schoolzone/zones data/schoolzone/links && cd data/schoolzone
+     curl -fL -o zones.zip "https://schoolzone.emac.kr/publicData/publicDataFileDownload.do?nttId=2966&atchFileId=FILE_000000100002996&fileSn=0"
+     curl -fL -o links.zip "https://schoolzone.emac.kr/publicData/publicDataFileDownload.do?nttId=2961&atchFileId=FILE_000000100002991&fileSn=0"
+     unzip -o -j zones.zip -d zones && unzip -o -j links.zip -d links && ls zones links && cd ../..
+     ```
+   - 이렇게 놓이면 됩니다. 파일 이름은 상관없고(한글이 깨져도 됨), `zones/`의 `*.shp` 한 벌과 `links/`의 `*.csv`를 찾습니다.
    ```
    data/schoolzone/zones/초등학교통학구역.shp (.shx·.dbf·.prj·.cpg)
    data/schoolzone/links/한국교육시설안전원_학교학구도연계정보_YYYYMMDD.csv
@@ -288,7 +300,7 @@ uv run python -m app.db status           # 스키마 버전, 거래 건수, 마�
    ```
    기본 위치에 파일이 없으면 안내만 하고 넘어갑니다. 위치를 `--dir`나 `PUGURIN_SCHOOL_ZONE_DIR`로 정했는데 없으면 실패합니다.
 
-**운영 서버:** 파일을 서버의 저장소 루트 `data/schoolzone`에 올리고(예: `scp -r data/schoolzone 서버:~/Pugurin-backend/data/`), worker 이미지로 한 번 돌립니다. 이미지 안에는 파일이 없으니 읽기 전용으로 마운트합니다.
+**운영 서버:** 서버의 저장소 루트에서 1번의 `curl` 명령으로 바로 받거나(가장 간단), 다른 컴퓨터에서 받은 파일을 올리고(예: `scp -r data/schoolzone 서버:~/Pugurin-backend/data/`), worker 이미지로 한 번 돌립니다. 이미지 안에는 파일이 없으니 읽기 전용으로 마운트합니다.
 
 ```bash
 docker compose -f compose.yaml -f compose.prod.yaml run --rm \

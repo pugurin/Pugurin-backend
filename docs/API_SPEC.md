@@ -1061,22 +1061,65 @@
 
 ---
 
-## 10. 관심 단지·지역·매물 찜 (Interests) [2차]
+## 10. 관심 단지·경매 물건·지역·매물 찜 (Interests)
+
+**관심 단지·관심 경매 물건은 지금 쓸 수 있다.** 로그인(2차)이 없어서 앱 설치 단위(`X-Device-Id`)로 저장한다. 앱을 지우면 목록도 사라진다. 로그인이 생기면 기기 목록을 계정으로 옮긴다. 관심 지역·매물 찜은 2차·3차.
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| PUT | `/interests/complexes/{complex_id}` | 필요 | 관심 단지 등록 (멱등) |
-| DELETE | `/interests/complexes/{complex_id}` | 필요 | 해제 |
-| GET | `/interests/complexes` | 필요 | 목록 (단지별 최신 거래 포함) |
-| PUT | `/interests/regions/{region_code}` | 필요 | 관심 법정동 등록 (멱등, 최대 10개) |
-| DELETE | `/interests/regions/{region_code}` | 필요 | 해제 |
-| GET | `/interests/regions` | 필요 | 목록 |
-| PUT | `/interests/listings/{listing_id}` | 필요 | 매물 찜 |
-| DELETE | `/interests/listings/{listing_id}` | 필요 | 찜 해제 |
-| GET | `/interests/listings` | 필요 | 찜 목록 |
+| GET | `/interests` | X-Device-Id | 내 관심 id 목록 (별 표시용, 최근 등록 순) |
+| PUT | `/interests/complexes/{complex_id}` | X-Device-Id | 관심 단지 등록 (멱등) |
+| DELETE | `/interests/complexes/{complex_id}` | X-Device-Id | 해제 (멱등, `204`) |
+| GET | `/interests/complexes` | X-Device-Id | 목록 (단지별 최신 매매 포함) |
+| PUT | `/interests/auctions/{auction_id}` | X-Device-Id | 관심 경매·공매 물건 등록 (멱등) |
+| DELETE | `/interests/auctions/{auction_id}` | X-Device-Id | 해제 (멱등, `204`) |
+| GET | `/interests/auctions` | X-Device-Id | 목록 (끝난 물건 포함) |
+| PUT | `/interests/regions/{region_code}` | 필요 | 관심 법정동 등록 (멱등, 최대 10개) [2차] |
+| DELETE | `/interests/regions/{region_code}` | 필요 | 해제 [2차] |
+| GET | `/interests/regions` | 필요 | 목록 [2차] |
+| PUT | `/interests/listings/{listing_id}` | 필요 | 매물 찜 [3차] |
+| DELETE | `/interests/listings/{listing_id}` | 필요 | 찜 해제 [3차] |
+| GET | `/interests/listings` | 필요 | 찜 목록 [3차] |
 
-- 등록은 `PUT`으로 멱등 처리 (중복 요청해도 결과 동일)
+- 등록은 `PUT`으로 멱등 처리. 다시 넣어도 처음 등록 시각이 그대로 온다.
+- 종류별 기기당 **최대 200개**. 넘으면 `409 CONFLICT`. 이미 있는 대상을 다시 넣는 건 한도와 상관없이 `200`.
+- 없는 단지·물건은 `404`. 서버에 DB가 없으면 `503 DATA_NOT_READY`.
+- 응답은 기기마다 달라서 `Cache-Control: private, no-cache`로 내린다(ETag 재검증은 된다).
 - 최근 본 매물·단지는 **앱 로컬 저장** (서버 API 없음)
+
+**`PUT /interests/complexes/{complex_id}` · `PUT /interests/auctions/{auction_id}` 응답**
+```json
+{ "data": { "target_id": "6f1d2a8e-...", "added_at": "2026-11-16T14:02:11+09:00" } }
+```
+
+**`GET /interests` 응답**
+```json
+{ "data": { "complexes": ["6f1d2a8e-..."], "auctions": ["CA-41-2025-1001-1"] } }
+```
+
+**`GET /interests/complexes` 응답**
+```json
+{
+  "data": [
+    {
+      "complex": { "...": "GET /complexes/{id}의 data와 같음" },
+      "latest_sale": { "...": "TransactionOut, 해제 제외 가장 최근 매매. 없으면 null" },
+      "added_at": "2026-11-16T14:02:11+09:00"
+    }
+  ],
+  "meta": { "total": 1, "max_items": 200 }
+}
+```
+- 실거래 데이터에서 사라진 단지는 목록에서 빠진다.
+
+**`GET /interests/auctions` 응답**
+```json
+{
+  "data": [ { "auction": { "...": "GET /auctions 목록 항목과 같음" }, "added_at": "..." } ],
+  "meta": { "total": 1, "max_items": 200, "source_attribution": "대법원 법원경매정보", "source_url": "https://www.courtauction.go.kr/" }
+}
+```
+- 매각·취하로 끝난 물건도 `auction.is_closed = true`로 남는다. 원천에서 지워진 물건만 빠진다.
 
 ---
 

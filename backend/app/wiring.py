@@ -24,6 +24,7 @@ from app.repositories.ports import (
 )
 from app.repositories.postgres.auctions import PostgresAuctionRepository
 from app.repositories.postgres.facilities import PostgresFacilityRepository
+from app.repositories.postgres.interests import PostgresInterestRepository
 from app.repositories.postgres.market import PostgresMarketRepository
 from app.repositories.postgres.redevelopments import PostgresRedevelopmentRepository
 from app.services.analysis_service import AnalysisService
@@ -31,6 +32,7 @@ from app.services.auction_service import AuctionService
 from app.services.complex_service import ComplexService
 from app.services.facility_service import FacilityService
 from app.services.glossary_service import GlossaryService
+from app.services.interest_service import InterestService
 from app.services.map_service import MapService
 from app.services.parcel_service import ParcelService
 from app.services.readiness_service import ReadinessService
@@ -58,6 +60,7 @@ class Container:
     auction_service: AuctionService
     facility_service: FacilityService
     redevelopment_service: RedevelopmentService
+    interest_service: InterestService
     address_search: AddressSearch | None = None
     db_engine: AsyncEngine | None = None
     redis: Redis | None = None
@@ -128,10 +131,13 @@ def build_container(
         address_search = KakaoGeocoder(settings.kakao_rest_key)
     redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
     parcel_service = ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock)
+    auction_repo = PostgresAuctionRepository(db_engine) if db_engine else None
+    complex_service = ComplexService(market_repo)
+    auction_service = AuctionService(auction_repo, clock)
     return Container(
         settings=settings,
         map_service=MapService(market_repo, settings),
-        complex_service=ComplexService(market_repo),
+        complex_service=complex_service,
         parcel_service=parcel_service,
         glossary_service=GlossaryService(glossary_repo),
         search_service=SearchService(market_repo, address_search),
@@ -140,9 +146,18 @@ def build_container(
         analysis_service=AnalysisService(market_repo, parcel_service),
         readiness_service=ReadinessService(db_engine, redis, market_repo),
         # 경매·공매는 DB에만 있다(파일 캐시 모드에서는 503 DATA_NOT_READY)
-        auction_service=AuctionService(PostgresAuctionRepository(db_engine) if db_engine else None, clock),
+        auction_service=auction_service,
         facility_service=FacilityService(PostgresFacilityRepository(db_engine) if db_engine else None, clock),
         redevelopment_service=RedevelopmentService(PostgresRedevelopmentRepository(db_engine) if db_engine else None),
+        # 관심 목록은 로그인 전이라 앱 설치(X-Device-Id) 단위로 DB에 둔다
+        interest_service=InterestService(
+            PostgresInterestRepository(db_engine) if db_engine else None,
+            market_repo,
+            complex_service,
+            auction_service,
+            auction_repo,
+            clock,
+        ),  # fmt: skip
         address_search=address_search,
         db_engine=db_engine,
         redis=redis,

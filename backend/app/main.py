@@ -21,6 +21,7 @@ from app.routers import (
     facilities,
     glossary,
     health,
+    interests,
     internal,
     map,
     parcels,
@@ -102,6 +103,7 @@ def create_app(
         auctions,
         facilities,
         redevelopments,
+        interests,
     ):
         public.include_router(module.router)
     app.include_router(public)

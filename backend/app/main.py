@@ -1,22 +1,27 @@
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
 
+from app.adapters.oauth import OAuthProvider
 from app.core.config import Settings
 from app.core.dates import Clock, kst_now
 from app.core.errors import install_error_handlers
 from app.core.http_cache import NO_CACHE_PATHS, ConditionalGetMiddleware
 from app.core.rate_limit import MemoryRateLimiter, RateLimiter, RateLimitMiddleware
 from app.repositories.ports import (
+    AccountRepository,
     AddressSearch,
     GlossaryRepository,
     MarketRepository,
     ParcelSource,
     ZoningRuleRepository,
 )
+from app.repositories.types import SocialProvider
 from app.routers import (
     analysis,
     auctions,
+    auth,
     complexes,
     facilities,
     glossary,
@@ -29,6 +34,7 @@ from app.routers import (
     search,
     stats,
     transactions,
+    users,
 )
 from app.routers.deps import require_device_id
 from app.wiring import build_container
@@ -52,10 +58,20 @@ def create_app(
     zoning_rules: ZoningRuleRepository | None = None,
     address_search: AddressSearch | None = None,
     rate_limiter: RateLimiter | None = None,
+    account_repo: AccountRepository | None = None,
+    oauth_providers: Mapping[SocialProvider, OAuthProvider] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     container = build_container(
-        settings, clock or kst_now, market_repo, glossary_repo, parcel_source, zoning_rules, address_search
+        settings,
+        clock or kst_now,
+        market_repo,
+        glossary_repo,
+        parcel_source,
+        zoning_rules,
+        address_search,
+        account_repo,
+        oauth_providers,
     )
 
     @asynccontextmanager
@@ -104,6 +120,8 @@ def create_app(
         facilities,
         redevelopments,
         interests,
+        auth,
+        users,
     ):
         public.include_router(module.router)
     app.include_router(public)

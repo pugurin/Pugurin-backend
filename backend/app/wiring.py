@@ -1,11 +1,14 @@
 import logging
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.adapters.kakao import KakaoGeocoder
+from app.adapters.oauth import GoogleOAuth, KakaoOAuth, NaverOAuth, OAuthProvider
 from app.adapters.unconfigured import UnconfiguredParcelSource
+from app.auth.tokens import MIN_SECRET_BYTES, JwtSigner
 from app.core.config import Settings
 from app.core.dates import Clock, latest_etl_time
 from app.db.engine import make_engine
@@ -16,19 +19,23 @@ from app.repositories.memory.glossary import InMemoryGlossaryRepository
 from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.memory.zoning import NoZoningRules
 from app.repositories.ports import (
+    AccountRepository,
     AddressSearch,
     GlossaryRepository,
     MarketRepository,
     ParcelSource,
     ZoningRuleRepository,
 )
+from app.repositories.postgres.accounts import PostgresAccountRepository
 from app.repositories.postgres.auctions import PostgresAuctionRepository
 from app.repositories.postgres.facilities import PostgresFacilityRepository
 from app.repositories.postgres.interests import PostgresInterestRepository
 from app.repositories.postgres.market import PostgresMarketRepository
 from app.repositories.postgres.redevelopments import PostgresRedevelopmentRepository
+from app.repositories.types import SocialProvider
 from app.services.analysis_service import AnalysisService
 from app.services.auction_service import AuctionService
+from app.services.auth_service import AuthService
 from app.services.complex_service import ComplexService
 from app.services.facility_service import FacilityService
 from app.services.glossary_service import GlossaryService
@@ -61,6 +68,8 @@ class Container:
     facility_service: FacilityService
     redevelopment_service: RedevelopmentService
     interest_service: InterestService
+    auth_service: AuthService
+    oauth_providers: Mapping[SocialProvider, OAuthProvider] = field(default_factory=dict)
     address_search: AddressSearch | None = None
     db_engine: AsyncEngine | None = None
     redis: Redis | None = None
@@ -85,6 +94,8 @@ class Container:
         close = getattr(self.address_search, "aclose", None)
         if close is not None:
             await close()
+        for provider in self.oauth_providers.values():
+            await provider.aclose()
         if self.db_engine is not None:
             await self.db_engine.dispose()
         if self.redis is not None:
@@ -109,6 +120,26 @@ def _real_market(settings: Settings, db_engine: AsyncEngine | None, as_of) -> Ma
     return InMemoryMarketRepository(as_of, MarketDataset((), ()), {})
 
 
+def _oauth_providers(settings: Settings) -> dict[SocialProvider, OAuthProvider]:
+    """키가 있는 제공자만 켠다. 없는 제공자로 로그인하면 503(가짜로 통과시키지 않는다)."""
+    providers: dict[SocialProvider, OAuthProvider] = {}
+    if settings.kakao_rest_key:
+        providers[SocialProvider.kakao] = KakaoOAuth(settings.kakao_rest_key, settings.kakao_client_secret)
+    if settings.naver_client_id and settings.naver_client_secret:
+        providers[SocialProvider.naver] = NaverOAuth(settings.naver_client_id, settings.naver_client_secret)
+    if settings.google_client_id:
+        providers[SocialProvider.google] = GoogleOAuth(settings.google_client_id, settings.google_client_secret)
+    return providers
+
+
+def _jwt_signer(settings: Settings) -> JwtSigner | None:
+    if len(settings.jwt_secret.encode()) >= MIN_SECRET_BYTES:
+        return JwtSigner(settings.jwt_secret)
+    if settings.jwt_secret:
+        logger.warning("PUGURIN_JWT_SECRET이 %d바이트보다 짧아 로그인을 끕니다", MIN_SECRET_BYTES)
+    return None
+
+
 def build_container(
     settings: Settings,
     clock: Clock,
@@ -117,6 +148,8 @@ def build_container(
     parcel_source: ParcelSource | None = None,
     zoning_rules: ZoningRuleRepository | None = None,
     address_search: AddressSearch | None = None,
+    account_repo: AccountRepository | None = None,
+    oauth_providers: Mapping[SocialProvider, OAuthProvider] | None = None,
 ) -> Container:
     as_of = latest_etl_time(clock())
     db_engine = make_engine(settings.database_url) if settings.database_url else None
@@ -130,6 +163,12 @@ def build_container(
     if address_search is None and settings.kakao_rest_key:
         address_search = KakaoGeocoder(settings.kakao_rest_key)
     redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
+    # 계정은 DB에만 둔다. DB가 없으면 인증 API가 503
+    if account_repo is None and db_engine is not None:
+        account_repo = PostgresAccountRepository(db_engine)
+    if oauth_providers is None:
+        oauth_providers = _oauth_providers(settings)
+    auth_service = AuthService(account_repo, oauth_providers, _jwt_signer(settings), settings.auth_redirect_uris, clock)
     parcel_service = ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock)
     auction_repo = PostgresAuctionRepository(db_engine) if db_engine else None
     complex_service = ComplexService(market_repo)
@@ -158,6 +197,8 @@ def build_container(
             auction_repo,
             clock,
         ),  # fmt: skip
+        auth_service=auth_service,
+        oauth_providers=oauth_providers,
         address_search=address_search,
         db_engine=db_engine,
         redis=redis,

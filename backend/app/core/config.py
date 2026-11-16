@@ -1,7 +1,8 @@
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -59,6 +60,23 @@ class Settings(BaseSettings):
     # 학구도(초등학교 통학구역) 파일을 내려받아 둔 곳(`zones/*.shp`, `links/*.csv`). git에 올리지 않는다.
     # 비우면 작업 폴더와 상관없이 backend/data/schoolzone(Docker 마운트) → 저장소 루트 data/schoolzone 순서로 찾는다
     school_zone_dir: Path | None = None
+
+    # 로그인(docs/AUTH.md). 키는 사용자가 .env에 직접 넣는다. 제공자 키가 없으면 그 제공자는 503
+    jwt_secret: str = ""  # access token 서명 키(HS256). 32바이트 이상이 아니면 인증 API 전체가 503
+    kakao_client_secret: str = ""  # 카카오 로그인 client_id는 kakao_rest_key. 시크릿은 콘솔에서 켰을 때만
+    naver_client_id: str = ""
+    naver_client_secret: str = ""
+    google_client_id: str = ""  # 웹 클라이언트 ID. 앱 ID 토큰의 aud도 이 값이어야 한다
+    google_client_secret: str = ""  # 웹 인가 코드 교환에만 쓴다
+    # 웹 로그인 redirect_uri 허용 목록(쉼표 구분, 정확히 같아야 한다)
+    auth_redirect_uris: Annotated[list[str], NoDecode] = []
+
+    @field_validator("auth_redirect_uris", mode="before")
+    @classmethod
+    def _comma_list(cls, value):
+        if isinstance(value, str):
+            return [v.strip() for v in value.split(",") if v.strip()]
+        return value
 
     # 실데이터 위치: PUGURIN_DATABASE_URL이 있으면 DB, 없으면 data_dir(.cache).
     # 둘 다 없으면 가짜로 채우지 않고 "데이터 없음"으로 응답한다

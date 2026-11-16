@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
@@ -7,10 +8,15 @@ from typing import Protocol
 import httpx
 
 from app.adapters.molit.types import QuotaExceeded, SourceAuthError
+from app.core.text import normalize
 from app.repositories.ports import SourceUnavailable
-from app.repositories.types import AddressHit
+from app.repositories.types import AddressHit, StationHit
 
 logger = logging.getLogger(__name__)
+
+SUBWAY_CATEGORY = "SW8"  # 카카오 장소 분류: 지하철역
+BUSAN_RECT = "128.75,34.85,129.35,35.4"  # 부산 범위(경도,위도,경도,위도). 설정의 busan_bbox와 같다
+STATION_CACHE_SIZE = 1000  # 역 이름은 거의 안 바뀌어 검색어별 결과를 메모리에 둔다
 
 
 @dataclass(frozen=True)
@@ -70,6 +76,8 @@ class KakaoGeocoder:
         self._key = rest_key
         self._http = http or httpx.AsyncClient(timeout=15)
         self._url = f"{base_url.rstrip('/')}/v2/local/search/address.json"
+        self._keyword_url = f"{base_url.rstrip('/')}/v2/local/search/keyword.json"
+        self._stations: OrderedDict[str, list[StationHit]] = OrderedDict()
         self._retries = retries
         self._backoff = backoff_seconds
         self._sleep = sleep
@@ -108,14 +116,27 @@ class KakaoGeocoder:
                 break
         return hits
 
+    async def search_stations(self, query: str, limit: int) -> list[StationHit]:
+        """부산 안의 지하철역을 이름으로 찾는다(카카오 키워드 검색, 지하철역 분류만). 검색어별로 기억해 둔다."""
+        key = normalize(query)
+        if key not in self._stations:
+            params = {"query": query.strip(), "category_group_code": SUBWAY_CATEGORY, "rect": BUSAN_RECT, "size": 15}
+            documents = await self._get(self._keyword_url, params)
+            self._stations[key] = [h for h in map(_station, documents) if h]
+            if len(self._stations) > STATION_CACHE_SIZE:
+                self._stations.popitem(last=False)
+        self._stations.move_to_end(key)
+        return self._stations[key][:limit]
+
     async def _search(self, query: str) -> list[dict]:
+        return await self._get(self._url, {"query": query})
+
+    async def _get(self, url: str, params: dict) -> list[dict]:
         last: Exception | None = None
         for attempt in range(self._retries + 1):
             self.calls_made += 1
             try:
-                response = await self._http.get(
-                    self._url, params={"query": query}, headers={"Authorization": f"KakaoAK {self._key}"}
-                )
+                response = await self._http.get(url, params=params, headers={"Authorization": f"KakaoAK {self._key}"})
             except httpx.TransportError as e:
                 last = e
             else:
@@ -136,3 +157,18 @@ class KakaoGeocoder:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+
+def _station(doc: dict) -> StationHit | None:
+    """카카오 장소 한 건 → 역. 부산 밖(사각 범위에 걸친 김해·양산 등)이나 좌표가 없으면 버린다."""
+    address = doc.get("road_address_name") or doc.get("address_name") or ""
+    if doc.get("category_group_code") != SUBWAY_CATEGORY or not (doc.get("address_name") or "").startswith("부산"):
+        return None
+    try:
+        lng, lat = float(doc["x"]), float(doc["y"])
+    except (KeyError, ValueError):
+        return None
+    # 분류 예: "교통,수송 > 지하철,전철 > 부산도시철도 1호선". 노선 단계가 없으면 비운다
+    parts = [p.strip() for p in (doc.get("category_name") or "").split(">")]
+    line = parts[2] if len(parts) > 2 and parts[2] else None
+    return StationHit(str(doc.get("id", "")), doc.get("place_name", ""), line, address, lat, lng)

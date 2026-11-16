@@ -219,3 +219,41 @@ def test_academy_fields_map_to_categories(value, expected):
     from app.repositories.postgres.facilities import academy_category
 
     assert academy_category(value) == expected
+
+
+# ── 학교 이름 검색(통합 검색이 쓴다) ─────────────────────────
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("q", "names"),
+    [
+        ("가상10", ["가상10초등학교"]),
+        ("가상 중학", ["가상중학교"]),  # 띄어 써도 찾는다
+        ("가상초등", []),  # 이름이 맞아도 개교 전 학교는 뺀다
+    ],
+)
+async def test_schools_are_searched_by_name(facility_api_db, q, names):
+    from app.repositories.postgres.facilities import PostgresFacilityRepository
+
+    engine = make_engine(facility_api_db)
+    try:
+        found = await PostgresFacilityRepository(engine).search_schools(q, 10, today=FIXED_NOW.date())
+    finally:
+        await engine.dispose()
+    assert [s.name for s in found] == names
+
+
+@pytest.mark.anyio
+async def test_school_search_puts_exact_and_prefix_matches_first_and_respects_the_limit(facility_api_db):
+    from app.repositories.postgres.facilities import PostgresFacilityRepository
+
+    engine = make_engine(facility_api_db)
+    try:
+        repo = PostgresFacilityRepository(engine)
+        found = await repo.search_schools("가상", 3, today=FIXED_NOW.date())
+        exact = await repo.search_schools("가상중학교", 10, today=FIXED_NOW.date())
+    finally:
+        await engine.dispose()
+    assert len(found) == 3 and all(s.name.startswith("가상") for s in found)
+    assert [s.name for s in exact] == ["가상중학교"]

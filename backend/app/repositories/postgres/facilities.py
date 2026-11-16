@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.geo import BBox
+from app.core.text import normalize
 from app.repositories.types import (
     SHARED_ZONE,
     ZONE,
@@ -242,6 +243,23 @@ class PostgresFacilityRepository:
             rows = await conn.execute(
                 text(f"SELECT {_SCHOOL_COLS} FROM schools WHERE {_SCHOOL_OPEN} AND {where} ORDER BY id LIMIT :limit"),
                 {**params, "today": today, "limit": limit},
+            )
+            return [_school(r) for r in rows.mappings()]
+
+    async def search_schools(self, query: str, limit: int, *, today: date) -> list[School]:
+        """이름(공백 무시)으로 학교를 찾는다. 정확 일치 → 접두 일치 → 포함 순, 같으면 이름순."""
+        key = normalize(query)
+        if not key:
+            return []
+        name = "replace(name, ' ', '')"
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(
+                text(
+                    f"SELECT {_SCHOOL_COLS} FROM schools WHERE {_SCHOOL_OPEN} "
+                    f"AND strpos({name}, :key) > 0 "
+                    f"ORDER BY ({name} = :key) DESC, starts_with({name}, :key) DESC, name, id LIMIT :limit"
+                ),
+                {"key": key, "today": today, "limit": limit},
             )
             return [_school(r) for r in rows.mappings()]
 

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -20,8 +20,10 @@ from app.repositories.types import (
     RegionRef,
     RegionSearchHit,
     RotateOutcome,
+    School,
     SignupClaim,
     SocialProvider,
+    StationHit,
     StatsResult,
     Transaction,
     TransactionFilter,
@@ -108,6 +110,18 @@ class MarketRepository(Protocol):
 class AddressSearch(Protocol):
     async def search_addresses(self, query: str, limit: int) -> list[AddressHit]:
         """주소(지번·도로명) 검색. 부산 밖 결과는 제외한다. 장애 시 SourceUnavailable."""
+        ...
+
+
+class StationSearch(Protocol):
+    async def search_stations(self, query: str, limit: int) -> list[StationHit]:
+        """이름으로 부산 지하철역을 찾는다. 원천이 안 되면 SourceUnavailable."""
+        ...
+
+
+class SchoolSearch(Protocol):
+    async def search_schools(self, query: str, limit: int, *, today: date) -> list[School]:
+        """이름으로 운영 중이고 위치가 있는 학교를 찾는다. 정확·접두 일치가 먼저."""
         ...
 
 

@@ -266,6 +266,18 @@ class AddressHit:
 
 
 @dataclass(frozen=True)
+class StationHit:
+    """지하철역 검색 결과(카카오 장소 검색). 노선마다 따로 온다(예: 서면역 1호선, 서면역 2호선)."""
+
+    station_id: str  # 카카오 장소 ID
+    name: str  # 예: "서면역 1호선"
+    line: str | None  # 예: "부산도시철도 1호선"
+    address: str
+    lat: float
+    lng: float
+
+
+@dataclass(frozen=True)
 class ComplexSearchHit:
     complex: Complex
     score: int

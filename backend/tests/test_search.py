@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app.adapters.kakao import KakaoGeocoder
 from app.adapters.molit.types import QuotaExceeded
 from app.repositories.ports import SourceUnavailable
-from app.repositories.types import AddressHit
+from app.repositories.types import AddressHit, School, SchoolLevel, StationHit
 from tests.conftest import API, BUSAN, FIXED_NOW
 from tests.fakes.app import create_app, sample_repo
 
@@ -39,8 +39,44 @@ class FakeAddressSearch:
         return self.hits[:limit]
 
 
-def app_with(address_search):
-    return TestClient(create_app(clock=lambda: FIXED_NOW, address_search=address_search), headers=HEADERS)
+def app_with(address_search=None, **kwargs):
+    return TestClient(create_app(clock=lambda: FIXED_NOW, address_search=address_search, **kwargs), headers=HEADERS)
+
+
+def station(name="서면역 1호선", line="부산도시철도 1호선", n=1):
+    return StationHit(f"st{n}", name, line, "부산 부산진구 중앙대로 지하 730", 35.1578, 129.0592)
+
+
+class FakeStationSearch:
+    def __init__(self, hits=None, error: Exception | None = None):
+        self.hits = hits if hits is not None else [station()]
+        self.error = error
+        self.calls: list[tuple[str, int]] = []
+
+    async def search_stations(self, query, limit):
+        self.calls.append((query, limit))
+        if self.error:
+            raise self.error
+        return self.hits[:limit]
+
+
+def school_of(name, n=1, lat=35.163, lng=129.163):
+    return School(
+        id=f"72400{n:02d}", name=name, kind="초등학교", level=SchoolLevel.elementary, foundation="공립",
+        coed="남여공학", address="부산광역시 해운대구 가상로 1", lat=lat, lng=lng, tel=None, homepage=None,
+        opened_on=None,
+    )  # fmt: skip
+
+
+class FakeSchoolSearch:
+    def __init__(self, schools=None, error: Exception | None = None):
+        self.schools = schools if schools is not None else [school_of("해운대초등학교")]
+        self.error = error
+
+    async def search_schools(self, query, limit, *, today):
+        if self.error:
+            raise self.error
+        return self.schools[:limit]
 
 
 def test_dong_name_finds_the_region_first(client):
@@ -208,6 +244,123 @@ def test_limit_applies_to_the_merged_list():
         assert len(data(c, "우동 1", limit=2)) == 2
 
 
+# ---------- 동네 우선 ----------
+
+
+@pytest.mark.parametrize("q", ["동래", "해운대", "우동", "명지"])
+def test_regions_always_come_first(q):
+    # 이름이 똑같은 단지가 있어도 동네(구·동)가 맨 위에 온다
+    fake = FakeStationSearch([station(f"{q}역 1호선")])
+    with app_with(station_search=fake, school_search=FakeSchoolSearch([school_of(f"{q}초등학교")])) as c:
+        results = data(c, q, limit=30)
+    kinds = [r["type"] for r in results]
+    assert kinds[0] == "region"
+    assert kinds == sorted(kinds, key=lambda k: k != "region")
+
+
+@pytest.mark.anyio
+async def test_a_region_with_a_lower_score_still_beats_an_exact_complex():
+    from app.services.search_service import SearchService
+
+    repo = sample_repo(FIXED_NOW)
+    exact = next(iter(await repo.search_complexes("해운대아이파크", 1))).complex
+
+    class Repo:
+        async def search_regions(self, q, limit):
+            return [h for h in await repo.search_regions("해운대", limit) if h.level == "sigungu"]
+
+        async def search_complexes(self, q, limit):
+            from app.repositories.types import ComplexSearchHit
+
+            return [ComplexSearchHit(exact, 100, 999)]
+
+    hits = await SearchService(Repo(), None).search("해운대", 10)
+    assert hits[0].score < 100 and hits[0].level == "sigungu"
+
+
+# ---------- 지하철역 ----------
+
+
+def test_stations_are_found_and_shaped():
+    fake = FakeStationSearch()
+    with app_with(station_search=fake) as c:
+        results = data(c, "서면")
+    assert fake.calls == [("서면", 10)]
+    hit = next(r for r in results if r["type"] == "station")
+    assert hit == {
+        "type": "station",
+        "station_id": "st1",
+        "name": "서면역 1호선",
+        "line": "부산도시철도 1호선",
+        "address": "부산 부산진구 중앙대로 지하 730",
+        "lat": 35.1578,
+        "lng": 129.0592,
+    }
+
+
+def test_a_station_beats_complexes_with_the_same_match():
+    # "해운대" + "역"은 역 이름과 같아 정확 일치(100), 단지 "해운대…"는 접두 일치(80)
+    with app_with(station_search=FakeStationSearch([station("해운대역 2호선")])) as c:
+        kinds = [r["type"] for r in data(c, "해운대", limit=30) if r["type"] != "region"]
+    assert kinds[0] == "station"
+
+
+def test_station_name_with_or_without_the_station_suffix_is_an_exact_match():
+    from app.services.search_service import station_score
+
+    assert station_score("서면", "서면역 1호선") == 100
+    assert station_score("서면역", "서면역 2호선") == 100
+    assert station_score("서", "서면역 1호선") == 80
+    assert station_score("면역", "서면역 1호선") == 60
+    assert station_score("해운대구", "해운대역 2호선") == 0
+
+
+def test_stations_that_do_not_match_are_dropped():
+    with app_with(station_search=FakeStationSearch([station("부산역 1호선")])) as c:
+        assert not any(r["type"] == "station" for r in data(c, "서면"))
+
+
+@pytest.mark.parametrize("error", [QuotaExceeded("한도"), SourceUnavailable("장애")])
+def test_station_failures_do_not_break_the_search(error):
+    with app_with(station_search=FakeStationSearch(error=error)) as c:
+        results = data(c, "우동")
+    assert results and not any(r["type"] == "station" for r in results)
+
+
+# ---------- 학교 ----------
+
+
+def test_schools_are_found_and_carry_the_school():
+    with app_with(school_search=FakeSchoolSearch()) as c:
+        results = data(c, "해운대초")
+    hit = next(r for r in results if r["type"] == "school")
+    assert set(hit) == {"type", "name", "address", "lat", "lng", "school"}
+    assert hit["name"] == "해운대초등학교" and hit["school"]["id"] == "7240001"
+    assert hit["school"]["level"] == "elementary" and (hit["lat"], hit["lng"]) == (35.163, 129.163)
+
+
+def test_schools_without_a_location_are_left_out():
+    schools = [school_of("해운대초등학교", lat=None, lng=None)]
+    with app_with(school_search=FakeSchoolSearch(schools)) as c:
+        assert not any(r["type"] == "school" for r in data(c, "해운대초"))
+
+
+def test_school_failures_do_not_break_the_search():
+    with app_with(school_search=FakeSchoolSearch(error=SourceUnavailable("DB"))) as c:
+        assert data(c, "우동")[0]["type"] == "region"
+
+
+def test_types_are_ordered_station_school_complex_on_equal_scores():
+    # 모두 접두 일치(80)일 때: 동네 → 역 → 학교 → 단지
+    with app_with(
+        station_search=FakeStationSearch([station("해운대역 2호선")]),
+        school_search=FakeSchoolSearch([school_of("해운대초등학교")]),
+    ) as c:
+        kinds = [r["type"] for r in data(c, "해운대", limit=30)]
+    first = {k: kinds.index(k) for k in ("region", "station", "school", "complex")}
+    assert first["region"] < first["station"] < first["school"] < first["complex"]
+
+
 # ---------- 카카오 어댑터 ----------
 
 
@@ -262,6 +415,47 @@ async def test_kakao_search_does_not_double_the_city_prefix_and_respects_the_lim
     geocoder, seen = kakao(lambda _: httpx.Response(200, json={"documents": documents}))
     assert len(await geocoder.search_addresses("부산 해운대구 우동 1", 2)) == 2
     assert seen[0].url.params["query"] == "부산 해운대구 우동 1"
+
+
+def place(name, category="교통,수송 > 지하철,전철 > 부산도시철도 1호선", address="부산 부산진구 부전동 573-1", n=1):
+    return {
+        "id": f"{n}",
+        "place_name": name,
+        "category_name": category,
+        "category_group_code": "SW8",
+        "address_name": address,
+        "road_address_name": address.replace("부전동 573-1", "중앙대로 지하 730"),
+        "x": "129.0592",
+        "y": "35.1578",
+    }
+
+
+@pytest.mark.anyio
+async def test_kakao_station_search_uses_the_subway_category_inside_busan():
+    places = [
+        place("서면역 1호선"),
+        place("서면역 2호선", category="교통,수송 > 지하철,전철 > 부산도시철도 2호선", n=2),
+        place("서면역 경전철", address="경남 김해시 어딘가 1", n=3),
+    ]
+    geocoder, seen = kakao(lambda _: httpx.Response(200, json={"documents": places}))
+    hits = await geocoder.search_stations("서면", 5)
+    assert [(h.station_id, h.name, h.line) for h in hits] == [
+        ("1", "서면역 1호선", "부산도시철도 1호선"),
+        ("2", "서면역 2호선", "부산도시철도 2호선"),
+    ]
+    assert hits[0].address == "부산 부산진구 중앙대로 지하 730" and (hits[0].lat, hits[0].lng) == (35.1578, 129.0592)
+    params = seen[0].url.params
+    assert seen[0].url.path == "/v2/local/search/keyword.json"
+    assert params["query"] == "서면" and params["category_group_code"] == "SW8"
+    assert params["rect"] == "128.75,34.85,129.35,35.4"
+
+
+@pytest.mark.anyio
+async def test_kakao_station_search_is_cached_per_query():
+    geocoder, seen = kakao(lambda _: httpx.Response(200, json={"documents": [place("서면역 1호선")]}))
+    await geocoder.search_stations("서면", 5)
+    assert len(await geocoder.search_stations(" 서 면 ", 1)) == 1
+    assert len(seen) == 1
 
 
 # ---------- 저장소 ----------

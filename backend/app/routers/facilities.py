@@ -18,6 +18,9 @@ from app.schemas.facility import (
     NearbyResponse,
     SchoolOut,
     SchoolsResponse,
+    SchoolZoneMeta,
+    SchoolZoneOut,
+    SchoolZoneResponse,
 )
 
 router = APIRouter(tags=["facilities"])
@@ -47,7 +50,7 @@ async def get_nearby(
 ) -> NearbyResponse:
     _check_point(lat, lng, container)
     found, as_of = await container.facility_service.nearby(lat, lng)
-    return NearbyResponse(data=NearbyData.from_domain(found), meta=FacilityMeta(data_as_of=as_of))
+    return NearbyResponse(data=NearbyData.from_domain(found), meta=FacilityMeta.for_nearby(found, as_of))
 
 
 @router.get("/complexes/{complex_id}/nearby", response_model=NearbyResponse, summary="단지 주변 학교·병원·학원")
@@ -55,7 +58,7 @@ async def get_complex_nearby(complex_id: UUID, container: ContainerDep) -> Nearb
     await require_market_data(container)
     complex_ = await container.complex_service.get(complex_id)
     found, as_of = await container.facility_service.nearby(complex_.lat, complex_.lng)
-    return NearbyResponse(data=NearbyData.from_domain(found), meta=FacilityMeta(data_as_of=as_of))
+    return NearbyResponse(data=NearbyData.from_domain(found), meta=FacilityMeta.for_nearby(found, as_of))
 
 
 @router.get("/schools", response_model=SchoolsResponse, summary="지도 화면 안의 학교 (최대 500)")
@@ -67,6 +70,16 @@ async def list_schools(
     levels = _parse(level, SchoolLevel, "level")
     found, as_of = await container.facility_service.schools(BBox.parse(bbox), levels)
     return SchoolsResponse(data=[SchoolOut.from_domain(s) for s in found], meta=FacilityMeta(data_as_of=as_of))
+
+
+@router.get(
+    "/schools/{school_id}/zone",
+    response_model=SchoolZoneResponse,
+    summary="초등학교 통학구역 경계 (한국교육시설안전원 학구도)",
+)
+async def get_school_zone(school_id: str, container: ContainerDep) -> SchoolZoneResponse:
+    zone, info = await container.facility_service.school_zone(school_id)
+    return SchoolZoneResponse(data=SchoolZoneOut.from_domain(zone), meta=SchoolZoneMeta.from_domain(info))
 
 
 @router.get("/hospitals", response_model=HospitalsResponse, summary="지도 화면 안의 병원 (의사 많은 순 최대 500)")

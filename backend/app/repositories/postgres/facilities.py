@@ -1,15 +1,29 @@
 """학교·병원·학원 조회. 데이터는 `python -m app.ingestion facilities`(worker가 매일)로 채운 테이블에만 있다.
 
-거리는 직선거리(m)다. 학교는 **배정 학교(학구도)가 아니라 가까운 학교**다.
+거리는 직선거리(m)다. 학교 목록은 **배정 학교(학구도)가 아니라 가까운 학교**다.
+배정 초등학교는 `python -m app.ingestion school-zones`로 실은 학구도(통학구역)에서 따로 찾는다.
 """
 
+import json
 from datetime import date, datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.core.geo import BBox
-from app.repositories.types import Academy, AcademyCategory, Hospital, HospitalTier, Nearby, School, SchoolLevel
+from app.repositories.types import (
+    SHARED_ZONE,
+    ZONE,
+    Academy,
+    AcademyCategory,
+    Hospital,
+    HospitalTier,
+    Nearby,
+    School,
+    SchoolLevel,
+    SchoolZone,
+    SchoolZoneInfo,
+)
 
 _LEVEL_BY_KIND = {
     "초등학교": SchoolLevel.elementary,
@@ -62,6 +76,28 @@ _SCHOOL_COLS = (
 _ACADEMY_COLS = "id, name, kind, field, course, address, ST_Y(location) AS lat, ST_X(location) AS lng, tel"
 _HOSPITAL_COLS = "id, name, class_name, address, ST_Y(location) AS lat, ST_X(location) AS lng, tel, homepage, doctors"
 
+_ZONE_INFO = text("SELECT max(base_date) AS base_date, max(loaded_at) AS loaded_at FROM school_zones")
+# 좌표가 든 통학구역(경계 포함)의 배정 학교 중 가장 가까운 곳. 공동통학구역은 학교가 여럿이다.
+# 학교 좌표가 없어도 구역으로 배정은 정해지므로 location 조건을 두지 않는다(distance_m은 null)
+_ASSIGNED_ELEMENTARY = text(
+    f"""
+    SELECT {_SCHOOL_COLS}, {_DIST} AS distance_m FROM schools
+    WHERE closed_at IS NULL AND (opened_on IS NULL OR opened_on <= :today) AND id IN (
+        SELECT zs.school_id FROM school_zones z JOIN school_zone_schools zs USING (zone_id)
+        WHERE ST_Intersects(z.geom, {_POINT})
+    )
+    ORDER BY distance_m NULLS LAST, id LIMIT 1
+    """
+)
+# 한 학교가 여러 구역에 걸치면 합친다. 하나라도 공동통학구역이면 공동통학구역
+_SCHOOL_ZONE = text(
+    """
+    SELECT ST_AsGeoJSON(ST_Union(z.geom), 6) AS geometry, bool_or(z.kind = :shared) AS shared
+    FROM school_zone_schools zs JOIN school_zones z USING (zone_id)
+    WHERE zs.school_id = :school_id
+    """
+)
+
 _DATA_AS_OF = text(
     """
     SELECT max(finished_at) FROM etl_runs
@@ -77,6 +113,23 @@ class PostgresFacilityRepository:
     async def data_as_of(self) -> datetime | None:
         async with self._engine.connect() as conn:
             return (await conn.execute(_DATA_AS_OF)).scalar()
+
+    async def school_zone_info(self) -> SchoolZoneInfo | None:
+        """학구도를 실었는지. 안 실었으면 None."""
+        async with self._engine.connect() as conn:
+            return await self._zone_info(conn)
+
+    @staticmethod
+    async def _zone_info(conn) -> SchoolZoneInfo | None:
+        row = (await conn.execute(_ZONE_INFO)).mappings().one()
+        return SchoolZoneInfo(row["base_date"], row["loaded_at"]) if row["loaded_at"] else None
+
+    async def school_zone(self, school_id: str) -> SchoolZone | None:
+        async with self._engine.connect() as conn:
+            row = (await conn.execute(_SCHOOL_ZONE, {"school_id": school_id, "shared": SHARED_ZONE})).mappings().one()
+        if row["geometry"] is None:
+            return None
+        return SchoolZone(school_id, SHARED_ZONE if row["shared"] else ZONE, json.loads(row["geometry"]))
 
     async def nearby(
         self,
@@ -158,6 +211,11 @@ class PostgresFacilityRepository:
             academy_counts = {c: 0 for c in AcademyCategory}
             for field, n in academy_rows.all():
                 academy_counts[academy_category(field)] += n
+            zone_info = await self._zone_info(conn)
+            assigned = None
+            if zone_info is not None:
+                found = (await conn.execute(_ASSIGNED_ELEMENTARY, {**point, "today": today})).mappings().first()
+                assigned = _school(found) if found else None
             return Nearby(
                 schools=schools,
                 school_radius_m=school_radius_m,
@@ -167,6 +225,8 @@ class PostgresFacilityRepository:
                 nearest_hospitals=[_hospital(r) for r in nearest.mappings()],
                 academy_radius_m=academy_radius_m,
                 academy_counts=academy_counts,
+                zone_info=zone_info,
+                assigned_elementary=assigned,
             )
 
     async def schools_in(self, bbox: BBox, levels: tuple[SchoolLevel, ...], *, today: date, limit: int) -> list[School]:

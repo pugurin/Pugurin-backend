@@ -1,12 +1,24 @@
 from datetime import datetime
 
 from app.core.dates import Clock
-from app.core.errors import data_not_ready
+from app.core.errors import data_not_ready, not_found
 from app.core.geo import BBox
 from app.repositories.postgres.facilities import PostgresFacilityRepository
-from app.repositories.types import Academy, AcademyCategory, Hospital, HospitalTier, Nearby, School, SchoolLevel
+from app.repositories.types import (
+    Academy,
+    AcademyCategory,
+    Hospital,
+    HospitalTier,
+    Nearby,
+    School,
+    SchoolLevel,
+    SchoolZone,
+    SchoolZoneInfo,
+)
 
 NOT_READY = "학교·병원·학원 데이터가 아직 없어요. 동기화가 끝나면 다시 시도해 주세요"
+ZONE_NOT_READY = "학구도(통학구역) 데이터가 아직 없어요. 적재가 끝나면 다시 시도해 주세요"
+NO_ZONE = "이 학교는 통학구역이 없어요(사립·국립 초등학교나 중·고등학교 등)"
 
 SCHOOL_RADIUS_M = 3000  # 초·중·고 각각 이 안에서 가까운 순
 SCHOOLS_PER_LEVEL = 3
@@ -44,6 +56,18 @@ class FacilityService:
             academy_radius_m=ACADEMY_RADIUS_M,
         )
         return found, as_of
+
+    async def school_zone(self, school_id: str) -> tuple[SchoolZone, SchoolZoneInfo]:
+        """학구도는 따로 싣는다. 안 실었으면 503 DATA_NOT_READY, 통학구역이 없는 학교는 404."""
+        if self._repo is None:
+            raise data_not_ready(ZONE_NOT_READY)
+        info = await self._repo.school_zone_info()
+        if info is None:
+            raise data_not_ready(ZONE_NOT_READY)
+        zone = await self._repo.school_zone(school_id)
+        if zone is None:
+            raise not_found(NO_ZONE)
+        return zone, info
 
     async def schools(self, bbox: BBox, levels: tuple[SchoolLevel, ...]) -> tuple[list[School], datetime]:
         repo, as_of = await self._ready()

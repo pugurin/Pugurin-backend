@@ -90,7 +90,7 @@ wiring.py      의존성 조립(composition root). 실데이터 구현체(DB →
 5. 조회수 등 카운터는 Redis에서 증가시키고 주기적으로 DB에 반영한다(읽기 요청마다 DB 쓰기 금지).
 
 ### 4.5 인증·인가
-설계는 [`../docs/AUTH.md`](../docs/AUTH.md), 저장은 `users`·`user_identities`·`refresh_tokens`·`signup_tokens`(마이그레이션 0011).
+설계는 [`../docs/AUTH.md`](../docs/AUTH.md), 저장은 `users`·`user_identities`·`refresh_tokens`·`signup_tokens`(마이그레이션 0012).
 
 1. 로그인은 **네이버·카카오·구글 소셜 로그인만** 제공한다. 이메일/비밀번호 가입·재설정은 만들지 않는다. 처음 온 사람은 가입 토큰(10분, 1회용)을 받고 `POST /auth/signup`에서 닉네임·필수 동의로 가입을 마친다(두 단계 가입).
 2. **앱 SDK 토큰은 우리 앱에 발급된 것만 받는다**(토큰 대체 공격 방지). 카카오는 토큰 정보 API의 `app_id`(`PUGURIN_KAKAO_APP_ID`), 구글은 ID 토큰 `aud`나 tokeninfo의 `aud`·`azp`(웹 클라이언트 ID + `PUGURIN_GOOGLE_CLIENT_IDS`)로 확인한다. 네이버는 확인할 공식 방법이 없어 **웹 인가 코드만** 받는다(앱 토큰은 400). 웹 인가 코드는 우리 시크릿으로 교환하고 `redirect_uri`는 허용 목록과 정확히 같아야 한다.

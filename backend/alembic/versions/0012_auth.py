@@ -4,14 +4,14 @@
 - 탈퇴하면 소셜 연결 행을 지우고 사용자 행은 익명화한다(같은 소셜 계정으로 다시 가입하면 새 사용자).
 설계: docs/AUTH.md
 
-Revision ID: 0011
-Revises: 0010
+Revision ID: 0012
+Revises: 0011
 """
 
 from alembic import op
 
-revision = "0011"
-down_revision = "0010"
+revision = "0012"
+down_revision = "0011"
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """테스트용 메모리 계정 저장소. test_accounts_repo.py가 실제 PostGIS 저장소와 같은 테스트로 동작을 맞춘다."""
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from app.repositories.postgres.accounts import WITHDRAWN_NICKNAME
@@ -16,6 +16,7 @@ class _Refresh:
     device_id: UUID | None
     expires_at: datetime
     revoked_at: datetime | None = None
+    replaced_by: "_Refresh | None" = None
 
 
 class InMemoryAccountRepository:
@@ -50,9 +51,9 @@ class InMemoryAccountRepository:
         self.users[user_id] = user
         return user
 
-    async def withdraw(self, user_id: UUID, *, now: datetime) -> None:
+    async def withdraw(self, user_id: UUID, *, now: datetime) -> list[tuple[SocialProvider, str]]:
         if await self.get(user_id) is None:
-            return
+            return []
         keys = [k for k, v in self.identities.items() if v == user_id]
         for key in keys:
             del self.identities[key]
@@ -65,7 +66,8 @@ class InMemoryAccountRepository:
             settings={},
         )
         self.deleted[user_id] = now
-        self._revoke_all(user_id, now)
+        self.refresh = [r for r in self.refresh if r.user_id != user_id]
+        return keys
 
     async def save_signup_token(
         self, token_hash: str, claim: SignupClaim, *, expires_at: datetime, now: datetime
@@ -82,17 +84,21 @@ class InMemoryAccountRepository:
     async def add_refresh_token(self, user_id, family_id, token_hash, device_id, *, now, expires_at) -> None:
         self.refresh.append(_Refresh(user_id, family_id, token_hash, device_id, expires_at))
 
-    async def rotate_refresh_token(self, old_hash, new_hash, device_id, *, now, expires_at):
+    async def rotate_refresh_token(self, old_hash, new_hash, device_id, *, now, expires_at, grace=timedelta(0)):
         row = next((r for r in self.refresh if r.token_hash == old_hash), None)
         if row is None:
             return RotateOutcome.unknown, None
         if row.revoked_at is not None:
+            successor = row.replaced_by
+            if successor is not None and successor.revoked_at is None and now - row.revoked_at < grace:
+                return RotateOutcome.concurrent, row.user_id
             self._revoke_all(row.user_id, now)
             return RotateOutcome.reused, row.user_id
         if row.expires_at <= now:
             return RotateOutcome.unknown, None
-        row.revoked_at = now
-        self.refresh.append(_Refresh(row.user_id, row.family_id, new_hash, device_id, expires_at))
+        new = _Refresh(row.user_id, row.family_id, new_hash, device_id, expires_at)
+        row.revoked_at, row.replaced_by = now, new
+        self.refresh.append(new)
         return RotateOutcome.rotated, row.user_id
 
     async def revoke_refresh_token(self, token_hash: str, *, now: datetime) -> None:

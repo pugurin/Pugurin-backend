@@ -618,3 +618,4 @@ class RotateOutcome(StrEnum):
     rotated = "rotated"
     unknown = "unknown"  # 없거나 만료된 토큰
     reused = "reused"  # 이미 폐기된 토큰 → 그 사용자의 모든 refresh token을 폐기했다
+    concurrent = "concurrent"  # 방금(유예 안) 갱신으로 바뀌었고 새 토큰은 아직 안 쓰임 → 거절만, 세션은 그대로

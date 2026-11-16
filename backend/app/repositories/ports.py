@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
@@ -152,8 +152,9 @@ class AccountRepository(Protocol):
         """None인 항목은 그대로 둔다. settings는 준 키만 덮어쓴다."""
         ...
 
-    async def withdraw(self, user_id: UUID, *, now: datetime) -> None:
-        """한 트랜잭션에서 소셜 연결 삭제, 개인 항목 익명화, deleted_at 기록, refresh token 전부 폐기."""
+    async def withdraw(self, user_id: UUID, *, now: datetime) -> list[tuple[SocialProvider, str]]:
+        """한 트랜잭션에서 소셜 연결 삭제, 개인 항목 익명화, deleted_at 기록, refresh token 행 삭제.
+        지운 소셜 연결(제공자, 소셜 사용자 ID)을 돌려준다(커밋 뒤 제공자 연결 끊기에 쓴다)."""
         ...
 
     async def save_signup_token(
@@ -176,10 +177,18 @@ class AccountRepository(Protocol):
     ) -> None: ...
 
     async def rotate_refresh_token(
-        self, old_hash: str, new_hash: str, device_id: UUID | None, *, now: datetime, expires_at: datetime
+        self,
+        old_hash: str,
+        new_hash: str,
+        device_id: UUID | None,
+        *,
+        now: datetime,
+        expires_at: datetime,
+        grace: timedelta = timedelta(0),
     ) -> tuple[RotateOutcome, UUID | None]:
         """살아 있는 토큰이면 폐기하고 같은 family로 새 토큰을 넣는다.
-        이미 폐기된 토큰이면 그 사용자의 refresh token을 모두 폐기하고 reused."""
+        이미 폐기된 토큰이면: 갱신으로 폐기된 지 grace 안이고 새 토큰이 아직 안 쓰였으면 concurrent(거절만),
+        그 밖에는 그 사용자의 refresh token을 모두 폐기하고 reused."""
         ...
 
     async def revoke_refresh_token(self, token_hash: str, *, now: datetime) -> None: ...

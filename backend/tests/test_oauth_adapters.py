@@ -13,6 +13,7 @@ from app.adapters.oauth import (
     AppTokenNotSupported,
     GoogleOAuth,
     KakaoOAuth,
+    KakaoUnlink,
     NaverOAuth,
     ProviderNotConfigured,
     SocialAuthRejected,
@@ -270,7 +271,8 @@ def google_with_jwks(key, **kw):
 async def test_google_id_token_is_verified_with_googles_keys(rsa_key):
     google, seen = google_with_jwks(rsa_key)
     profile = await google.verify_token(id_token(rsa_key))
-    assert profile == SocialProfile(SocialProvider.google, "g-123", "구글 이름")
+    # 구글 name은 실명이라 닉네임 제안으로 쓰지 않는다
+    assert profile == SocialProfile(SocialProvider.google, "g-123", None)
     # 키는 다시 받지 않는다
     await google.verify_token(id_token(rsa_key, iss="accounts.google.com"))
     assert len(seen) == 1
@@ -318,7 +320,7 @@ def google(http, secret="") -> GoogleOAuth:
 async def test_google_access_token_must_be_issued_to_one_of_our_clients_then_userinfo():
     http, seen = mock_http(google_api())
     profile = await google(http).verify_token("ya29.access")
-    assert profile == SocialProfile(SocialProvider.google, "g-9", "이름")
+    assert profile == SocialProfile(SocialProvider.google, "g-9", None)
     assert seen[0].url.copy_with(query=None) == "https://oauth2.googleapis.com/tokeninfo"
     assert seen[0].url.params["access_token"] == "ya29.access"
     assert str(seen[1].url) == "https://openidconnect.googleapis.com/v1/userinfo"
@@ -394,3 +396,23 @@ async def test_google_code_exchange_posts_pkce_then_userinfo():
         "code": "c",
         "code_verifier": "ver",
     }
+
+
+# ── 카카오 연결 끊기(탈퇴) ──
+
+
+async def test_kakao_unlink_uses_the_admin_key_and_the_member_id():
+    http, seen = mock_http(lambda r: httpx.Response(200, json={"id": 4012345678}))
+    await KakaoUnlink("admin-key", http=http).unlink("4012345678")
+    [req] = seen
+    assert (req.method, str(req.url)) == ("POST", "https://kapi.kakao.com/v1/user/unlink")
+    assert req.headers["Authorization"] == "KakaoAK admin-key"
+    assert form(req) == {"target_id_type": "user_id", "target_id": "4012345678"}
+
+
+@pytest.mark.parametrize("status", [400, 401, 500])
+async def test_kakao_unlink_failures_are_source_unavailable_without_the_key(status):
+    http, _ = mock_http(lambda r: httpx.Response(status, json={"code": -101}))
+    with pytest.raises(SourceUnavailable) as e:
+        await KakaoUnlink("admin-key", http=http).unlink("1")
+    assert "admin-key" not in str(e.value)

@@ -16,7 +16,7 @@ from app.repositories.memory.market import InMemoryMarketRepository
 from app.repositories.types import SocialProvider
 from tests.conftest import API, FIXED_NOW, create_database
 from tests.fakes.accounts import InMemoryAccountRepository
-from tests.fakes.oauth import FakeOAuth
+from tests.fakes.oauth import FakeOAuth, FakeUnlinker
 
 SECRET = "test-secret-" + "x" * 32
 CALLBACK = "https://pugurin.netlify.app/auth/callback"
@@ -46,12 +46,14 @@ class World:
         # database_url을 주면 실제 PostGIS 저장소(앱이 직접 조립), 아니면 테스트용 메모리 저장소
         self.repo = None if settings.get("database_url") else InMemoryAccountRepository()
         self.providers = {p: FakeOAuth(p) for p in SocialProvider}
+        self.unlinker = FakeUnlinker(repo=self.repo)
         options = {"jwt_secret": SECRET, "auth_redirect_uris": [CALLBACK], **settings}
         app = create_app(
             settings=Settings(**options),
             clock=self.clock,
             account_repo=self.repo,
             oauth_providers=self.providers,
+            social_unlinkers={SocialProvider.kakao: self.unlinker},
             market_repo=empty_market(),
         )
         self.client = TestClient(app, headers={"X-Device-Id": str(uuid4())}, base_url="https://testserver")
@@ -108,6 +110,7 @@ def test_the_whole_flow_against_postgres(auth_db):
         session = w.new_member(user_id="pg-1", marketing=True)
         assert w.me(session["access_token"]).json()["data"]["consents"]["marketing_push"] is True
         rotated = w.refresh(session["refresh_token"]).json()["data"]
+        w.clock.advance(seconds=31)
         assert w.refresh(session["refresh_token"]).status_code == 401
         assert w.refresh(rotated["refresh_token"]).status_code == 401
         w.kakao.codes["code-1"] = w.kakao.user("pg-1")
@@ -386,9 +389,29 @@ def test_reusing_a_rotated_refresh_token_logs_out_every_session(world):
     session = world.new_member()
     other_device = world.app_login().json()["data"]["refresh_token"]
     rotated = world.refresh(session["refresh_token"]).json()["data"]["refresh_token"]
+    world.clock.advance(seconds=30)  # 유예(기본 30초)가 지난 재사용
     assert error(world.refresh(session["refresh_token"])) == (401, "UNAUTHORIZED", None)
     assert error(world.refresh(rotated)) == (401, "UNAUTHORIZED", None)
     assert error(world.refresh(other_device)) == (401, "UNAUTHORIZED", None)
+
+
+def test_a_duplicate_refresh_right_after_rotation_is_refused_without_logging_out(world):
+    """두 탭이 거의 동시에 갱신한 경우: 늦은 쪽만 401, 새 토큰과 다른 세션은 그대로."""
+    session = world.new_member()
+    other_device = world.app_login().json()["data"]["refresh_token"]
+    rotated = world.refresh(session["refresh_token"]).json()["data"]["refresh_token"]
+    world.clock.advance(seconds=29)
+    assert error(world.refresh(session["refresh_token"])) == (401, "UNAUTHORIZED", None)
+    assert world.refresh(rotated).status_code == 200
+    assert world.refresh(other_device).status_code == 200
+
+
+def test_the_reuse_grace_is_a_setting():
+    with World(refresh_reuse_grace_seconds=0) as w:
+        session = w.new_member()
+        rotated = w.refresh(session["refresh_token"]).json()["data"]["refresh_token"]
+        assert w.refresh(session["refresh_token"]).status_code == 401
+        assert w.refresh(rotated).status_code == 401
 
 
 def test_refresh_tokens_expire_after_fourteen_days(world):
@@ -596,6 +619,87 @@ def test_naver_app_login_is_400_even_with_real_keys():
 
 def test_google_app_client_ids_alone_do_not_enable_web_login():
     with real_provider_world(google_client_ids=["ios.apps.googleusercontent.com"]) as c:
-        body = {"code": "c", "redirect_uri": CALLBACK, "state": "s"}
+        body = {"code": "c", "redirect_uri": CALLBACK, "state": "s", "code_verifier": "v" * 43}
         r = c.post(f"{API}/auth/oauth/google", json=body, headers=WEB)
         assert error(r) == (503, "SOURCE_UNAVAILABLE", None)
+
+
+# ── 보안 리뷰 반영 ──
+
+
+def test_web_refresh_401_also_clears_the_cookie(world):
+    world.client.cookies.set("refresh_token", "stale", domain="testserver.local", path="/api/v1/auth")
+    r = world.client.post(f"{API}/auth/refresh", headers=WEB)
+    assert error(r) == (401, "UNAUTHORIZED", None)
+    assert "max-age=0" in set_cookie(r).lower()
+
+
+def test_web_login_without_any_allowed_redirect_uri_is_503():
+    with World(auth_redirect_uris=[]) as w:
+        w.kakao.codes["code-1"] = w.kakao.user("k-1")
+        assert error(web_login(w)) == (503, "SOURCE_UNAVAILABLE", None)
+        assert w.kakao.exchanges == []
+
+
+def test_only_https_redirect_uris_are_allowed(caplog):
+    http_uri, scheme_uri = "http://pugurin.netlify.app/auth/callback", "pugurin://auth/callback"
+    with World(auth_redirect_uris=[CALLBACK, http_uri, scheme_uri]) as w:
+        for uri in (http_uri, scheme_uri):
+            assert error(web_login(w, redirect_uri=uri)) == (400, "VALIDATION_ERROR", "redirect_uri")
+        w.kakao.codes["code-1"] = w.kakao.user("k-1")
+        assert web_login(w).status_code == 200
+    warned = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert any(http_uri in m for m in warned) and any(scheme_uri in m for m in warned)
+
+
+def test_google_web_login_requires_pkce(world):
+    google = world.providers[SocialProvider.google]
+    google.codes["g-code"] = google.user("g-1")
+    body = {"code": "g-code", "redirect_uri": CALLBACK, "state": "s"}
+    r = world.client.post(f"{API}/auth/oauth/google", json=body, headers=WEB)
+    assert error(r) == (400, "VALIDATION_ERROR", "code_verifier")
+    assert google.exchanges == []
+    r = world.client.post(f"{API}/auth/oauth/google", json={**body, "code_verifier": "v" * 43}, headers=WEB)
+    assert r.status_code == 200
+
+
+def test_kakao_pkce_stays_optional(world):
+    world.kakao.codes["code-1"] = world.kakao.user("k-1")
+    assert web_login(world).status_code == 200
+
+
+def test_withdraw_unlinks_the_kakao_account_after_commit(world):
+    session = world.new_member(user_id="k-77")
+    r = world.client.delete(f"{API}/users/me", headers={"Authorization": f"Bearer {session['access_token']}"})
+    assert r.status_code == 204
+    assert world.unlinker.unlinked == ["k-77"]
+    # 끊기 전에 탈퇴는 이미 커밋됐다
+    assert world.unlinker.saw_identity_deleted == [True]
+
+
+def test_withdraw_still_succeeds_when_unlinking_fails(world, caplog):
+    world.unlinker.fail = True
+    session = world.new_member(user_id="k-77")
+    r = world.client.delete(f"{API}/users/me", headers={"Authorization": f"Bearer {session['access_token']}"})
+    assert r.status_code == 204 and world.repo.identities == {}
+    logged = "\n".join(m.getMessage() for m in caplog.records if m.levelname == "WARNING")
+    assert "연결 끊기" in logged and "k-77" not in logged
+
+
+def test_withdraw_without_an_unlinker_only_warns(caplog):
+    w = World()
+    w.client.app.state.container.auth_service._unlinkers = {}
+    with w:
+        session = w.new_member(user_id="k-77")
+        r = w.client.delete(f"{API}/users/me", headers={"Authorization": f"Bearer {session['access_token']}"})
+        assert r.status_code == 204
+    assert any("PUGURIN_KAKAO_ADMIN_KEY" in m.getMessage() for m in caplog.records)
+
+
+def test_naver_and_google_withdrawals_do_not_try_to_unlink(world):
+    google = world.providers[SocialProvider.google]
+    google.tokens["g-sdk"] = google.user("g-1")
+    token = world.app_login(provider="google", token="g-sdk").json()["data"]["signup_token"]
+    session = world.signup(token).json()["data"]
+    r = world.client.delete(f"{API}/users/me", headers={"Authorization": f"Bearer {session['access_token']}"})
+    assert r.status_code == 204 and world.unlinker.unlinked == []

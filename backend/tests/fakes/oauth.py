@@ -37,3 +37,24 @@ class FakeOAuth:
 
     async def aclose(self) -> None:
         return None
+
+
+@dataclass
+class FakeUnlinker:
+    """탈퇴 때 제공자 연결 끊기. 실패하게 만들 수 있다."""
+
+    unlinked: list[str] = field(default_factory=list)
+    saw_identity_deleted: list[bool] = field(default_factory=list)
+    fail: bool = False
+    repo: object | None = None
+
+    async def unlink(self, provider_user_id: str) -> None:
+        if self.repo is not None:
+            found = await self.repo.find_by_identity(SocialProvider.kakao, provider_user_id)
+            self.saw_identity_deleted.append(found is None)
+        if self.fail:
+            raise SourceUnavailable("카카오 연결 끊기 실패")
+        self.unlinked.append(provider_user_id)
+
+    async def aclose(self) -> None:
+        return None

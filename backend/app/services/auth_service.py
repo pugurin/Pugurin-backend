@@ -7,9 +7,10 @@ import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from uuid import UUID, uuid4
 
-from app.adapters.oauth import AppTokenNotSupported, OAuthProvider, SocialAuthRejected
+from app.adapters.oauth import AppTokenNotSupported, OAuthProvider, SocialAuthRejected, SocialUnlinker
 from app.auth.tokens import (
     REFRESH_TTL,
     SIGNUP_TTL,
@@ -33,6 +34,9 @@ REQUIRED_AGREEMENTS = ("terms", "privacy", "age14")
 # 앱 SDK 토큰을 받는 제공자. 네이버는 토큰이 우리 앱 것인지 확인할 공식 방법이 없어 웹 인가 코드만 받는다
 APP_TOKEN_PROVIDERS = frozenset({SocialProvider.kakao, SocialProvider.google})
 APP_TOKEN_REFUSED = "이 소셜 계정은 앱 토큰으로 로그인할 수 없어요. 웹 로그인(인가 코드)으로 시도해 주세요"
+
+# 웹 인가 코드에 PKCE가 반드시 있어야 하는 제공자. 카카오는 지원 확인 전까지 선택, 네이버는 미지원
+PKCE_REQUIRED = frozenset({SocialProvider.google})
 
 NOT_CONFIGURED = "로그인을 아직 쓸 수 없어요. 잠시 후 다시 시도해 주세요"
 
@@ -74,12 +78,17 @@ class AuthService:
         signer: JwtSigner | None,
         redirect_uris: list[str],
         clock: Clock,
+        *,
+        unlinkers: Mapping[SocialProvider, SocialUnlinker] | None = None,
+        reuse_grace: timedelta = timedelta(seconds=30),
     ):
         self._repo = repo
         self._providers = providers
         self._signer = signer
         self._redirect_uris = frozenset(redirect_uris)
         self._clock = clock
+        self._unlinkers = dict(unlinkers or {})
+        self._reuse_grace = reuse_grace
 
     def _ready(self) -> tuple[AccountRepository, JwtSigner]:
         """서명 키(PUGURIN_JWT_SECRET)나 DB가 없으면 인증 API 전체가 503이다."""
@@ -115,8 +124,12 @@ class AuthService:
         """웹: 허용된 redirect_uri인지 먼저 본 뒤 인가 코드를 토큰으로 바꾼다."""
         self._ready()
         oauth = self._provider(provider)
+        if not self._redirect_uris:
+            raise source_unavailable("웹 로그인을 아직 쓸 수 없어요(허용된 redirect_uri가 없음)")
         if redirect_uri not in self._redirect_uris:
             raise validation_error("redirect_uri", "허용되지 않은 redirect_uri입니다")
+        if provider in PKCE_REQUIRED and not code_verifier:
+            raise validation_error("code_verifier", "이 로그인에는 PKCE code_verifier가 필요합니다")
         return await self._login(
             await self._social(oauth.exchange_code(code, redirect_uri, state, code_verifier)), device_id
         )
@@ -178,7 +191,12 @@ class AuthService:
         now = self._clock()
         new = new_opaque_token()
         outcome, user_id = await repo.rotate_refresh_token(
-            hash_token(refresh_token), hash_token(new), device_id, now=now, expires_at=now + REFRESH_TTL
+            hash_token(refresh_token),
+            hash_token(new),
+            device_id,
+            now=now,
+            expires_at=now + REFRESH_TTL,
+            grace=self._reuse_grace,
         )
         if outcome is RotateOutcome.reused:
             logger.warning("폐기된 refresh token 재사용 감지: 사용자 %s의 세션을 모두 끊었습니다", user_id)
@@ -221,5 +239,18 @@ class AuthService:
         return updated
 
     async def withdraw(self, account: Account) -> None:
+        """탈퇴를 커밋한 뒤 제공자 연결을 끊는다. 끊기가 안 돼도 탈퇴는 그대로 끝난다(경고만).
+        네이버·구글은 제공자 토큰을 저장하지 않아 서버에서 끊을 수 없다(docs/AUTH.md)."""
         repo, _ = self._ready()
-        await repo.withdraw(account.id, now=self._clock())
+        identities = await repo.withdraw(account.id, now=self._clock())
+        for provider, provider_user_id in identities:
+            if provider is not SocialProvider.kakao:
+                continue
+            unlinker = self._unlinkers.get(provider)
+            if unlinker is None:
+                logger.warning("카카오 연결 끊기를 건너뜁니다(PUGURIN_KAKAO_ADMIN_KEY 없음): 사용자 %s", account.id)
+                continue
+            try:
+                await unlinker.unlink(provider_user_id)
+            except Exception as e:  # noqa: BLE001 - 탈퇴는 이미 끝났다. 실패해도 응답을 바꾸지 않는다
+                logger.warning("카카오 연결 끊기 실패: 사용자 %s (%s)", account.id, type(e).__name__)

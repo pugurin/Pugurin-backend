@@ -33,6 +33,14 @@ class ProviderNotConfigured(SourceUnavailable):
     """그 제공자의 키가 서버에 없다."""
 
 
+class SocialUnlinker(Protocol):
+    """탈퇴할 때 제공자 쪽 앱 연결을 끊는다. 서버가 제공자 토큰을 저장하지 않아도 되는 제공자만(지금은 카카오)."""
+
+    async def unlink(self, provider_user_id: str) -> None: ...
+
+    async def aclose(self) -> None: ...
+
+
 class AppTokenNotSupported(Exception):
     """이 제공자는 앱 토큰이 우리 앱 것인지 확인할 수 없어 앱 토큰 로그인을 받지 않는다(→ 400)."""
 
@@ -168,6 +176,26 @@ class KakaoOAuth(_OAuthHttp):
         return await self._me(await self.token(self.TOKEN, data))
 
 
+class KakaoUnlink(_OAuthHttp):
+    """카카오 연결 끊기(어드민 키). 탈퇴한 사용자의 카카오 회원번호로 우리 앱과의 연결을 끊는다."""
+
+    UNLINK = "https://kapi.kakao.com/v1/user/unlink"
+
+    def __init__(self, admin_key: str, *, http: httpx.AsyncClient | None = None):
+        super().__init__("카카오", http)
+        self._admin_key = admin_key
+
+    async def unlink(self, provider_user_id: str) -> None:
+        response = await self._send(
+            "POST",
+            self.UNLINK,
+            headers={"Authorization": f"KakaoAK {self._admin_key}"},
+            data={"target_id_type": "user_id", "target_id": provider_user_id},
+        )
+        if response.status_code >= 400:
+            raise SourceUnavailable(f"카카오 연결 끊기 실패(HTTP {response.status_code})")
+
+
 class NaverOAuth(_OAuthHttp):
     """네이버 로그인(웹 인가 코드만). 이름(name)은 실명이라 쓰지 않고 별명(nickname)만 쓴다. PKCE는 지원하지 않는다.
     앱 토큰이 우리 앱에 발급된 것인지 확인할 공식 API를 확인하지 못해 앱 토큰은 받지 않는다."""
@@ -246,7 +274,7 @@ class GoogleOAuth(_OAuthHttp):
         body = await self.user_info(self.USERINFO, token)
         if info.get("sub") and str(info["sub"]) != str(body.get("sub")):
             raise SocialAuthRejected("구글 토큰 정보와 사용자 정보가 다릅니다")
-        return _profile(SocialProvider.google, body.get("sub"), body.get("name"))
+        return _profile(SocialProvider.google, body.get("sub"), None)
 
     async def exchange_code(self, code: str, redirect_uri: str, state: str, code_verifier: str | None) -> SocialProfile:
         if not self._client_id or not self._secret:
@@ -262,7 +290,7 @@ class GoogleOAuth(_OAuthHttp):
             data["code_verifier"] = code_verifier
         access_token = await self.token(self.TOKEN, data)
         body = await self.user_info(self.USERINFO, access_token)
-        return _profile(SocialProvider.google, body.get("sub"), body.get("name"))
+        return _profile(SocialProvider.google, body.get("sub"), None)
 
     async def _verify_id_token(self, token: str) -> SocialProfile:
         try:
@@ -284,7 +312,7 @@ class GoogleOAuth(_OAuthHttp):
             )
         except jwt.PyJWTError as e:
             raise SocialAuthRejected(f"구글 ID 토큰 확인 실패({type(e).__name__})") from None
-        return _profile(SocialProvider.google, claims.get("sub"), claims.get("name"))
+        return _profile(SocialProvider.google, claims.get("sub"), None)
 
     async def _key(self, kid) -> jwt.PyJWK | None:
         now = self._monotonic()

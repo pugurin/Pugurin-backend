@@ -57,7 +57,8 @@ def upgrade() -> None:
             device_id   uuid,                                -- X-Device-Id
             created_at  timestamptz NOT NULL,
             expires_at  timestamptz NOT NULL,
-            revoked_at  timestamptz
+            revoked_at  timestamptz,
+            replaced_by bigint REFERENCES refresh_tokens (id) ON DELETE SET NULL  -- 갱신으로 폐기됐으면 새 토큰. 로그아웃이면 NULL
         )
         """
     )

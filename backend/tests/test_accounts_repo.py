@@ -165,11 +165,70 @@ async def test_revoke_a_single_refresh_token(repo):
     assert (await repo.rotate_refresh_token("a", "c", None, now=NOW, expires_at=exp))[0] == RotateOutcome.reused
 
 
+GRACE = timedelta(seconds=30)
+
+
+async def rotated_pair(repo):
+    """r1 → r2로 한 번 갱신한 사용자."""
+    user = await repo.create(KAKAO, "부산사람", marketing=False, now=NOW)
+    exp = NOW + timedelta(days=14)
+    await repo.add_refresh_token(user.id, uuid4(), "r1", None, now=NOW, expires_at=exp)
+    await repo.add_refresh_token(user.id, uuid4(), "other-device", None, now=NOW, expires_at=exp)
+    assert (await repo.rotate_refresh_token("r1", "r2", None, now=NOW, expires_at=exp, grace=GRACE))[0] == (
+        RotateOutcome.rotated
+    )
+    return user, exp
+
+
+async def test_a_just_rotated_token_coming_again_within_the_grace_is_only_refused(repo):
+    user, exp = await rotated_pair(repo)
+    later = NOW + timedelta(seconds=29)
+    assert await repo.rotate_refresh_token("r1", "r3", None, now=later, expires_at=exp, grace=GRACE) == (
+        RotateOutcome.concurrent,
+        user.id,
+    )
+    assert await repo.active_refresh_hashes(user.id) == {"r2", "other-device"}
+
+
+async def test_reuse_after_the_grace_revokes_everything(repo):
+    user, exp = await rotated_pair(repo)
+    later = NOW + timedelta(seconds=30)
+    assert (await repo.rotate_refresh_token("r1", "r3", None, now=later, expires_at=exp, grace=GRACE))[0] == (
+        RotateOutcome.reused
+    )
+    assert await repo.active_refresh_hashes(user.id) == set()
+
+
+async def test_reuse_within_the_grace_after_the_successor_was_used_revokes_everything(repo):
+    user, exp = await rotated_pair(repo)
+    await repo.rotate_refresh_token("r2", "r3", None, now=NOW, expires_at=exp, grace=GRACE)
+    assert (await repo.rotate_refresh_token("r1", "r4", None, now=NOW, expires_at=exp, grace=GRACE))[0] == (
+        RotateOutcome.reused
+    )
+    assert await repo.active_refresh_hashes(user.id) == set()
+
+
+async def test_a_logged_out_token_has_no_grace(repo):
+    user = await repo.create(KAKAO, "부산사람", marketing=False, now=NOW)
+    exp = NOW + timedelta(days=14)
+    await repo.add_refresh_token(user.id, uuid4(), "r1", None, now=NOW, expires_at=exp)
+    await repo.add_refresh_token(user.id, uuid4(), "b", None, now=NOW, expires_at=exp)
+    await repo.revoke_refresh_token("r1", now=NOW)
+    assert (await repo.rotate_refresh_token("r1", "r2", None, now=NOW, expires_at=exp, grace=GRACE))[0] == (
+        RotateOutcome.reused
+    )
+    assert await repo.active_refresh_hashes(user.id) == set()
+
+
 async def test_withdraw_anonymizes_unlinks_and_revokes(repo):
     user = await repo.create(KAKAO, "부산사람", marketing=True, now=NOW)
     await repo.update(user.id, nickname=None, settings={"loading_tips": False})
     await repo.add_refresh_token(user.id, uuid4(), "r1", None, now=NOW, expires_at=NOW + timedelta(days=14))
-    await repo.withdraw(user.id, now=NOW + timedelta(days=1))
+    unlinked = await repo.withdraw(user.id, now=NOW + timedelta(days=1))
+    # 지운 소셜 연결을 돌려준다(탈퇴 뒤 제공자 연결 끊기에 쓴다)
+    assert unlinked == [(SocialProvider.kakao, "4012345678")]
+    # 탈퇴하면 refresh token 행은 폐기가 아니라 삭제한다
+    assert await repo.refresh_families(user.id) == {}
     assert await repo.get(user.id) is None
     assert await repo.find_by_identity(SocialProvider.kakao, "4012345678") is None
     assert await repo.active_refresh_hashes(user.id) == set()
@@ -185,3 +244,33 @@ async def test_withdraw_anonymizes_unlinks_and_revokes(repo):
     again = await repo.create(KAKAO, "다시왔어요", marketing=False, now=NOW + timedelta(days=2))
     assert again.id != user.id
     assert await repo.update(user.id, nickname="부활", settings=None) is None
+
+
+async def test_withdrawing_twice_unlinks_nothing_the_second_time(repo):
+    user = await repo.create(KAKAO, "부산사람", marketing=False, now=NOW)
+    await repo.withdraw(user.id, now=NOW)
+    assert await repo.withdraw(user.id, now=NOW) == []
+
+
+async def test_two_refreshes_with_the_same_token_at_the_same_time_on_postgres(accounts_db):
+    """동시에 같은 토큰으로 갱신하면 하나는 성공, 하나는 거절되고 새 토큰은 살아 있다(행 잠금 + 유예)."""
+    import asyncio
+
+    engine = make_engine(accounts_db)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("TRUNCATE users, user_identities, refresh_tokens, signup_tokens CASCADE"))
+        repo = InspectablePostgres(engine)
+        user = await repo.create(KAKAO, "부산사람", marketing=False, now=NOW)
+        exp = NOW + timedelta(days=14)
+        await repo.add_refresh_token(user.id, uuid4(), "r1", None, now=NOW, expires_at=exp)
+        results = await asyncio.gather(
+            repo.rotate_refresh_token("r1", "a", None, now=NOW, expires_at=exp, grace=GRACE),
+            repo.rotate_refresh_token("r1", "b", None, now=NOW, expires_at=exp, grace=GRACE),
+        )
+        outcomes = sorted(r[0].value for r in results)
+        assert outcomes == ["concurrent", "rotated"]
+        winner = "a" if results[0][0] is RotateOutcome.rotated else "b"
+        assert await repo.active_refresh_hashes(user.id) == {winner}
+    finally:
+        await engine.dispose()

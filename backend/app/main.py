@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import APIRouter, Depends, FastAPI
 
-from app.adapters.oauth import OAuthProvider
+from app.adapters.oauth import OAuthProvider, SocialUnlinker
 from app.core.config import Settings
 from app.core.dates import Clock, kst_now
 from app.core.errors import install_error_handlers
@@ -60,6 +60,7 @@ def create_app(
     rate_limiter: RateLimiter | None = None,
     account_repo: AccountRepository | None = None,
     oauth_providers: Mapping[SocialProvider, OAuthProvider] | None = None,
+    social_unlinkers: Mapping[SocialProvider, SocialUnlinker] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     container = build_container(
@@ -72,6 +73,7 @@ def create_app(
         address_search,
         account_repo,
         oauth_providers,
+        social_unlinkers,
     )
 
     @asynccontextmanager

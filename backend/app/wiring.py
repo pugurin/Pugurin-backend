@@ -1,12 +1,13 @@
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.adapters.kakao import KakaoGeocoder
-from app.adapters.oauth import GoogleOAuth, KakaoOAuth, NaverOAuth, OAuthProvider
+from app.adapters.oauth import GoogleOAuth, KakaoOAuth, KakaoUnlink, NaverOAuth, OAuthProvider, SocialUnlinker
 from app.adapters.unconfigured import UnconfiguredParcelSource
 from app.auth.tokens import MIN_SECRET_BYTES, JwtSigner
 from app.core.config import Settings
@@ -70,6 +71,7 @@ class Container:
     interest_service: InterestService
     auth_service: AuthService
     oauth_providers: Mapping[SocialProvider, OAuthProvider] = field(default_factory=dict)
+    social_unlinkers: Mapping[SocialProvider, SocialUnlinker] = field(default_factory=dict)
     address_search: AddressSearch | None = None
     db_engine: AsyncEngine | None = None
     redis: Redis | None = None
@@ -94,7 +96,7 @@ class Container:
         close = getattr(self.address_search, "aclose", None)
         if close is not None:
             await close()
-        for provider in self.oauth_providers.values():
+        for provider in (*self.oauth_providers.values(), *self.social_unlinkers.values()):
             await provider.aclose()
         if self.db_engine is not None:
             await self.db_engine.dispose()
@@ -136,6 +138,17 @@ def _oauth_providers(settings: Settings) -> dict[SocialProvider, OAuthProvider]:
     return providers
 
 
+def _redirect_uris(settings: Settings) -> list[str]:
+    """웹 로그인 redirect_uri는 https만 받는다. 아닌 항목은 무시하고 시작할 때 경고한다."""
+    allowed = []
+    for uri in settings.auth_redirect_uris:
+        if uri.startswith("https://"):
+            allowed.append(uri)
+        else:
+            logger.warning("PUGURIN_AUTH_REDIRECT_URIS의 https가 아닌 주소를 무시합니다: %s", uri)
+    return allowed
+
+
 def _jwt_signer(settings: Settings) -> JwtSigner | None:
     if len(settings.jwt_secret.encode()) >= MIN_SECRET_BYTES:
         return JwtSigner(settings.jwt_secret)
@@ -154,6 +167,7 @@ def build_container(
     address_search: AddressSearch | None = None,
     account_repo: AccountRepository | None = None,
     oauth_providers: Mapping[SocialProvider, OAuthProvider] | None = None,
+    social_unlinkers: Mapping[SocialProvider, SocialUnlinker] | None = None,
 ) -> Container:
     as_of = latest_etl_time(clock())
     db_engine = make_engine(settings.database_url) if settings.database_url else None
@@ -172,7 +186,19 @@ def build_container(
         account_repo = PostgresAccountRepository(db_engine)
     if oauth_providers is None:
         oauth_providers = _oauth_providers(settings)
-    auth_service = AuthService(account_repo, oauth_providers, _jwt_signer(settings), settings.auth_redirect_uris, clock)
+    if social_unlinkers is None:
+        social_unlinkers = (
+            {SocialProvider.kakao: KakaoUnlink(settings.kakao_admin_key)} if settings.kakao_admin_key else {}
+        )
+    auth_service = AuthService(
+        account_repo,
+        oauth_providers,
+        _jwt_signer(settings),
+        _redirect_uris(settings),
+        clock,
+        unlinkers=social_unlinkers,
+        reuse_grace=timedelta(seconds=settings.refresh_reuse_grace_seconds),
+    )
     parcel_service = ParcelService(parcel_source, glossary_repo, zoning_rules, settings, clock)
     auction_repo = PostgresAuctionRepository(db_engine) if db_engine else None
     complex_service = ComplexService(market_repo)
@@ -203,6 +229,7 @@ def build_container(
         ),  # fmt: skip
         auth_service=auth_service,
         oauth_providers=oauth_providers,
+        social_unlinkers=social_unlinkers,
         address_search=address_search,
         db_engine=db_engine,
         redis=redis,

@@ -1,7 +1,7 @@
 """계정 저장소(마이그레이션 0012). 토큰은 SHA-256 해시만 다룬다. 설계: docs/AUTH.md"""
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
@@ -115,8 +115,14 @@ class PostgresAccountRepository:
             )
         return _account(row) if row else None
 
-    async def withdraw(self, user_id: UUID, *, now: datetime) -> None:
+    async def withdraw(self, user_id: UUID, *, now: datetime) -> list[tuple[SocialProvider, str]]:
         async with self._engine.begin() as conn:
+            # 제공자 연결 끊기(커밋 뒤)에 쓰려고 지우기 전에 읽어 둔다
+            identities = (
+                await conn.execute(
+                    text("SELECT provider, provider_user_id FROM user_identities WHERE user_id = :id"), {"id": user_id}
+                )
+            ).all()
             await conn.execute(
                 text(
                     """
@@ -137,7 +143,9 @@ class PostgresAccountRepository:
                 ),
                 {"id": user_id, "now": now, "withdrawn": WITHDRAWN_NICKNAME},
             )
-            await self._revoke_all(conn, user_id, now)
+            # 탈퇴하면 refresh token은 폐기 표시가 아니라 행을 지운다(기기 ID 등도 남기지 않는다)
+            await conn.execute(text("DELETE FROM refresh_tokens WHERE user_id = :id"), {"id": user_id})
+        return [(SocialProvider(p), puid) for p, puid in identities]
 
     async def save_signup_token(
         self, token_hash: str, claim: SignupClaim, *, expires_at: datetime, now: datetime
@@ -189,29 +197,48 @@ class PostgresAccountRepository:
             await self._insert_refresh(conn, user_id, family_id, token_hash, device_id, now, expires_at)
 
     async def rotate_refresh_token(
-        self, old_hash: str, new_hash: str, device_id: UUID | None, *, now: datetime, expires_at: datetime
+        self,
+        old_hash: str,
+        new_hash: str,
+        device_id: UUID | None,
+        *,
+        now: datetime,
+        expires_at: datetime,
+        grace: timedelta = timedelta(0),
     ) -> tuple[RotateOutcome, UUID | None]:
         async with self._engine.begin() as conn:
-            # 같은 토큰으로 동시에 갱신하면 행 잠금으로 한쪽만 rotated, 다른 쪽은 reused가 된다
+            # 같은 토큰으로 동시에 갱신하면 행 잠금으로 한쪽만 rotated, 다른 쪽은 잠금이 풀린 뒤 폐기된 행을 본다
             row = await self._one(
                 conn,
                 """
-                SELECT id, user_id, family_id, expires_at, revoked_at FROM refresh_tokens
-                WHERE token_hash = :hash FOR UPDATE
+                SELECT t.id, t.user_id, t.family_id, t.expires_at, t.revoked_at, t.replaced_by,
+                       n.revoked_at AS successor_revoked_at
+                FROM refresh_tokens t LEFT JOIN refresh_tokens n ON n.id = t.replaced_by
+                WHERE t.token_hash = :hash FOR UPDATE OF t
                 """,
                 hash=old_hash,
             )
             if row is None:
                 return RotateOutcome.unknown, None
             if row["revoked_at"] is not None:
+                just_rotated = (
+                    row["replaced_by"] is not None
+                    and row["successor_revoked_at"] is None
+                    and now - row["revoked_at"] < grace
+                )
+                if just_rotated:
+                    return RotateOutcome.concurrent, row["user_id"]
                 await self._revoke_all(conn, row["user_id"], now)
                 return RotateOutcome.reused, row["user_id"]
             if row["expires_at"] <= now:
                 return RotateOutcome.unknown, None
-            await conn.execute(
-                text("UPDATE refresh_tokens SET revoked_at = :now WHERE id = :id"), {"now": now, "id": row["id"]}
+            new_id = await self._insert_refresh(
+                conn, row["user_id"], row["family_id"], new_hash, device_id, now, expires_at
             )
-            await self._insert_refresh(conn, row["user_id"], row["family_id"], new_hash, device_id, now, expires_at)
+            await conn.execute(
+                text("UPDATE refresh_tokens SET revoked_at = :now, replaced_by = :new_id WHERE id = :id"),
+                {"now": now, "id": row["id"], "new_id": new_id},
+            )
             return RotateOutcome.rotated, row["user_id"]
 
     async def revoke_refresh_token(self, token_hash: str, *, now: datetime) -> None:
@@ -222,12 +249,13 @@ class PostgresAccountRepository:
             )
 
     @staticmethod
-    async def _insert_refresh(conn, user_id, family_id, token_hash, device_id, now, expires_at) -> None:
-        await conn.execute(
+    async def _insert_refresh(conn, user_id, family_id, token_hash, device_id, now, expires_at) -> int:
+        result = await conn.execute(
             text(
                 """
                 INSERT INTO refresh_tokens (user_id, family_id, token_hash, device_id, created_at, expires_at)
                 VALUES (:user_id, :family_id, :hash, :device_id, :now, :expires_at)
+                RETURNING id
                 """
             ),
             {
@@ -239,6 +267,7 @@ class PostgresAccountRepository:
                 "expires_at": expires_at,
             },
         )
+        return result.scalar_one()
 
     @staticmethod
     async def _revoke_all(conn: AsyncConnection, user_id: UUID, now: datetime) -> None:

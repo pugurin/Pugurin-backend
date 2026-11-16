@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.auth.tokens import REFRESH_TTL
-from app.core.errors import unauthorized, validation_error
+from app.core.errors import AppError, ErrorCode, error_body, unauthorized, validation_error
 from app.repositories.types import SocialProvider
 from app.routers.deps import ClientDep, ClientKind, ContainerDep, DeviceIdDep
 from app.schemas.auth import (
@@ -115,10 +115,17 @@ async def refresh(
     refresh_token: Annotated[str | None, Cookie(include_in_schema=False)] = None,
 ) -> JSONResponse:
     if client is ClientKind.web:
-        # 웹은 쿠키만 본다(본문의 토큰은 받지 않는다)
-        if not refresh_token:
-            raise unauthorized()
-        tokens = await container.auth_service.refresh(refresh_token, device_id)
+        # 웹은 쿠키만 본다(본문의 토큰은 받지 않는다). 401이면 쓸모없어진 쿠키도 지운다
+        try:
+            if not refresh_token:
+                raise unauthorized()
+            tokens = await container.auth_service.refresh(refresh_token, device_id)
+        except AppError as e:
+            if e.code is not ErrorCode.UNAUTHORIZED:
+                raise
+            failed = JSONResponse(error_body(e.code, e.message, e.field), status_code=e.status_code)
+            clear_refresh_cookie(failed)
+            return failed
         response = _json(TokensOut(access_token=tokens.access_token), exclude={"refresh_token"})
         set_refresh_cookie(response, tokens.refresh_token)
         return response

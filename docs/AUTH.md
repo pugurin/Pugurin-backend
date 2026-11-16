@@ -74,7 +74,7 @@
 - 한 트랜잭션에서: 소셜 연결 행 삭제, 닉네임을 "탈퇴한 사용자"로, 마케팅 동의 등 개인 항목 비우기, `deleted_at` 기록, 모든 refresh token 폐기.
 - 같은 소셜 계정으로 다시 가입하면 새 사용자로 만든다(이전 기록과 잇지 않는다).
 
-## 저장 (마이그레이션 `0012_auth`)
+## 저장 (마이그레이션 `0011_auth`)
 
 - `users`: id(uuid), nickname, role(`buyer`|`admin`), provider, marketing_push, marketing_consented_at, settings(jsonb), agreed_at, created_at, deleted_at
 - `user_identities`: provider, provider_user_id, user_id — (provider, provider_user_id) 유일. 탈퇴하면 지운다.

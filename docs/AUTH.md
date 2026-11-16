@@ -128,4 +128,8 @@
 - 로그인 사용자 기준 rate limit(분당 600, 명세 §0)
 - 카카오 PKCE 지원을 실제 키로 확인한 뒤 필수로 바꿀지 결정
 - 앱 네이버 로그인: https App Link·Universal Link 콜백 준비 뒤 허용 목록에 등록
-- 보안 리뷰 Minor M1·M6~M9: 이번 PR에서 보류(항목 내용은 보안 리뷰 기록에 있고, 이 문서에 옮겨 적어야 한다)
+- M1 refresh 기기 바인딩 없음: `refresh_tokens.device_id`를 기록만 하고 `AuthService.refresh`·`rotate_refresh_token`(`repositories/postgres/accounts.py`)에서 비교하지 않아, 훔친 refresh token을 다른 기기에서 쓸 수 있다. 요청의 `X-Device-Id`와 다르면 401로 할지 결정 필요
+- M6 구글 ID 토큰 nonce 미확인: `GoogleOAuth._verify_id_token`(`adapters/oauth.py`)이 nonce를 보지 않아 탈취한 ID 토큰을 만료 전에 재사용할 수 있다(aud가 우리 것이어야 해 위험 낮음). 앱이 nonce를 보내면 확인하도록
+- M7 로그인 경로 전용 요청 한도 없음: 지금은 공통 `RateLimitMiddleware`(`main.py`, 기기·IP 한도)뿐이다. `X-Device-Id`는 클라이언트가 정해 우회되고, 웹은 Netlify IP로 묶인다. `/auth/oauth/*`에 IP 기준 별도 한도 필요(구글 tokeninfo 호출 증폭 방지)
+- M8 로그아웃으로 폐기한 토큰(`replaced_by` 없음)을 다시 보내도 `rotate_refresh_token`이 전체 세션을 폐기한다(유예 규칙 밖). 의도된 동작이지만 재시도 시 불편할 수 있음
+- M9 `AuthService.signup`이 가입 토큰을 먼저 지우고(`take_signup_token`) 사용자를 만든다(`repo.create`): 생성 중 DB 오류면 토큰만 잃는다(다시 로그인하면 됨)

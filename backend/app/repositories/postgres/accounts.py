@@ -1,4 +1,4 @@
-"""계정 저장소(마이그레이션 0012). 토큰은 SHA-256 해시만 다룬다. 설계: docs/AUTH.md"""
+"""계정 저장소(마이그레이션 0013). 토큰은 SHA-256 해시만 다룬다. 설계: docs/AUTH.md"""
 
 import json
 from datetime import datetime, timedelta

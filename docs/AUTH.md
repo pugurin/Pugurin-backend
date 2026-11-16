@@ -81,7 +81,7 @@
 - **결정:** 네이버·구글은 연결 끊기에 그 사용자의 제공자 토큰이 필요한데 우리는 제공자 토큰을 저장하지 않으므로 서버에서 끊지 않는다. 사용자가 네이버·구글 계정 설정에서 직접 끊을 수 있다.
 - 같은 소셜 계정으로 다시 가입하면 새 사용자로 만든다(이전 기록과 잇지 않는다).
 
-## 저장 (마이그레이션 `0012_auth`)
+## 저장 (마이그레이션 `0013_auth`)
 
 - `users`: id(uuid), nickname, role(`buyer`|`admin`), provider, marketing_push, marketing_consented_at, settings(jsonb), agreed_at, created_at, deleted_at
 - `user_identities`: provider, provider_user_id, user_id — (provider, provider_user_id) 유일. 탈퇴하면 지운다.
@@ -135,3 +135,4 @@
 - M9 `AuthService.signup`이 가입 토큰을 먼저 지우고(`take_signup_token`) 사용자를 만든다(`repo.create`): 생성 중 DB 오류면 토큰만 잃는다(다시 로그인하면 됨)
 - 유예 trade-off: 공격자가 훔친 토큰으로 먼저 갱신하고 30초 안에 피해자가 옛 토큰을 보내면 전체 폐기 없이 피해자만 401(`concurrent`)이라 재사용 감지 신호를 놓친다
 - 카카오 연결 끊기(`AuthService.withdraw`)는 실패해도 재시도하지 않는다(소셜 ID는 이미 삭제). 카카오가 느리면 탈퇴 응답이 최대 10초(어댑터 timeout) 늦어진다
+- 관심 목록(#60, `device_interests`, 마이그레이션 0012)과 잇기: 지금은 `X-Device-Id` 단위라 로그인·가입(`_start_session`) 때 그 기기 행을 사용자에게 옮기거나 합치고(중복 대상은 하나로), 로그인 뒤에는 기기 ID가 아니라 access token으로 조회하며, 탈퇴(`withdraw` 트랜잭션)에서 사용자 관심 목록도 지워야 한다(`X-Device-Id`는 클라이언트가 정하는 값이라 계정 데이터의 열쇠로 쓰면 안 된다)

@@ -1,7 +1,8 @@
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -59,6 +60,29 @@ class Settings(BaseSettings):
     # 학구도(초등학교 통학구역) 파일을 내려받아 둔 곳(`zones/*.shp`, `links/*.csv`). git에 올리지 않는다.
     # 비우면 작업 폴더와 상관없이 backend/data/schoolzone(Docker 마운트) → 저장소 루트 data/schoolzone 순서로 찾는다
     school_zone_dir: Path | None = None
+
+    # 로그인(docs/AUTH.md). 키는 사용자가 .env에 직접 넣는다. 제공자 키가 없으면 그 제공자는 503
+    jwt_secret: str = ""  # access token 서명 키(HS256). 32바이트 이상이 아니면 인증 API 전체가 503
+    kakao_client_secret: str = ""  # 카카오 로그인 client_id는 kakao_rest_key. 시크릿은 콘솔에서 켰을 때만
+    kakao_admin_key: str = ""  # 카카오 어드민 키. 탈퇴할 때 카카오 연결 끊기에만 쓴다. 없으면 끊지 않고 경고만
+    kakao_app_id: str = ""  # 카카오 앱 ID(숫자). 앱 토큰이 우리 앱 것인지 비교한다. 없으면 카카오 앱 로그인은 503
+    naver_client_id: str = ""
+    naver_client_secret: str = ""
+    google_client_id: str = ""  # 웹 클라이언트 ID. 웹 인가 코드 교환에 쓰고, 앱 토큰의 aud로도 받는다
+    google_client_secret: str = ""  # 웹 인가 코드 교환에만 쓴다
+    # 앱(iOS·Android) 클라이언트 ID 목록(쉼표 구분). 앱 토큰의 aud·azp가 이 목록이나 google_client_id면 받는다
+    google_client_ids: Annotated[list[str], NoDecode] = []
+    # 갱신으로 막 폐기된 refresh token이 이 시간 안에 다시 오면(동시 갱신) 전체 폐기 없이 401만 준다
+    refresh_reuse_grace_seconds: int = 30
+    # 웹 로그인 redirect_uri 허용 목록(쉼표 구분, 정확히 같아야 한다). https만 받는다(나머지는 무시하고 경고)
+    auth_redirect_uris: Annotated[list[str], NoDecode] = []
+
+    @field_validator("auth_redirect_uris", "google_client_ids", mode="before")
+    @classmethod
+    def _comma_list(cls, value):
+        if isinstance(value, str):
+            return [v.strip() for v in value.split(",") if v.strip()]
+        return value
 
     # 실데이터 위치: PUGURIN_DATABASE_URL이 있으면 DB, 없으면 data_dir(.cache).
     # 둘 다 없으면 가짜로 채우지 않고 "데이터 없음"으로 응답한다

@@ -130,6 +130,7 @@ dc restart worker
 2. `.env`에 `PUGURIN_DOMAIN=api.pugurin.kr`를 넣고 `dc up -d`를 실행한다.
 3. caddy가 Let's Encrypt 인증서를 자동으로 받고 갱신한다. 이때 80·443이 열려 있어야 한다.
 4. 앱의 서버 주소를 `https://api.pugurin.kr/api/v1`로 바꾼다.
+5. **로그인(인증)은 이 https가 된 뒤에만 켠다.** 웹 `netlify.toml`의 `/api` 프록시도 https 주소로 바꾼 다음 `backend/.env`에 `PUGURIN_JWT_SECRET`을 넣는다. 그 전까지는 비워 둬서 인증 API가 503이다(docs/AUTH.md "웹과 CORS").
 
 ## 7. 업데이트
 

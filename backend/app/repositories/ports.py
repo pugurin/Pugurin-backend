@@ -1,9 +1,10 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Protocol
 from uuid import UUID
 
 from app.core.geo import BBox
 from app.repositories.types import (
+    Account,
     AddressHit,
     Complex,
     ComplexMarkerRow,
@@ -18,6 +19,9 @@ from app.repositories.types import (
     RegionAggregate,
     RegionRef,
     RegionSearchHit,
+    RotateOutcome,
+    SignupClaim,
+    SocialProvider,
     StatsResult,
     Transaction,
     TransactionFilter,
@@ -131,3 +135,60 @@ class ZoningRuleRepository(Protocol):
     source_label: str
 
     def limits(self, zone_type: str) -> ZoningLimits | None: ...
+
+
+class AccountRepository(Protocol):
+    """사용자·소셜 연결·refresh token·가입 토큰. 토큰은 해시로만 주고받는다. 탈퇴한 사용자는 없는 사용자로 본다."""
+
+    async def find_by_identity(self, provider: SocialProvider, provider_user_id: str) -> Account | None: ...
+
+    async def get(self, user_id: UUID) -> Account | None: ...
+
+    async def create(self, claim: SignupClaim, nickname: str, *, marketing: bool, now: datetime) -> Account:
+        """같은 소셜 계정이 이미(동시에) 가입했으면 새로 만들지 않고 그 계정을 돌려준다."""
+        ...
+
+    async def update(self, user_id: UUID, *, nickname: str | None, settings: dict[str, bool] | None) -> Account | None:
+        """None인 항목은 그대로 둔다. settings는 준 키만 덮어쓴다."""
+        ...
+
+    async def withdraw(self, user_id: UUID, *, now: datetime) -> list[tuple[SocialProvider, str]]:
+        """한 트랜잭션에서 소셜 연결 삭제, 개인 항목 익명화, deleted_at 기록, refresh token 행 삭제.
+        지운 소셜 연결(제공자, 소셜 사용자 ID)을 돌려준다(커밋 뒤 제공자 연결 끊기에 쓴다)."""
+        ...
+
+    async def save_signup_token(
+        self, token_hash: str, claim: SignupClaim, *, expires_at: datetime, now: datetime
+    ) -> None: ...
+
+    async def take_signup_token(self, token_hash: str, *, now: datetime) -> SignupClaim | None:
+        """1회용: 꺼내면서 지운다. 없거나 만료됐으면 None."""
+        ...
+
+    async def add_refresh_token(
+        self,
+        user_id: UUID,
+        family_id: UUID,
+        token_hash: str,
+        device_id: UUID | None,
+        *,
+        now: datetime,
+        expires_at: datetime,
+    ) -> None: ...
+
+    async def rotate_refresh_token(
+        self,
+        old_hash: str,
+        new_hash: str,
+        device_id: UUID | None,
+        *,
+        now: datetime,
+        expires_at: datetime,
+        grace: timedelta = timedelta(0),
+    ) -> tuple[RotateOutcome, UUID | None]:
+        """살아 있는 토큰이면 폐기하고 같은 family로 새 토큰을 넣는다.
+        이미 폐기된 토큰이면: 갱신으로 폐기된 지 grace 안이고 새 토큰이 아직 안 쓰였으면 concurrent(거절만),
+        그 밖에는 그 사용자의 refresh token을 모두 폐기하고 reused."""
+        ...
+
+    async def revoke_refresh_token(self, token_hash: str, *, now: datetime) -> None: ...

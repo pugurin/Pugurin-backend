@@ -573,3 +573,49 @@ class Redevelopment:
 class RedevelopmentPage:
     items: list[Redevelopment]
     total: int
+
+
+# ── 계정 (로그인·회원가입, docs/AUTH.md) ─────────────────────
+
+
+class SocialProvider(StrEnum):
+    naver = "naver"
+    kakao = "kakao"
+    google = "google"
+
+
+@dataclass(frozen=True)
+class SocialProfile:
+    """제공자가 확인해 준 소셜 계정. nickname은 제공자 프로필 이름(없으면 None)."""
+
+    provider: SocialProvider
+    provider_user_id: str
+    nickname: str | None
+
+
+@dataclass(frozen=True)
+class Account:
+    id: UUID
+    nickname: str
+    role: str  # buyer / admin
+    provider: SocialProvider
+    marketing_push: bool
+    marketing_consented_at: datetime | None
+    settings: dict[str, bool]
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class SignupClaim:
+    """가입 토큰에 묶어 둔 소셜 식별자."""
+
+    provider: SocialProvider
+    provider_user_id: str
+    profile_nickname: str | None
+
+
+class RotateOutcome(StrEnum):
+    rotated = "rotated"
+    unknown = "unknown"  # 없거나 만료된 토큰
+    reused = "reused"  # 이미 폐기된 토큰 → 그 사용자의 모든 refresh token을 폐기했다
+    concurrent = "concurrent"  # 방금(유예 안) 갱신으로 바뀌었고 새 토큰은 아직 안 쓰임 → 거절만, 세션은 그대로

@@ -16,6 +16,10 @@
 - 신고 사유 `not_owner` 추가, **이의제기 API** 추가
 - **용어 학습 API** 추가: 로딩 팁, 오늘의 용어, 퀴즈, 내 용어장, 학습 기록. 학습 알림 수신 설정 추가
 
+### v0.5 보충 (로그인·회원가입, docs/AUTH.md)
+- §8 구현: 소셜 로그인에 **구글 추가**, **두 단계 가입**(`POST /auth/oauth/{provider}`가 처음 온 사람에게 가입 토큰을 주고 `POST /auth/signup`에서 닉네임·동의를 받음), 동의 항목 `age14` 추가, `/users/me`에 `provider` 추가, 로그아웃·탈퇴는 `204`
+- 웹 refresh 쿠키를 `SameSite=Lax`로
+
 ### v0.5 보충 (DB 전환 #38)
 - **가짜 데이터 폐지:** 샘플 모드를 없앴다. 실데이터가 없으면 `503 DATA_NOT_READY`, `X-Data-Mode`는 `real|none`
 - 전세·월세 **갱신 계약 기본 제외** 구현: 지도·거래 목록·단지 거래 이력·통계·분석에 `include_renewals`(기본 false) 추가, 거래 필드에 `is_renewal` 추가, `meta.method`에 `, 갱신 계약 제외` 표시
@@ -69,7 +73,7 @@
 
 **인증**: `Authorization: Bearer <access_token>` (JWT, exp 30분). refresh token(exp 14일) 전달 방식은 클라이언트에 따라 다르다.
 - **앱**: 응답 body로 발급, 앱 보안 저장소에 보관.
-- **웹**: `Set-Cookie: refresh_token=...; HttpOnly; Secure; SameSite=None; Path=/api/v1/auth`로 발급하고 body에는 넣지 않는다. access token은 메모리에만 둔다.
+- **웹**: `Set-Cookie: refresh_token=...; HttpOnly; Secure; SameSite=Lax; Path=/api/v1/auth; Max-Age=1209600`로 발급하고 body에는 넣지 않는다. access token은 메모리에만 둔다. (⚠️ `SameSite=Lax`: 웹은 같은 출처(`/api` 프록시)로 부르므로 `None`이 필요 없다)
 - 클라이언트 구분은 요청 헤더 `X-Client: app|web`(기본 `app`)로 한다.
 
 **공통 헤더**
@@ -82,6 +86,7 @@
 - 허용 Origin은 환경변수 목록으로 관리한다. 목록 밖 Origin은 CORS 헤더를 주지 않는다.
 - `Access-Control-Allow-Credentials: true` (refresh 쿠키 때문). 허용 헤더: `Authorization, Content-Type, X-Device-Id, X-Client, If-None-Match`
 - 쿠키를 쓰는 `/auth/refresh`, `/auth/logout`은 `X-Client: web` 헤더가 있어야 쿠키를 읽는다(사용자 지정 헤더라 사전 요청이 생겨 CSRF를 막는다).
+- 구현 현황: CORS 미들웨어는 아직 없다. 지금 웹은 Netlify `/api` 프록시로 같은 출처에서 부른다
 
 **공통 응답 포맷 (성공)**
 ```json
@@ -953,40 +958,88 @@
 
 ## 8. 인증 / 계정 (Auth & Users) [2차]
 
-모든 사용자는 소셜 계정으로 가입한다. role: `buyer`(기본, 소유 확인을 마치면 소유자로 매물 등록 가능), `admin`(내부 지정), `agent`(보류).
+모든 사용자는 소셜 계정으로 가입한다. role: `buyer`(기본, 소유 확인을 마치면 소유자로 매물 등록 가능), `admin`(내부 지정), `agent`(보류). 설계: [`AUTH.md`](./AUTH.md)
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| POST | `/auth/oauth/{provider}` | - | `provider: kakao\|naver`. 로그인·가입 |
+| POST | `/auth/oauth/{provider}` | - | ⚠️ `provider: naver\|kakao\|google`. 로그인. 처음 온 사람은 가입 토큰을 받는다. 네이버는 웹 인가 코드만 |
+| POST | `/auth/signup` | - (가입 토큰) | ⚠️ 가입 마무리(닉네임·약관 동의) |
 | POST | `/auth/refresh` | - (refresh token) | access 재발급 + refresh **rotation** |
-| POST | `/auth/logout` | 필요 | 현재 refresh token 폐기 + 해당 디바이스 푸시 토큰 해제 |
+| POST | `/auth/logout` | - (refresh token) | ⚠️ 그 refresh token 폐기(웹은 쿠키도 지움). access token은 필요 없다. 푸시 토큰 해제는 푸시가 생기면 붙인다 |
 | GET | `/users/me` | 필요 | 내 정보 |
-| PATCH | `/users/me` | 필요 | 닉네임 수정 |
-| PUT | `/users/me/consents` | 필요 | 수신동의·알림 설정 변경 (§12) |
+| PATCH | `/users/me` | 필요 | 닉네임·설정 수정 |
+| PUT | `/users/me/consents` | 필요 | 수신동의·알림 설정 변경 (§12) — **미구현(다음 PR)** |
 | DELETE | `/users/me` | 필요 | 회원 탈퇴 |
 
-**`POST /auth/oauth/{provider}` 요청 / 응답**
+- 모두 `X-Device-Id`가 필요하다(§0). 토큰이 담긴 응답과 `/users/me`는 `Cache-Control: no-store`
+- 인증이 필요한 API는 `Authorization: Bearer <access token>`. 없거나 틀리거나 만료됐거나 탈퇴한 사용자면 `401 UNAUTHORIZED`
+- access token: JWT(HS256), 30분, `sub`(사용자 ID)·`role`·`iat`·`exp`. refresh token: 임의 문자열, 14일. 가입 토큰: 임의 문자열, 10분, 1회용. 서버에는 해시만 저장
+- 서버 설정이 없으면 `503 SOURCE_UNAVAILABLE`: 서명 키(`PUGURIN_JWT_SECRET`, 32바이트 이상)나 DB가 없으면 이 절의 모든 API, 제공자 키가 없으면 그 제공자 로그인. 소셜 서버 장애도 `503`
+
+**`POST /auth/oauth/{provider}` 요청**
 ```json
-// 앱 요청: 소셜 SDK가 준 토큰
+// 앱: 소셜 SDK가 준 토큰(카카오·구글만). 구글은 ID 토큰(JWT)이나 access token
 { "access_token": "소셜 SDK가 준 토큰" }
-// 웹 요청 (X-Client: web): 리다이렉트로 받은 인가 코드
-{ "code": "인가 코드", "redirect_uri": "https://허용된-웹-주소/auth/callback", "state": "string" }
-// 응답 (앱)
-{ "data": { "access_token": "jwt", "refresh_token": "opaque", "is_new_user": true, "user": { } } }
-// 응답 (웹): refresh_token은 body에 없고 Set-Cookie로 내려감
-{ "data": { "access_token": "jwt", "is_new_user": true, "user": { } } }
+// 웹 (X-Client: web): 리다이렉트로 받은 인가 코드
+{ "code": "인가 코드", "redirect_uri": "https://허용된-웹-주소/auth/callback", "state": "string", "code_verifier": "PKCE, 선택" }
 ```
-- 웹 `redirect_uri`는 서버 허용 목록과 정확히 같아야 한다(아니면 `400`). `state`는 웹이 만들어 검증한다
-- 신규 가입 시 필수 약관·개인정보 처리 동의 여부를 `agreements` 필드로 함께 받는다 (`{ "terms": true, "privacy": true }`) — 미동의 시 `VALIDATION_ERROR`
-- 폐기된 refresh token 재사용이 감지되면 해당 사용자의 모든 refresh token을 폐기하고 `401`
-- `/auth/refresh`: 앱은 body `{ "refresh_token": "..." }`, 웹은 쿠키(`X-Client: web` 필수)
+- 앱: 서버가 **토큰이 우리 앱에 발급된 것인지** 확인한 뒤 사용자 정보를 얻는다. 다른 앱 토큰이면 `401`
+  - 카카오: 토큰 정보 `app_id` = `PUGURIN_KAKAO_APP_ID`(설정이 없으면 카카오 앱 로그인 `503`), 그다음 `/v2/user/me`
+  - 구글: ID 토큰은 공개키로 서명·`iss`·만료·`aud`, access token은 tokeninfo의 `aud`·`azp`. 받는 클라이언트 ID = 웹 클라이언트 ID + `PUGURIN_GOOGLE_CLIENT_IDS`(앱 클라이언트). 구글 `name`은 실명이라 `profile.nickname`은 항상 `null`
+  - ⚠️ 네이버: 앱 토큰은 받지 않는다(우리 앱 것인지 확인할 공식 방법이 없음) → `400 VALIDATION_ERROR`, `field: "access_token"`. 앱도 웹 인가 코드 흐름으로 로그인한다
+- 웹: `code`·`redirect_uri`·`state` 필수(없으면 `400`, `field`에 이름). ⚠️ 구글은 `code_verifier`도 필수(PKCE). 허용 목록은 https 주소만이고, 비어 있으면 웹 로그인 `503`. `redirect_uri`는 서버 허용 목록(`PUGURIN_AUTH_REDIRECT_URIS`)과 정확히 같아야 한다(아니면 `400`, `field: "redirect_uri"`). `state`는 웹이 만들어 콜백에서 확인한다. 서버는 네이버 토큰 API가 요구해서 네이버에만 넘긴다. `code_verifier`(43~128자)는 PKCE를 지원하는 카카오·구글에만 넘긴다
+- 소셜 토큰·인가 코드가 틀리거나 이미 쓴 것 → `401 UNAUTHORIZED`
+- 알 수 없는 `provider`, `X-Client`가 `app|web`이 아님 → `400 VALIDATION_ERROR`
+
+**응답 — 가입한 사람**
+```json
+// 앱
+{ "data": { "is_new_user": false, "access_token": "jwt", "refresh_token": "opaque", "user": { /* GET /users/me와 같음 */ } }, "meta": {} }
+// 웹: refresh_token은 body에 없고 Set-Cookie로만 내려감
+{ "data": { "is_new_user": false, "access_token": "jwt", "user": { } }, "meta": {} }
+```
+
+**응답 — 처음 온 사람 ⚠️** (토큰 대신 가입 토큰. 사용자는 아직 만들지 않는다)
+```json
+{ "data": { "is_new_user": true, "signup_token": "opaque, 10분, 1회용", "profile": { "nickname": "소셜 프로필 이름 또는 null" } }, "meta": {} }
+```
+
+**`POST /auth/signup` ⚠️** (명세의 "로그인 때 `agreements`를 같이 받음"을 이 단계로 옮겼다)
+```json
+{ "signup_token": "string", "nickname": "부산사람", "agreements": { "terms": true, "privacy": true, "age14": true, "marketing": false } }
+```
+- 응답은 위 "가입한 사람" 응답과 같다(`is_new_user: false`, 웹은 쿠키)
+- `terms`·`privacy`·`age14` ⚠️(만 14세 이상) 중 하나라도 false거나 빠지면 `400 VALIDATION_ERROR`, `field`에 그 이름(`"age14"` 등). `marketing`은 선택(기본 false), `consents.marketing_push`·`marketing_consented_at`에 저장
+- 닉네임: 앞뒤 공백을 지운 뒤 2~12자, 완성형 한글·영문·숫자만(`^[가-힣a-zA-Z0-9]+$`). 어기면 `400`, `field: "nickname"`. **중복은 허용**한다
+- 가입 토큰이 없거나 만료됐거나 이미 쓴 것 → `401 UNAUTHORIZED`. 요청 값 오류(`400`)로는 가입 토큰이 소모되지 않는다
+- 같은 소셜 계정이 그 사이 이미 가입했으면 새로 만들지 않고 그 계정으로 로그인한다
+
+**`POST /auth/refresh`**
+```json
+// 앱 요청
+{ "refresh_token": "opaque" }
+// 응답 (앱)
+{ "data": { "access_token": "jwt", "refresh_token": "새 opaque" }, "meta": {} }
+// 응답 (웹, X-Client: web): 요청 body 없이 쿠키로 보내고, 새 refresh token도 Set-Cookie로만 받는다
+{ "data": { "access_token": "jwt" }, "meta": {} }
+```
+- 앱이 `refresh_token`을 안 보내면 `400 VALIDATION_ERROR`. 웹은 쿠키만 읽는다(body의 토큰은 무시, 쿠키 없으면 `401`). `X-Client: web`이 없으면 쿠키를 읽지 않는다
+- 매번 새 refresh token을 발급하고 이전 것은 폐기한다. 없거나 만료된 토큰 → `401`
+- 폐기된 refresh token(갱신·로그아웃으로 폐기된 것) 재사용이 감지되면 해당 사용자의 모든 refresh token을 폐기하고 `401`
+- ⚠️ 유예: 갱신으로 폐기된 지 30초(`PUGURIN_REFRESH_REUSE_GRACE_SECONDS`) 안이고 새 토큰이 아직 안 쓰였으면 전체 폐기 없이 `401`만(동시 갱신). 클라이언트는 갱신을 한 번에 하나만 보낸다
+- 웹이 `401`을 받으면 refresh 쿠키도 지워진다(없음·만료·재사용). 단 유예 안의 동시 갱신으로 진 쪽 `401`은 쿠키를 건드리지 않는다(먼저 끝난 갱신의 새 쿠키를 지키려고)
+
+**`POST /auth/logout`** → `204 No Content`
+- 앱은 body `{ "refresh_token": "..." }`, 웹은 쿠키(`X-Client: web`). 그 토큰만 폐기한다. 모르는 토큰이거나 토큰이 없어도 `204`
+- 웹은 `Set-Cookie: refresh_token=""; Max-Age=0; Path=/api/v1/auth`로 쿠키를 지운다
 
 **`GET /users/me` 응답**
 ```json
 {
   "id": "uuid", "nickname": "string", "role": "buyer|admin",
-  "verified_ownership_count": 1,
-  "active_listing_count": 1,
+  "provider": "naver|kakao|google",
+  "verified_ownership_count": 0,
+  "active_listing_count": 0,
   "consents": {
     "chat_push": true, "interest_alert_push": true,
     "study_push": false, "study_push_time": "20:00",
@@ -994,16 +1047,26 @@
     "marketing_consented_at": null, "marketing_reconfirm_due": null
   },
   "settings": { "loading_tips": true, "unseen_term_dots": true },
-  "created_at": "iso8601"
+  "created_at": "2026-11-13T10:00:00+09:00"
 }
 ```
-- `settings`는 로그인 사용자의 기기 간 동기화용. 비로그인은 앱이 기기에 저장한다. `PATCH /users/me`로 `nickname`, `settings`를 바꾼다
+- ⚠️ `provider` 추가(가입한 소셜)
+- ⚠️ 지금은 `verified_ownership_count`·`active_listing_count`가 항상 0이다(소유 확인·매물 표가 아직 없음). `consents`는 `marketing_push`·`marketing_consented_at`만 저장값이고 나머지는 위 기본값이다(`PUT /users/me/consents`가 생기면 저장). `marketing_reconfirm_due`는 `marketing_consented_at` + 2년
+- `settings`는 로그인 사용자의 기기 간 동기화용. 비로그인은 앱이 기기에 저장한다
 
-**회원 탈퇴 (`DELETE /users/me`)**
+**`PATCH /users/me`**
+```json
+{ "nickname": "해운대", "settings": { "loading_tips": false } }
+```
+- 둘 다 선택. 준 항목만 바꾼다(`settings`는 준 키만). 닉네임 규칙은 가입과 같다. `settings`에 모르는 키나 bool이 아닌 값 → `400`(`field`에 키 이름)
+- 응답은 `GET /users/me`와 같다
+
+**회원 탈퇴 (`DELETE /users/me`)** → `204 No Content` (웹은 refresh 쿠키도 지운다)
 - 개인정보(닉네임, 소셜 식별자, 연락처 등)는 **즉시 파기(익명화)**. 법정 보관 대상만 분리 보관 테이블로 이동
-- **소유 확인 결과 기록을 즉시 파기**하고, 올린 매물은 즉시 비노출
+  - 구현: 한 트랜잭션에서 소셜 연결 삭제, 닉네임 "탈퇴한 사용자", 마케팅 동의·설정 비움, `deleted_at` 기록, refresh token 행 삭제. 탈퇴 직후 access token도 바로 `401`. 커밋 뒤 카카오는 연결 끊기(어드민 키, 실패해도 탈퇴는 완료), 네이버·구글은 서버에서 끊지 않는다
+- **소유 확인 결과 기록을 즉시 파기**하고, 올린 매물은 즉시 비노출 (해당 기능이 생기면 붙인다)
 - 채팅 메시지는 상대방 화면에 "탈퇴한 사용자"로 표시, 보관 기간 정책(미정) 경과 후 삭제
-- 같은 소셜 계정으로 **재가입 가능** (기존 계정과 연결하지 않음). 재가입 제재 우회 방지(본인인증 CI 해시 보관)는 기능명세서 §7 #16에서 결정
+- 같은 소셜 계정으로 **재가입 가능** (기존 계정과 연결하지 않음, 새 사용자). 재가입 제재 우회 방지(본인인증 CI 해시 보관)는 기능명세서 §7 #16에서 결정
 
 ---
 

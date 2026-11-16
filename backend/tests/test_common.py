@@ -69,6 +69,11 @@ def test_openapi_schema_builds_for_all_endpoints(client):
         f"{API}/academies",
         f"{API}/redevelopments",
         f"{API}/redevelopments/{{redevelopment_id}}",
+        f"{API}/interests",
+        f"{API}/interests/complexes",
+        f"{API}/interests/complexes/{{complex_id}}",
+        f"{API}/interests/auctions",
+        f"{API}/interests/auctions/{{auction_id}}",
     }
 
 

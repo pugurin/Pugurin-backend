@@ -156,6 +156,15 @@ class PostgresAuctionRepository:
             )
         return _auction(row) if row else None
 
+    async def get_many(self, auction_ids: list[str], *, today: date) -> dict[str, Auction]:
+        """id → 물건. 없는 id는 빠진다(닫힌 물건은 포함)."""
+        if not auction_ids:
+            return {}
+        params = {"ids": auction_ids, **_trade_params(today)}
+        async with self._engine.connect() as conn:
+            rows = (await conn.execute(text(f"{_SELECT} WHERE a.id = ANY(CAST(:ids AS text[]))"), params)).mappings()
+            return {(a := _auction(r)).id: a for r in rows}
+
     @staticmethod
     def _where(flt: AuctionFilter) -> tuple[str, dict]:
         clauses: list[str] = []

@@ -10,6 +10,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from app.adapters.oauth import (
+    AppTokenNotSupported,
     GoogleOAuth,
     KakaoOAuth,
     NaverOAuth,
@@ -41,22 +42,54 @@ def form(request: httpx.Request) -> dict[str, str]:
 # ── 카카오 ──
 
 KAKAO_ME = {"id": 4012345678, "kakao_account": {"profile": {"nickname": "부산갈매기"}}}
+KAKAO_APP_ID = "1234567"
 
 
-async def test_kakao_token_is_checked_with_the_user_info_api():
-    http, seen = mock_http(lambda r: httpx.Response(200, json=KAKAO_ME))
-    profile = await KakaoOAuth("rest", "", http=http).verify_token("sdk-token")
+def kakao_api(me=KAKAO_ME, app_id=int(KAKAO_APP_ID)):
+    """카카오 토큰 정보(어느 앱의 토큰인지)와 사용자 정보를 돌려주는 가짜 서버."""
+
+    def handler(request):
+        if request.url.path == "/v1/user/access_token_info":
+            return httpx.Response(200, json={"id": 4012345678, "expires_in": 7199, "app_id": app_id})
+        return httpx.Response(200, json=me)
+
+    return handler
+
+
+def kakao(http, secret="", app_id=KAKAO_APP_ID) -> KakaoOAuth:
+    return KakaoOAuth("rest", secret, app_id=app_id, http=http)
+
+
+async def test_kakao_app_token_must_belong_to_our_app_then_user_info_is_read():
+    http, seen = mock_http(kakao_api())
+    profile = await kakao(http).verify_token("sdk-token")
     assert profile == SocialProfile(SocialProvider.kakao, "4012345678", "부산갈매기")
-    [req] = seen
-    assert (req.method, str(req.url)) == ("GET", "https://kapi.kakao.com/v2/user/me")
-    assert req.headers["Authorization"] == "Bearer sdk-token"
+    assert [(r.method, str(r.url)) for r in seen] == [
+        ("GET", "https://kapi.kakao.com/v1/user/access_token_info"),
+        ("GET", "https://kapi.kakao.com/v2/user/me"),
+    ]
+    assert all(r.headers["Authorization"] == "Bearer sdk-token" for r in seen)
+
+
+async def test_kakao_token_issued_to_another_app_is_rejected_before_reading_the_user():
+    http, seen = mock_http(kakao_api(app_id=999))
+    with pytest.raises(SocialAuthRejected):
+        await kakao(http).verify_token("other-app-token")
+    assert len(seen) == 1
+
+
+async def test_kakao_app_login_without_our_app_id_is_not_configured():
+    http, seen = mock_http(kakao_api())
+    with pytest.raises(ProviderNotConfigured):
+        await kakao(http, app_id="").verify_token("sdk-token")
+    assert seen == []
 
 
 async def test_kakao_nickname_falls_back_to_properties_or_none():
-    http, _ = mock_http(lambda r: httpx.Response(200, json={"id": 1, "properties": {"nickname": " 해운대 "}}))
-    assert (await KakaoOAuth("rest", "", http=http).verify_token("t")).nickname == "해운대"
-    http, _ = mock_http(lambda r: httpx.Response(200, json={"id": 1}))
-    assert (await KakaoOAuth("rest", "", http=http).verify_token("t")).nickname is None
+    http, _ = mock_http(kakao_api(me={"id": 1, "properties": {"nickname": " 해운대 "}}))
+    assert (await kakao(http).verify_token("t")).nickname == "해운대"
+    http, _ = mock_http(kakao_api(me={"id": 1}))
+    assert (await kakao(http).verify_token("t")).nickname is None
 
 
 async def test_kakao_code_is_exchanged_with_secret_and_pkce_then_user_info():
@@ -67,8 +100,10 @@ async def test_kakao_code_is_exchanged_with_secret_and_pkce_then_user_info():
         return httpx.Response(200, json=KAKAO_ME)
 
     http, seen = mock_http(handler)
-    profile = await KakaoOAuth("rest", "sec", http=http).exchange_code("the-code", REDIRECT, "st", "verifier")
+    # 우리 시크릿으로 바꾼 토큰이라 앱 ID 확인 없이도 된다
+    profile = await kakao(http, secret="sec", app_id="").exchange_code("the-code", REDIRECT, "st", "verifier")
     assert profile.provider_user_id == "4012345678"
+    assert [r.url.path for r in seen] == ["/oauth/token", "/v2/user/me"]
     token_req = seen[0]
     assert (token_req.method, str(token_req.url)) == ("POST", "https://kauth.kakao.com/oauth/token")
     assert form(token_req) == {
@@ -88,7 +123,7 @@ async def test_kakao_exchange_leaves_out_an_unset_secret_and_verifier():
         return httpx.Response(200, json=KAKAO_ME)
 
     http, seen = mock_http(handler)
-    await KakaoOAuth("rest", "", http=http).exchange_code("c", REDIRECT, "st", None)
+    await kakao(http).exchange_code("c", REDIRECT, "st", None)
     assert set(form(seen[0])) == {"grant_type", "client_id", "redirect_uri", "code"}
 
 
@@ -98,23 +133,23 @@ async def test_kakao_rejected_tokens_are_social_auth_failures(status):
         lambda r: httpx.Response(status, json={"code": -401, "msg": "this access token does not exist"})
     )
     with pytest.raises(SocialAuthRejected):
-        await KakaoOAuth("rest", "", http=http).verify_token("bad")
+        await kakao(http).verify_token("bad")
 
 
 async def test_a_bad_code_is_rejected_but_a_bad_client_secret_is_our_problem():
     http, _ = mock_http(lambda r: httpx.Response(400, json={"error": "invalid_grant"}))
     with pytest.raises(SocialAuthRejected):
-        await KakaoOAuth("rest", "sec", http=http).exchange_code("c", REDIRECT, "st", None)
+        await kakao(http, secret="sec").exchange_code("c", REDIRECT, "st", None)
     http, _ = mock_http(lambda r: httpx.Response(401, json={"error": "invalid_client"}))
     with pytest.raises(SourceUnavailable) as e:
-        await KakaoOAuth("rest", "sec", http=http).exchange_code("c", REDIRECT, "st", None)
+        await kakao(http, secret="sec").exchange_code("c", REDIRECT, "st", None)
     assert not isinstance(e.value, SocialAuthRejected)
 
 
 async def test_provider_outages_are_source_unavailable_and_never_echo_the_token():
     http, _ = mock_http(lambda r: httpx.Response(502, text="bad gateway"))
     with pytest.raises(SourceUnavailable) as e:
-        await KakaoOAuth("rest", "", http=http).verify_token("secret-sdk-token")
+        await kakao(http).verify_token("secret-sdk-token")
     assert "secret-sdk-token" not in str(e.value)
 
     def boom(request):
@@ -122,13 +157,13 @@ async def test_provider_outages_are_source_unavailable_and_never_echo_the_token(
 
     http, _ = mock_http(boom)
     with pytest.raises(SourceUnavailable):
-        await KakaoOAuth("rest", "", http=http).verify_token("t")
+        await kakao(http).verify_token("t")
 
 
 async def test_a_user_info_answer_without_an_id_is_rejected():
-    http, _ = mock_http(lambda r: httpx.Response(200, json={"properties": {}}))
+    http, _ = mock_http(kakao_api(me={"properties": {}}))
     with pytest.raises(SocialAuthRejected):
-        await KakaoOAuth("rest", "", http=http).verify_token("t")
+        await kakao(http).verify_token("t")
 
 
 # ── 네이버 ──
@@ -140,18 +175,34 @@ NAVER_ME = {
 }
 
 
-async def test_naver_token_is_checked_with_the_profile_api_and_uses_the_nickname_not_the_real_name():
-    http, seen = mock_http(lambda r: httpx.Response(200, json=NAVER_ME))
-    profile = await NaverOAuth("id", "sec", http=http).verify_token("sdk")
+def naver_api(me=NAVER_ME):
+    def handler(request):
+        if request.url.host == "nid.naver.com":
+            return httpx.Response(200, json={"access_token": "nv-at"})
+        return httpx.Response(200, json=me)
+
+    return handler
+
+
+async def test_naver_app_tokens_are_not_accepted_because_their_app_cannot_be_checked():
+    http, seen = mock_http(naver_api())
+    with pytest.raises(AppTokenNotSupported):
+        await NaverOAuth("id", "sec", http=http).verify_token("sdk")
+    assert seen == []
+
+
+async def test_naver_code_login_reads_the_profile_and_uses_the_nickname_not_the_real_name():
+    http, seen = mock_http(naver_api())
+    profile = await NaverOAuth("id", "sec", http=http).exchange_code("c", REDIRECT, "st", None)
     assert profile == SocialProfile(SocialProvider.naver, "nv-abc", "광안리")
-    assert str(seen[0].url) == "https://openapi.naver.com/v1/nid/me"
-    assert seen[0].headers["Authorization"] == "Bearer sdk"
+    assert str(seen[1].url) == "https://openapi.naver.com/v1/nid/me"
+    assert seen[1].headers["Authorization"] == "Bearer nv-at"
 
 
 async def test_naver_failure_result_codes_are_rejected():
-    http, _ = mock_http(lambda r: httpx.Response(200, json={"resultcode": "024", "message": "Authentication failed"}))
+    http, _ = mock_http(naver_api(me={"resultcode": "024", "message": "Authentication failed"}))
     with pytest.raises(SocialAuthRejected):
-        await NaverOAuth("id", "sec", http=http).verify_token("bad")
+        await NaverOAuth("id", "sec", http=http).exchange_code("c", REDIRECT, "st", None)
 
 
 async def test_naver_code_exchange_posts_state_but_no_verifier():
@@ -248,12 +299,73 @@ async def test_google_id_token_signed_by_another_key_is_rejected(rsa_key):
         await google.verify_token(id_token(other, kid="unknown"))
 
 
-async def test_google_access_token_uses_userinfo():
-    http, seen = mock_http(lambda r: httpx.Response(200, json={"sub": "g-9", "name": "이름"}))
-    profile = await GoogleOAuth(CLIENT_ID, "", http=http).verify_token("ya29.access")
+APP_CLIENT_ID = "ios-app.apps.googleusercontent.com"
+
+
+def google_api(tokeninfo: dict | None = None, status=200):
+    def handler(request):
+        if request.url.host == "oauth2.googleapis.com":
+            return httpx.Response(status, json=tokeninfo or {"aud": APP_CLIENT_ID, "azp": APP_CLIENT_ID, "sub": "g-9"})
+        return httpx.Response(200, json={"sub": "g-9", "name": "이름"})
+
+    return handler
+
+
+def google(http, secret="") -> GoogleOAuth:
+    return GoogleOAuth(CLIENT_ID, secret, audiences=[APP_CLIENT_ID], http=http)
+
+
+async def test_google_access_token_must_be_issued_to_one_of_our_clients_then_userinfo():
+    http, seen = mock_http(google_api())
+    profile = await google(http).verify_token("ya29.access")
     assert profile == SocialProfile(SocialProvider.google, "g-9", "이름")
-    assert str(seen[0].url) == "https://openidconnect.googleapis.com/v1/userinfo"
-    assert seen[0].headers["Authorization"] == "Bearer ya29.access"
+    assert seen[0].url.copy_with(query=None) == "https://oauth2.googleapis.com/tokeninfo"
+    assert seen[0].url.params["access_token"] == "ya29.access"
+    assert str(seen[1].url) == "https://openidconnect.googleapis.com/v1/userinfo"
+    assert seen[1].headers["Authorization"] == "Bearer ya29.access"
+
+
+async def test_google_access_token_azp_alone_is_enough():
+    http, _ = mock_http(google_api({"aud": "something-else", "azp": CLIENT_ID, "sub": "g-9"}))
+    assert (await google(http).verify_token("ya29.a")).provider_user_id == "g-9"
+
+
+async def test_google_access_token_for_another_app_is_rejected_before_userinfo():
+    http, seen = mock_http(google_api({"aud": "evil.apps.googleusercontent.com", "azp": "evil", "sub": "g-9"}))
+    with pytest.raises(SocialAuthRejected):
+        await google(http).verify_token("ya29.other")
+    assert len(seen) == 1
+
+
+async def test_google_invalid_access_token_is_rejected():
+    http, _ = mock_http(google_api({"error": "invalid_token"}, status=400))
+    with pytest.raises(SocialAuthRejected):
+        await google(http).verify_token("ya29.bad")
+
+
+async def test_google_userinfo_for_a_different_user_than_tokeninfo_is_rejected():
+    http, _ = mock_http(google_api({"aud": CLIENT_ID, "sub": "someone-else"}))
+    with pytest.raises(SocialAuthRejected):
+        await google(http).verify_token("ya29.x")
+
+
+async def test_google_id_token_may_be_issued_to_an_app_client(rsa_key):
+    def handler(request):
+        return httpx.Response(200, json=jwks_of(rsa_key))
+
+    http, _ = mock_http(handler)
+    profile = await google(http).verify_token(id_token(rsa_key, aud=APP_CLIENT_ID))
+    assert profile.provider_user_id == "g-123"
+
+
+async def test_the_tokeninfo_url_is_redacted_in_http_logs(caplog):
+    import logging
+
+    caplog.set_level(logging.DEBUG)
+    real = httpx.AsyncClient(transport=httpx.MockTransport(google_api()))
+    await google(real).verify_token("ya29.secret-in-url")
+    assert any("tokeninfo" in r.getMessage() for r in caplog.records)
+    assert all("ya29.secret-in-url" not in r.getMessage() for r in caplog.records)
 
 
 async def test_google_code_exchange_needs_the_client_secret():

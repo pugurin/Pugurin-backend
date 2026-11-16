@@ -64,14 +64,17 @@ class Settings(BaseSettings):
     # 로그인(docs/AUTH.md). 키는 사용자가 .env에 직접 넣는다. 제공자 키가 없으면 그 제공자는 503
     jwt_secret: str = ""  # access token 서명 키(HS256). 32바이트 이상이 아니면 인증 API 전체가 503
     kakao_client_secret: str = ""  # 카카오 로그인 client_id는 kakao_rest_key. 시크릿은 콘솔에서 켰을 때만
+    kakao_app_id: str = ""  # 카카오 앱 ID(숫자). 앱 토큰이 우리 앱 것인지 비교한다. 없으면 카카오 앱 로그인은 503
     naver_client_id: str = ""
     naver_client_secret: str = ""
-    google_client_id: str = ""  # 웹 클라이언트 ID. 앱 ID 토큰의 aud도 이 값이어야 한다
+    google_client_id: str = ""  # 웹 클라이언트 ID. 웹 인가 코드 교환에 쓰고, 앱 토큰의 aud로도 받는다
     google_client_secret: str = ""  # 웹 인가 코드 교환에만 쓴다
+    # 앱(iOS·Android) 클라이언트 ID 목록(쉼표 구분). 앱 토큰의 aud·azp가 이 목록이나 google_client_id면 받는다
+    google_client_ids: Annotated[list[str], NoDecode] = []
     # 웹 로그인 redirect_uri 허용 목록(쉼표 구분, 정확히 같아야 한다)
     auth_redirect_uris: Annotated[list[str], NoDecode] = []
 
-    @field_validator("auth_redirect_uris", mode="before")
+    @field_validator("auth_redirect_uris", "google_client_ids", mode="before")
     @classmethod
     def _comma_list(cls, value):
         if isinstance(value, str):

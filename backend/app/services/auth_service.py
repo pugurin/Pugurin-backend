@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from uuid import UUID, uuid4
 
-from app.adapters.oauth import OAuthProvider, SocialAuthRejected
+from app.adapters.oauth import AppTokenNotSupported, OAuthProvider, SocialAuthRejected
 from app.auth.tokens import (
     REFRESH_TTL,
     SIGNUP_TTL,
@@ -29,6 +29,10 @@ NICKNAME_MIN, NICKNAME_MAX = 2, 12
 # 프론트(authTypes.ts)와 같은 규칙: 완성형 한글·영문·숫자만
 _NICKNAME = re.compile(r"[가-힣a-zA-Z0-9]+")
 REQUIRED_AGREEMENTS = ("terms", "privacy", "age14")
+
+# 앱 SDK 토큰을 받는 제공자. 네이버는 토큰이 우리 앱 것인지 확인할 공식 방법이 없어 웹 인가 코드만 받는다
+APP_TOKEN_PROVIDERS = frozenset({SocialProvider.kakao, SocialProvider.google})
+APP_TOKEN_REFUSED = "이 소셜 계정은 앱 토큰으로 로그인할 수 없어요. 웹 로그인(인가 코드)으로 시도해 주세요"
 
 NOT_CONFIGURED = "로그인을 아직 쓸 수 없어요. 잠시 후 다시 시도해 주세요"
 
@@ -92,9 +96,11 @@ class AuthService:
     # ── 1. 로그인 ──
 
     async def login_with_token(self, provider: SocialProvider, token: str, device_id: UUID) -> Session | SignupNeeded:
-        """앱: 소셜 SDK 토큰을 제공자 API로 확인한다."""
+        """앱: 소셜 SDK 토큰을 제공자 API로 확인한다(우리 앱에 발급된 토큰만)."""
         self._ready()
         oauth = self._provider(provider)
+        if provider not in APP_TOKEN_PROVIDERS:
+            raise validation_error("access_token", APP_TOKEN_REFUSED)
         return await self._login(await self._social(oauth.verify_token(token)), device_id)
 
     async def login_with_code(
@@ -119,6 +125,8 @@ class AuthService:
     async def _social(pending) -> SocialProfile:
         try:
             return await pending
+        except AppTokenNotSupported:
+            raise validation_error("access_token", APP_TOKEN_REFUSED) from None
         except SocialAuthRejected:
             raise unauthorized("소셜 로그인을 확인하지 못했어요. 다시 시도해 주세요") from None
         except SourceUnavailable as e:

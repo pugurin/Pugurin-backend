@@ -554,3 +554,48 @@ def test_tokens_and_codes_never_reach_the_logs(world, caplog):
         SECRET,
     ]:
         assert secret not in logged
+
+
+# ── 앱 토큰은 우리 앱에 발급된 것만 ──
+
+
+def test_naver_app_tokens_are_refused_and_only_the_web_code_flow_is_accepted(world):
+    naver = world.providers[SocialProvider.naver]
+    naver.tokens["nv-sdk"] = naver.user("nv-1")
+    r = world.app_login(provider="naver", token="nv-sdk")
+    assert error(r) == (400, "VALIDATION_ERROR", "access_token")
+    assert "웹" in r.json()["error"]["message"]
+    naver.codes["nv-code"] = naver.user("nv-1")
+    body = {"code": "nv-code", "redirect_uri": CALLBACK, "state": "s"}
+    r = world.client.post(f"{API}/auth/oauth/naver", json=body, headers=WEB)
+    assert r.status_code == 200 and r.json()["data"]["is_new_user"] is True
+
+
+def real_provider_world(**settings) -> TestClient:
+    """제공자는 실제 어댑터(설정으로 조립). 네트워크에 닿기 전에 끝나는 경우만 시험한다."""
+    app = create_app(
+        settings=Settings(jwt_secret=SECRET, auth_redirect_uris=[CALLBACK], **settings),
+        clock=lambda: FIXED_NOW,
+        account_repo=InMemoryAccountRepository(),
+        market_repo=empty_market(),
+    )
+    return TestClient(app, headers={"X-Device-Id": str(uuid4())})
+
+
+def test_kakao_app_login_without_the_app_id_setting_is_503():
+    with real_provider_world(kakao_rest_key="rest-key") as c:
+        r = c.post(f"{API}/auth/oauth/kakao", json={"access_token": "sdk"})
+        assert error(r) == (503, "SOURCE_UNAVAILABLE", None)
+
+
+def test_naver_app_login_is_400_even_with_real_keys():
+    with real_provider_world(naver_client_id="id", naver_client_secret="sec") as c:
+        r = c.post(f"{API}/auth/oauth/naver", json={"access_token": "sdk"})
+        assert error(r) == (400, "VALIDATION_ERROR", "access_token")
+
+
+def test_google_app_client_ids_alone_do_not_enable_web_login():
+    with real_provider_world(google_client_ids=["ios.apps.googleusercontent.com"]) as c:
+        body = {"code": "c", "redirect_uri": CALLBACK, "state": "s"}
+        r = c.post(f"{API}/auth/oauth/google", json=body, headers=WEB)
+        assert error(r) == (503, "SOURCE_UNAVAILABLE", None)

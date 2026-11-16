@@ -124,11 +124,15 @@ def _oauth_providers(settings: Settings) -> dict[SocialProvider, OAuthProvider]:
     """키가 있는 제공자만 켠다. 없는 제공자로 로그인하면 503(가짜로 통과시키지 않는다)."""
     providers: dict[SocialProvider, OAuthProvider] = {}
     if settings.kakao_rest_key:
-        providers[SocialProvider.kakao] = KakaoOAuth(settings.kakao_rest_key, settings.kakao_client_secret)
+        providers[SocialProvider.kakao] = KakaoOAuth(
+            settings.kakao_rest_key, settings.kakao_client_secret, app_id=settings.kakao_app_id
+        )
     if settings.naver_client_id and settings.naver_client_secret:
         providers[SocialProvider.naver] = NaverOAuth(settings.naver_client_id, settings.naver_client_secret)
-    if settings.google_client_id:
-        providers[SocialProvider.google] = GoogleOAuth(settings.google_client_id, settings.google_client_secret)
+    if settings.google_client_id or settings.google_client_ids:
+        providers[SocialProvider.google] = GoogleOAuth(
+            settings.google_client_id, settings.google_client_secret, audiences=settings.google_client_ids
+        )
     return providers
 
 

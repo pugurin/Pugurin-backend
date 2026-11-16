@@ -34,8 +34,9 @@
 - **앱:** `{ "access_token": "소셜 SDK 토큰" }` → 서버가 **그 토큰이 우리 앱에 발급된 것인지** 먼저 확인하고(다른 앱이 받은 사용자 토큰으로 로그인하는 토큰 대체 공격 방지), 사용자 정보 API로 소셜 사용자 ID를 얻는다.
   - 카카오: `GET https://kapi.kakao.com/v1/user/access_token_info`의 `app_id`가 `PUGURIN_KAKAO_APP_ID`와 같을 때만 `GET https://kapi.kakao.com/v2/user/me`. 앱 ID 설정이 없으면 카카오 앱 로그인은 `503`
   - 구글: ID 토큰(JWT)이면 공개키로 서명·`iss`·만료와 `aud`를 확인하고, access token이면 `https://oauth2.googleapis.com/tokeninfo`의 `aud` 또는 `azp`를 확인한 뒤 `https://openidconnect.googleapis.com/v1/userinfo`. 받는 클라이언트 ID = 웹 클라이언트 ID(`PUGURIN_GOOGLE_CLIENT_ID`) + 앱 클라이언트 ID 목록(`PUGURIN_GOOGLE_CLIENT_IDS`)
-  - 네이버: 앱 토큰이 우리 앱 것인지 확인할 공식 API를 찾지 못했다. 그래서 **네이버는 웹 인가 코드만** 받고 앱 토큰 요청은 `400 VALIDATION_ERROR`(`field: "access_token"`, 웹 로그인 안내). 앱에서 네이버 로그인은 웹 인가 코드 흐름(브라우저 + 앱 스킴 redirect_uri)으로 한다
-- **웹(`X-Client: web`):** `{ "code", "redirect_uri", "state", "code_verifier"? }` → `redirect_uri`가 허용 목록과 정확히 같아야 한다(아니면 400). 서버가 클라이언트 시크릿으로 코드를 토큰으로 바꾼 뒤 위처럼 사용자 정보를 얻는다. `code_verifier`가 오면 PKCE로 함께 보낸다(지원하는 제공자만).
+  - 네이버: 앱 토큰이 우리 앱 것인지 확인할 공식 API를 찾지 못했다. 그래서 **네이버는 웹 인가 코드만** 받고 앱 토큰 요청은 `400 VALIDATION_ERROR`(`field: "access_token"`, 웹 로그인 안내). 앱의 네이버 로그인은 **https App Link(Android)·Universal Link(iOS) 콜백**으로 웹 인가 코드 흐름을 쓸 때만 가능하다. 커스텀 스킴(`pugurin://`) 콜백은 받지 않는다(다른 앱이 가로챌 수 있다). App Link·Universal Link가 준비되기 전까지 **앱 네이버 로그인은 보류**
+- **웹(`X-Client: web`):** `{ "code", "redirect_uri", "state", "code_verifier"? }` → `redirect_uri`가 허용 목록과 정확히 같아야 한다(아니면 400). 허용 목록(`PUGURIN_AUTH_REDIRECT_URIS`)은 **https 주소만** 받는다(시작할 때 나머지는 경고하고 무시). 목록이 비어 있으면 웹 로그인은 503.
+  - PKCE: **구글은 `code_verifier` 필수**(없으면 `400`, `field: "code_verifier"`). 카카오는 지원을 실제 키로 확인하기 전까지 선택(오면 넘긴다). 네이버는 미지원이라 넘기지 않는다. 서버가 클라이언트 시크릿으로 코드를 토큰으로 바꾼 뒤 위처럼 사용자 정보를 얻는다. `code_verifier`가 오면 PKCE로 함께 보낸다(지원하는 제공자만).
   - `state`는 웹이 만들어 콜백에서 확인한다(명세 그대로). 서버는 state를 검증하지 않는다. 단 **네이버 토큰 교환 API는 `state`를 필수로 받으므로 네이버에만 넘긴다**(카카오·구글에는 넘기지 않는다).
   - 웹 인가 코드는 우리 클라이언트 시크릿으로 교환하므로 토큰이 우리 앱 것인지 따로 확인하지 않는다.
 - **가입한 사람:** `{ is_new_user: false, access_token, refresh_token(앱만), user }`. 웹은 refresh token을 `HttpOnly; Secure; SameSite=Lax` 쿠키로만 준다.
@@ -59,6 +60,7 @@
 - **access token:** JWT(HS256), 30분. `sub`=사용자 ID, `role`, `exp`, `iat`. 서명 키는 `PUGURIN_JWT_SECRET`(32바이트 이상, 없으면 인증 API가 503).
 - **refresh token:** 추측할 수 없는 임의 문자열, 14일. DB에는 SHA-256 해시만 저장한다. 갱신할 때마다 새로 발급하고 이전 것은 폐기한다(같은 `family_id`로 잇는다).
 - **재사용 감지:** 이미 폐기된 refresh token이 오면 그 사용자의 모든 refresh token을 폐기하고 `401`.
+  - **유예:** 갱신(rotation)으로 폐기된 지 `PUGURIN_REFRESH_REUSE_GRACE_SECONDS`(기본 30초) 안이고, 그때 받은 새 토큰이 아직 쓰이지 않았으면 전체 폐기 없이 `401`만 준다(두 탭·재시도가 같은 토큰으로 거의 동시에 갱신한 경우). 로그아웃으로 폐기된 토큰과 유예 밖 재사용은 그대로 전체 폐기. 새 토큰 행을 `refresh_tokens.replaced_by`로 잇는다.
 - **가입 토큰:** 임의 문자열, 10분, 1회용. DB에 해시와 소셜 식별자(제공자·소셜 사용자 ID·프로필 닉네임)를 잠깐 저장하고 쓰면 지운다.
 - `POST /auth/refresh`: 앱은 본문 `{ refresh_token }`, 웹은 쿠키(`X-Client: web` 필수).
 - 인증이 필요한 API는 `Authorization: Bearer <access token>`. 없거나 틀리거나 만료 → `401`.
@@ -74,7 +76,9 @@
 
 ### 7. 탈퇴 `DELETE /users/me`
 
-- 한 트랜잭션에서: 소셜 연결 행 삭제, 닉네임을 "탈퇴한 사용자"로, 마케팅 동의 등 개인 항목 비우기, `deleted_at` 기록, 모든 refresh token 폐기.
+- 한 트랜잭션에서: 소셜 연결 행 삭제(지우기 전에 소셜 ID를 읽어 둔다), 닉네임을 "탈퇴한 사용자"로, 마케팅 동의 등 개인 항목 비우기, `deleted_at` 기록, 그 사용자의 refresh token **행 삭제**.
+- 커밋한 뒤 **카카오 연결 끊기**: `POST https://kapi.kakao.com/v1/user/unlink`(`Authorization: KakaoAK <PUGURIN_KAKAO_ADMIN_KEY>`, `target_id_type=user_id&target_id=<카카오 회원번호>`). 키가 없거나 실패해도 탈퇴는 그대로 끝나고 경고 로그만 남는다(로그에 소셜 ID는 넣지 않는다).
+- **결정:** 네이버·구글은 연결 끊기에 그 사용자의 제공자 토큰이 필요한데 우리는 제공자 토큰을 저장하지 않으므로 서버에서 끊지 않는다. 사용자가 네이버·구글 계정 설정에서 직접 끊을 수 있다.
 - 같은 소셜 계정으로 다시 가입하면 새 사용자로 만든다(이전 기록과 잇지 않는다).
 
 ## 저장 (마이그레이션 `0012_auth`)
@@ -95,10 +99,14 @@
 
 웹(https://pugurin.netlify.app)은 Netlify의 `/api` 프록시로 백엔드를 부르므로 **같은 출처**다. 그래서 CORS 미들웨어가 없고, refresh 쿠키는 `SameSite=Lax`로 충분하다. 웹을 다른 출처에서 직접 부르게 되면 `allow_credentials` CORS(허용 출처 목록)와 쿠키 정책을 다시 정한다.
 
+**운영 전제(중요):** 지금 Netlify → 백엔드 구간은 **http**다. 이 구간으로 토큰·인가 코드·쿠키가 평문으로 오간다. **운영에서 인증을 켜려면 백엔드 https(도메인 + TLS, docs/DEPLOY.md §6)와 `netlify.toml`의 https 프록시가 전제다. 그 전까지 운영은 `PUGURIN_JWT_SECRET`을 비워 인증 API가 503이다.**
+
 ## 프론트가 맞춰야 할 점
 
 - `marketing_push`는 사용자 응답의 최상위가 아니라 **`user.consents.marketing_push`** 에 있다(명세 §8 모양). 프론트 `User` 타입(`authTypes.ts`)의 최상위 `marketing_push`를 이 위치로 읽어야 한다.
-- 네이버는 앱에서도 웹 인가 코드 흐름으로 로그인한다(앱 토큰은 400).
+- 네이버 앱 로그인은 https App Link·Universal Link 콜백이 생길 때까지 보류한다(앱 토큰은 400, 커스텀 스킴 콜백도 안 받는다).
+- **refresh는 한 번에 하나만:** 앱·웹 모두 갱신 요청을 하나로 묶어야 한다(진행 중인 `POST /auth/refresh`가 있으면 그 결과를 같이 기다린다). 같은 토큰으로 두 번 보내면 늦은 쪽은 `401`이다. 유예(30초) 덕분에 세션 전체가 끊기지는 않지만, 그 `401`을 받고 세션을 지우면 안 되고 먼저 끝난 갱신 결과를 써야 한다. 유예가 지나 옛 토큰을 다시 쓰면 그 사용자의 모든 기기가 로그아웃된다.
+- 구글 웹 로그인은 PKCE(`code_challenge` S256 + `code_verifier`)를 반드시 쓴다.
 - 구글 앱 로그인은 ID 토큰을 보내는 것을 권한다. 앱 클라이언트 ID는 서버 `PUGURIN_GOOGLE_CLIENT_IDS`에 있어야 한다.
 - `state`는 웹이 만들고 콜백에서 확인한다(서버가 만들지 않는다).
 
@@ -113,3 +121,11 @@
 - JWT HS256(서버가 하나라 공개키 서명이 필요 없음)
 - 가입 토큰을 DB에 저장(Redis가 없는 환경에서도 돌게)
 - 소유 확인·매물 수는 0으로 내림
+
+## 남은 일
+
+- 만료·폐기된 refresh token 행 정리 배치
+- 로그인 사용자 기준 rate limit(분당 600, 명세 §0)
+- 카카오 PKCE 지원을 실제 키로 확인한 뒤 필수로 바꿀지 결정
+- 앱 네이버 로그인: https App Link·Universal Link 콜백 준비 뒤 허용 목록에 등록
+- 보안 리뷰 Minor M1·M6~M9: 이번 PR에서 보류(항목 내용은 보안 리뷰 기록에 있고, 이 문서에 옮겨 적어야 한다)

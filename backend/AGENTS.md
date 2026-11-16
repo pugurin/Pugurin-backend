@@ -94,8 +94,9 @@ wiring.py      의존성 조립(composition root). 실데이터 구현체(DB →
 
 1. 로그인은 **네이버·카카오·구글 소셜 로그인만** 제공한다. 이메일/비밀번호 가입·재설정은 만들지 않는다. 처음 온 사람은 가입 토큰(10분, 1회용)을 받고 `POST /auth/signup`에서 닉네임·필수 동의로 가입을 마친다(두 단계 가입).
 2. **앱 SDK 토큰은 우리 앱에 발급된 것만 받는다**(토큰 대체 공격 방지). 카카오는 토큰 정보 API의 `app_id`(`PUGURIN_KAKAO_APP_ID`), 구글은 ID 토큰 `aud`나 tokeninfo의 `aud`·`azp`(웹 클라이언트 ID + `PUGURIN_GOOGLE_CLIENT_IDS`)로 확인한다. 네이버는 확인할 공식 방법이 없어 **웹 인가 코드만** 받는다(앱 토큰은 400). 웹 인가 코드는 우리 시크릿으로 교환하고 `redirect_uri`는 허용 목록과 정확히 같아야 한다.
-3. refresh token: **앱은 body**로 발급·수신(앱 보안 저장소 보관), **웹은 `HttpOnly; Secure; SameSite=Lax` 쿠키로만**(`X-Client: web`일 때만 쿠키를 읽는다). 서버에 SHA-256 해시만 저장, **사용 시마다 rotation**, 폐기된 토큰 재사용 감지 시 해당 사용자의 전체 세션 폐기. 토큰·인가 코드·시크릿은 로그에 남기지 않는다.
-4. 서명 키(`PUGURIN_JWT_SECRET`, 32바이트 이상)나 DB가 없으면 인증 API 전체가 503, 제공자 키가 없으면 그 제공자만 503(가짜 로그인 없음).
+3. refresh token: **앱은 body**로 발급·수신(앱 보안 저장소 보관), **웹은 `HttpOnly; Secure; SameSite=Lax` 쿠키로만**(`X-Client: web`일 때만 쿠키를 읽는다). 서버에 SHA-256 해시만 저장, **사용 시마다 rotation**, 폐기된 토큰 재사용 감지 시 해당 사용자의 전체 세션 폐기(갱신 직후 유예 `PUGURIN_REFRESH_REUSE_GRACE_SECONDS` 안의 중복 갱신은 401만). 토큰·인가 코드·시크릿은 로그에 남기지 않는다. redirect_uri 허용 목록은 https만, 구글 웹 로그인은 PKCE 필수.
+4. 서명 키(`PUGURIN_JWT_SECRET`, 32바이트 이상)나 DB가 없으면 인증 API 전체가 503, 제공자 키가 없으면 그 제공자만 503(가짜 로그인 없음). 운영은 백엔드가 https가 되기 전까지 서명 키를 비워 둔다.
+   탈퇴하면 커밋 뒤 카카오 연결을 끊는다(`PUGURIN_KAKAO_ADMIN_KEY`, 실패해도 탈퇴는 완료). 네이버·구글은 제공자 토큰을 저장하지 않아 서버에서 끊지 않는다.
 5. role 기반 의존성(`require_role("agent", approved=True)`)으로 권한을 분리한다. 중개사는 `buyer` 계정에서 **검증 신청으로 승격**된다.
 6. 중개사 검증: 국세청 사업자 상태조회로 계속사업자 여부를 확인한다. 중개업자 등록번호·상호·대표자 일치 확인은 조회 공급처가 없어 관리자 수동 심사로 한다(공급처가 생기면 자동화).
 

@@ -520,7 +520,7 @@ erDiagram
 |---|---|---|
 | `users` | 2 | **구현(0012)** `id uuid`, `nickname`(중복 허용), `role`(buyer/admin), `provider`(가입한 소셜, 탈퇴 시 NULL), `marketing_push`, `marketing_consented_at`, `settings jsonb`(바꾼 값만), `agreed_at`(필수 동의 일시), `created_at`, `deleted_at`. 탈퇴하면 닉네임 "탈퇴한 사용자", 마케팅 동의·설정 비움 |
 | `user_identities` | 2 | **구현(0012)** `(provider, provider_user_id)` PK(**UNIQUE**), `user_id`. 탈퇴하면 행을 지워 같은 소셜 계정으로 재가입하면 새 사용자 |
-| `refresh_tokens` | 2 | **구현(0012)** `token_hash`(SHA-256, UNIQUE), `family_id`(첫 로그인부터 갱신으로 이어진 묶음), `device_id`, `created_at`, `expires_at`, `revoked_at`. 갱신마다 새 행·이전 행 폐기. 폐기된 토큰 재사용 시 **그 사용자의 refresh token 전체** 폐기 |
+| `refresh_tokens` | 2 | **구현(0012)** `token_hash`(SHA-256, UNIQUE), `family_id`(첫 로그인부터 갱신으로 이어진 묶음), `device_id`, `created_at`, `expires_at`, `revoked_at`, `replaced_by`(갱신으로 바뀐 새 토큰). 갱신마다 새 행·이전 행 폐기. 폐기된 토큰 재사용 시 **그 사용자의 refresh token 전체** 폐기(갱신 직후 30초 유예 안의 중복 갱신은 401만). 탈퇴하면 행 삭제 |
 | `signup_tokens` | 2 | **구현(0012)** 두 단계 가입용 `token_hash` PK, `provider`, `provider_user_id`, `profile_nickname`, `expires_at`(10분). 쓰면 지우고, 만료된 것은 새 가입 토큰을 만들 때 지운다 |
 | `consents` | 2 | (미구현. 마케팅 동의는 지금 `users`에 있다) 약관·개인정보 동의, 광고성 푸시 동의·야간 동의·`consented_at`·`reconfirm_due`(2년) |
 | `withdrawn_retention` | 2 | 탈퇴 후 **법정 보관 대상만** 분리 보관(개인정보 분리) |

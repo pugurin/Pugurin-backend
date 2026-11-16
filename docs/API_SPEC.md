@@ -985,9 +985,9 @@
 ```
 - 앱: 서버가 **토큰이 우리 앱에 발급된 것인지** 확인한 뒤 사용자 정보를 얻는다. 다른 앱 토큰이면 `401`
   - 카카오: 토큰 정보 `app_id` = `PUGURIN_KAKAO_APP_ID`(설정이 없으면 카카오 앱 로그인 `503`), 그다음 `/v2/user/me`
-  - 구글: ID 토큰은 공개키로 서명·`iss`·만료·`aud`, access token은 tokeninfo의 `aud`·`azp`. 받는 클라이언트 ID = 웹 클라이언트 ID + `PUGURIN_GOOGLE_CLIENT_IDS`(앱 클라이언트)
+  - 구글: ID 토큰은 공개키로 서명·`iss`·만료·`aud`, access token은 tokeninfo의 `aud`·`azp`. 받는 클라이언트 ID = 웹 클라이언트 ID + `PUGURIN_GOOGLE_CLIENT_IDS`(앱 클라이언트). 구글 `name`은 실명이라 `profile.nickname`은 항상 `null`
   - ⚠️ 네이버: 앱 토큰은 받지 않는다(우리 앱 것인지 확인할 공식 방법이 없음) → `400 VALIDATION_ERROR`, `field: "access_token"`. 앱도 웹 인가 코드 흐름으로 로그인한다
-- 웹: `code`·`redirect_uri`·`state` 필수(없으면 `400`, `field`에 이름). `redirect_uri`는 서버 허용 목록(`PUGURIN_AUTH_REDIRECT_URIS`)과 정확히 같아야 한다(아니면 `400`, `field: "redirect_uri"`). `state`는 웹이 만들어 콜백에서 확인한다. 서버는 네이버 토큰 API가 요구해서 네이버에만 넘긴다. `code_verifier`(43~128자)는 PKCE를 지원하는 카카오·구글에만 넘긴다
+- 웹: `code`·`redirect_uri`·`state` 필수(없으면 `400`, `field`에 이름). ⚠️ 구글은 `code_verifier`도 필수(PKCE). 허용 목록은 https 주소만이고, 비어 있으면 웹 로그인 `503`. `redirect_uri`는 서버 허용 목록(`PUGURIN_AUTH_REDIRECT_URIS`)과 정확히 같아야 한다(아니면 `400`, `field: "redirect_uri"`). `state`는 웹이 만들어 콜백에서 확인한다. 서버는 네이버 토큰 API가 요구해서 네이버에만 넘긴다. `code_verifier`(43~128자)는 PKCE를 지원하는 카카오·구글에만 넘긴다
 - 소셜 토큰·인가 코드가 틀리거나 이미 쓴 것 → `401 UNAUTHORIZED`
 - 알 수 없는 `provider`, `X-Client`가 `app|web`이 아님 → `400 VALIDATION_ERROR`
 
@@ -1026,6 +1026,8 @@
 - 앱이 `refresh_token`을 안 보내면 `400 VALIDATION_ERROR`. 웹은 쿠키만 읽는다(body의 토큰은 무시, 쿠키 없으면 `401`). `X-Client: web`이 없으면 쿠키를 읽지 않는다
 - 매번 새 refresh token을 발급하고 이전 것은 폐기한다. 없거나 만료된 토큰 → `401`
 - 폐기된 refresh token(갱신·로그아웃으로 폐기된 것) 재사용이 감지되면 해당 사용자의 모든 refresh token을 폐기하고 `401`
+- ⚠️ 유예: 갱신으로 폐기된 지 30초(`PUGURIN_REFRESH_REUSE_GRACE_SECONDS`) 안이고 새 토큰이 아직 안 쓰였으면 전체 폐기 없이 `401`만(동시 갱신). 클라이언트는 갱신을 한 번에 하나만 보낸다
+- 웹이 `401`을 받으면 refresh 쿠키도 지워진다
 
 **`POST /auth/logout`** → `204 No Content`
 - 앱은 body `{ "refresh_token": "..." }`, 웹은 쿠키(`X-Client: web`). 그 토큰만 폐기한다. 모르는 토큰이거나 토큰이 없어도 `204`
@@ -1061,7 +1063,7 @@
 
 **회원 탈퇴 (`DELETE /users/me`)** → `204 No Content` (웹은 refresh 쿠키도 지운다)
 - 개인정보(닉네임, 소셜 식별자, 연락처 등)는 **즉시 파기(익명화)**. 법정 보관 대상만 분리 보관 테이블로 이동
-  - 구현: 한 트랜잭션에서 소셜 연결 삭제, 닉네임 "탈퇴한 사용자", 마케팅 동의·설정 비움, `deleted_at` 기록, 모든 refresh token 폐기. 탈퇴 직후 access token도 바로 `401`
+  - 구현: 한 트랜잭션에서 소셜 연결 삭제, 닉네임 "탈퇴한 사용자", 마케팅 동의·설정 비움, `deleted_at` 기록, refresh token 행 삭제. 탈퇴 직후 access token도 바로 `401`. 커밋 뒤 카카오는 연결 끊기(어드민 키, 실패해도 탈퇴는 완료), 네이버·구글은 서버에서 끊지 않는다
 - **소유 확인 결과 기록을 즉시 파기**하고, 올린 매물은 즉시 비노출 (해당 기능이 생기면 붙인다)
 - 채팅 메시지는 상대방 화면에 "탈퇴한 사용자"로 표시, 보관 기간 정책(미정) 경과 후 삭제
 - 같은 소셜 계정으로 **재가입 가능** (기존 계정과 연결하지 않음, 새 사용자). 재가입 제재 우회 방지(본인인증 CI 해시 보관)는 기능명세서 §7 #16에서 결정

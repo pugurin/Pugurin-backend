@@ -962,7 +962,7 @@
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| POST | `/auth/oauth/{provider}` | - | ⚠️ `provider: naver\|kakao\|google`. 로그인. 처음 온 사람은 가입 토큰을 받는다 |
+| POST | `/auth/oauth/{provider}` | - | ⚠️ `provider: naver\|kakao\|google`. 로그인. 처음 온 사람은 가입 토큰을 받는다. 네이버는 웹 인가 코드만 |
 | POST | `/auth/signup` | - (가입 토큰) | ⚠️ 가입 마무리(닉네임·약관 동의) |
 | POST | `/auth/refresh` | - (refresh token) | access 재발급 + refresh **rotation** |
 | POST | `/auth/logout` | - (refresh token) | ⚠️ 그 refresh token 폐기(웹은 쿠키도 지움). access token은 필요 없다. 푸시 토큰 해제는 푸시가 생기면 붙인다 |
@@ -978,12 +978,15 @@
 
 **`POST /auth/oauth/{provider}` 요청**
 ```json
-// 앱: 소셜 SDK가 준 토큰. 구글은 ID 토큰(JWT, aud = 서버의 구글 웹 클라이언트 ID)이나 access token
+// 앱: 소셜 SDK가 준 토큰(카카오·구글만). 구글은 ID 토큰(JWT)이나 access token
 { "access_token": "소셜 SDK가 준 토큰" }
 // 웹 (X-Client: web): 리다이렉트로 받은 인가 코드
 { "code": "인가 코드", "redirect_uri": "https://허용된-웹-주소/auth/callback", "state": "string", "code_verifier": "PKCE, 선택" }
 ```
-- 앱: 서버가 제공자 사용자 정보 API로 토큰을 확인한다(카카오 `/v2/user/me`, 네이버 `/v1/nid/me`, 구글 ID 토큰은 공개키로 서명·`aud`·`iss`·만료 확인, access token은 `userinfo`)
+- 앱: 서버가 **토큰이 우리 앱에 발급된 것인지** 확인한 뒤 사용자 정보를 얻는다. 다른 앱 토큰이면 `401`
+  - 카카오: 토큰 정보 `app_id` = `PUGURIN_KAKAO_APP_ID`(설정이 없으면 카카오 앱 로그인 `503`), 그다음 `/v2/user/me`
+  - 구글: ID 토큰은 공개키로 서명·`iss`·만료·`aud`, access token은 tokeninfo의 `aud`·`azp`. 받는 클라이언트 ID = 웹 클라이언트 ID + `PUGURIN_GOOGLE_CLIENT_IDS`(앱 클라이언트)
+  - ⚠️ 네이버: 앱 토큰은 받지 않는다(우리 앱 것인지 확인할 공식 방법이 없음) → `400 VALIDATION_ERROR`, `field: "access_token"`. 앱도 웹 인가 코드 흐름으로 로그인한다
 - 웹: `code`·`redirect_uri`·`state` 필수(없으면 `400`, `field`에 이름). `redirect_uri`는 서버 허용 목록(`PUGURIN_AUTH_REDIRECT_URIS`)과 정확히 같아야 한다(아니면 `400`, `field: "redirect_uri"`). `state`는 웹이 만들어 콜백에서 확인한다. 서버는 네이버 토큰 API가 요구해서 네이버에만 넘긴다. `code_verifier`(43~128자)는 PKCE를 지원하는 카카오·구글에만 넘긴다
 - 소셜 토큰·인가 코드가 틀리거나 이미 쓴 것 → `401 UNAUTHORIZED`
 - 알 수 없는 `provider`, `X-Client`가 `app|web`이 아님 → `400 VALIDATION_ERROR`

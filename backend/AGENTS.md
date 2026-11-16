@@ -23,7 +23,7 @@
 | DB               | PostgreSQL 16 + PostGIS                                         |
 | ORM/마이그레이션 | SQLAlchemy 2.x (async) + GeoAlchemy2 + Alembic                  |
 | 캐시/메시징      | Redis — 캐시, rate limit, 채팅 pub/sub, 조회수 카운터            |
-| 인증             | 카카오·네이버 OAuth → 자체 JWT(access 30분 / refresh 14일, rotation) |
+| 인증             | 네이버·카카오·구글 소셜 로그인 → 자체 JWT(HS256, access 30분 / refresh 14일, rotation) |
 | 실시간 통신      | FastAPI WebSocket + Redis pub/sub                               |
 | 배치             | 별도 ETL 워커 컨테이너 + 스케줄러(cron 또는 APScheduler)         |
 | 푸시             | FCM (APNs는 FCM 경유)                                           |
@@ -90,10 +90,14 @@ wiring.py      의존성 조립(composition root). 실데이터 구현체(DB →
 5. 조회수 등 카운터는 Redis에서 증가시키고 주기적으로 DB에 반영한다(읽기 요청마다 DB 쓰기 금지).
 
 ### 4.5 인증·인가
-1. 로그인은 **카카오·네이버 OAuth만** 제공한다. 이메일/비밀번호 가입·재설정은 만들지 않는다.
-2. refresh token은 **body로 발급·수신**(앱 보안 저장소 보관, 쿠키 미사용). 서버에 해시 저장, **사용 시마다 rotation**, 폐기된 토큰 재사용 감지 시 해당 사용자의 전체 세션 폐기.
-3. role 기반 의존성(`require_role("agent", approved=True)`)으로 권한을 분리한다. 중개사는 `buyer` 계정에서 **검증 신청으로 승격**된다.
-4. 중개사 검증: 국세청 사업자 상태조회로 계속사업자 여부를 확인한다. 중개업자 등록번호·상호·대표자 일치 확인은 조회 공급처가 없어 관리자 수동 심사로 한다(공급처가 생기면 자동화).
+설계는 [`../docs/AUTH.md`](../docs/AUTH.md), 저장은 `users`·`user_identities`·`refresh_tokens`·`signup_tokens`(마이그레이션 0011).
+
+1. 로그인은 **네이버·카카오·구글 소셜 로그인만** 제공한다. 이메일/비밀번호 가입·재설정은 만들지 않는다. 처음 온 사람은 가입 토큰(10분, 1회용)을 받고 `POST /auth/signup`에서 닉네임·필수 동의로 가입을 마친다(두 단계 가입).
+2. **앱 SDK 토큰은 우리 앱에 발급된 것만 받는다**(토큰 대체 공격 방지). 카카오는 토큰 정보 API의 `app_id`(`PUGURIN_KAKAO_APP_ID`), 구글은 ID 토큰 `aud`나 tokeninfo의 `aud`·`azp`(웹 클라이언트 ID + `PUGURIN_GOOGLE_CLIENT_IDS`)로 확인한다. 네이버는 확인할 공식 방법이 없어 **웹 인가 코드만** 받는다(앱 토큰은 400). 웹 인가 코드는 우리 시크릿으로 교환하고 `redirect_uri`는 허용 목록과 정확히 같아야 한다.
+3. refresh token: **앱은 body**로 발급·수신(앱 보안 저장소 보관), **웹은 `HttpOnly; Secure; SameSite=Lax` 쿠키로만**(`X-Client: web`일 때만 쿠키를 읽는다). 서버에 SHA-256 해시만 저장, **사용 시마다 rotation**, 폐기된 토큰 재사용 감지 시 해당 사용자의 전체 세션 폐기. 토큰·인가 코드·시크릿은 로그에 남기지 않는다.
+4. 서명 키(`PUGURIN_JWT_SECRET`, 32바이트 이상)나 DB가 없으면 인증 API 전체가 503, 제공자 키가 없으면 그 제공자만 503(가짜 로그인 없음).
+5. role 기반 의존성(`require_role("agent", approved=True)`)으로 권한을 분리한다. 중개사는 `buyer` 계정에서 **검증 신청으로 승격**된다.
+6. 중개사 검증: 국세청 사업자 상태조회로 계속사업자 여부를 확인한다. 중개업자 등록번호·상호·대표자 일치 확인은 조회 공급처가 없어 관리자 수동 심사로 한다(공급처가 생기면 자동화).
 
 ### 4.6 채팅
 1. **구매자 ↔ 승인된 중개사**만 채팅방을 가진다. 동일 (구매자, 중개사, 매물) 조합은 기존 방을 반환한다.

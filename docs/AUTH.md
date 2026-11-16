@@ -31,10 +31,13 @@
 
 ### 1. 로그인 `POST /auth/oauth/{provider}` (`provider: naver|kakao|google`)
 
-- **앱:** `{ "access_token": "소셜 SDK 토큰" }` → 서버가 그 제공자의 사용자 정보 API로 토큰을 확인하고 소셜 사용자 ID를 얻는다.
-  - 카카오 `GET https://kapi.kakao.com/v2/user/me`, 네이버 `GET https://openapi.naver.com/v1/nid/me`, 구글은 SDK가 준 ID 토큰을 받는다면 `aud`·`iss`·서명을 확인하고, access token이면 `https://openidconnect.googleapis.com/v1/userinfo`
+- **앱:** `{ "access_token": "소셜 SDK 토큰" }` → 서버가 **그 토큰이 우리 앱에 발급된 것인지** 먼저 확인하고(다른 앱이 받은 사용자 토큰으로 로그인하는 토큰 대체 공격 방지), 사용자 정보 API로 소셜 사용자 ID를 얻는다.
+  - 카카오: `GET https://kapi.kakao.com/v1/user/access_token_info`의 `app_id`가 `PUGURIN_KAKAO_APP_ID`와 같을 때만 `GET https://kapi.kakao.com/v2/user/me`. 앱 ID 설정이 없으면 카카오 앱 로그인은 `503`
+  - 구글: ID 토큰(JWT)이면 공개키로 서명·`iss`·만료와 `aud`를 확인하고, access token이면 `https://oauth2.googleapis.com/tokeninfo`의 `aud` 또는 `azp`를 확인한 뒤 `https://openidconnect.googleapis.com/v1/userinfo`. 받는 클라이언트 ID = 웹 클라이언트 ID(`PUGURIN_GOOGLE_CLIENT_ID`) + 앱 클라이언트 ID 목록(`PUGURIN_GOOGLE_CLIENT_IDS`)
+  - 네이버: 앱 토큰이 우리 앱 것인지 확인할 공식 API를 찾지 못했다. 그래서 **네이버는 웹 인가 코드만** 받고 앱 토큰 요청은 `400 VALIDATION_ERROR`(`field: "access_token"`, 웹 로그인 안내). 앱에서 네이버 로그인은 웹 인가 코드 흐름(브라우저 + 앱 스킴 redirect_uri)으로 한다
 - **웹(`X-Client: web`):** `{ "code", "redirect_uri", "state", "code_verifier"? }` → `redirect_uri`가 허용 목록과 정확히 같아야 한다(아니면 400). 서버가 클라이언트 시크릿으로 코드를 토큰으로 바꾼 뒤 위처럼 사용자 정보를 얻는다. `code_verifier`가 오면 PKCE로 함께 보낸다(지원하는 제공자만).
-  - `state`는 웹이 만들어 콜백에서 확인한다(명세 그대로). 서버는 받은 값을 제공자 요청에 넘기지 않는다.
+  - `state`는 웹이 만들어 콜백에서 확인한다(명세 그대로). 서버는 state를 검증하지 않는다. 단 **네이버 토큰 교환 API는 `state`를 필수로 받으므로 네이버에만 넘긴다**(카카오·구글에는 넘기지 않는다).
+  - 웹 인가 코드는 우리 클라이언트 시크릿으로 교환하므로 토큰이 우리 앱 것인지 따로 확인하지 않는다.
 - **가입한 사람:** `{ is_new_user: false, access_token, refresh_token(앱만), user }`. 웹은 refresh token을 `HttpOnly; Secure; SameSite=Lax` 쿠키로만 준다.
 - **처음인 사람 ⚠️:** 토큰 대신 `{ is_new_user: true, signup_token, profile: { nickname } }`. 가입 토큰은 10분, 1회용.
 - 소셜 확인 실패 → `401 UNAUTHORIZED`.
@@ -83,7 +86,21 @@
 
 ## 설정 (`.env`, 키는 사용자가 직접 넣는다)
 
-`PUGURIN_JWT_SECRET`, `PUGURIN_KAKAO_REST_KEY`·`PUGURIN_KAKAO_CLIENT_SECRET`, `PUGURIN_NAVER_CLIENT_ID`·`PUGURIN_NAVER_CLIENT_SECRET`, `PUGURIN_GOOGLE_CLIENT_ID`·`PUGURIN_GOOGLE_CLIENT_SECRET`, `PUGURIN_AUTH_REDIRECT_URIS`(쉼표 구분, 정확히 일치). 제공자 키가 없으면 그 제공자는 `503`(가짜 응답을 내지 않는다).
+`PUGURIN_JWT_SECRET`, `PUGURIN_KAKAO_REST_KEY`·`PUGURIN_KAKAO_CLIENT_SECRET`·`PUGURIN_KAKAO_APP_ID`(앱 로그인), `PUGURIN_NAVER_CLIENT_ID`·`PUGURIN_NAVER_CLIENT_SECRET`, `PUGURIN_GOOGLE_CLIENT_ID`(웹 클라이언트)·`PUGURIN_GOOGLE_CLIENT_SECRET`·`PUGURIN_GOOGLE_CLIENT_IDS`(앱 클라이언트 목록, 쉼표 구분), `PUGURIN_AUTH_REDIRECT_URIS`(쉼표 구분, 정확히 일치). 제공자 키가 없으면 그 제공자는 `503`(가짜 응답을 내지 않는다).
+
+- 카카오는 REST 키가 있으면 켜지고, 앱 토큰 로그인에는 `PUGURIN_KAKAO_APP_ID`도 있어야 한다.
+- 구글은 `PUGURIN_GOOGLE_CLIENT_ID`나 `PUGURIN_GOOGLE_CLIENT_IDS` 중 하나가 있으면 켜진다. 웹 인가 코드 로그인은 `PUGURIN_GOOGLE_CLIENT_ID`와 시크릿이 둘 다 있어야 한다. 앱 토큰은 두 설정에 있는 ID 중 어느 것에 발급됐어도 받는다.
+
+## 웹과 CORS
+
+웹(https://pugurin.netlify.app)은 Netlify의 `/api` 프록시로 백엔드를 부르므로 **같은 출처**다. 그래서 CORS 미들웨어가 없고, refresh 쿠키는 `SameSite=Lax`로 충분하다. 웹을 다른 출처에서 직접 부르게 되면 `allow_credentials` CORS(허용 출처 목록)와 쿠키 정책을 다시 정한다.
+
+## 프론트가 맞춰야 할 점
+
+- `marketing_push`는 사용자 응답의 최상위가 아니라 **`user.consents.marketing_push`** 에 있다(명세 §8 모양). 프론트 `User` 타입(`authTypes.ts`)의 최상위 `marketing_push`를 이 위치로 읽어야 한다.
+- 네이버는 앱에서도 웹 인가 코드 흐름으로 로그인한다(앱 토큰은 400).
+- 구글 앱 로그인은 ID 토큰을 보내는 것을 권한다. 앱 클라이언트 ID는 서버 `PUGURIN_GOOGLE_CLIENT_IDS`에 있어야 한다.
+- `state`는 웹이 만들고 콜백에서 확인한다(서버가 만들지 않는다).
 
 ## 테스트
 

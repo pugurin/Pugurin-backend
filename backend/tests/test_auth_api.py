@@ -703,3 +703,27 @@ def test_naver_and_google_withdrawals_do_not_try_to_unlink(world):
     session = world.signup(token).json()["data"]
     r = world.client.delete(f"{API}/users/me", headers={"Authorization": f"Bearer {session['access_token']}"})
     assert r.status_code == 204 and world.unlinker.unlinked == []
+
+
+def test_a_late_duplicate_web_refresh_does_not_clear_the_new_cookie(world):
+    """탭 A가 먼저 갱신해 새 쿠키를 받고, 같은 옛 쿠키로 보낸 탭 B의 401이 늦게 와도 A의 새 쿠키를 지우지 않는다."""
+    world.new_member(user_id="k-1")
+    world.kakao.codes["code-1"] = world.kakao.user("k-1")
+    old = set_cookie(web_login(world)).split(";")[0].split("=", 1)[1]
+    a = world.client.post(f"{API}/auth/refresh", headers=WEB)
+    assert a.status_code == 200
+    b = world.client.post(f"{API}/auth/refresh", headers={**WEB, "Cookie": f"refresh_token={old}"})
+    assert error(b) == (401, "UNAUTHORIZED", None)
+    assert "set-cookie" not in b.headers
+    # A가 받은 새 쿠키로 다음 갱신이 된다
+    assert world.client.post(f"{API}/auth/refresh", headers=WEB).status_code == 200
+
+
+def test_web_refresh_reuse_outside_the_grace_still_clears_the_cookie(world):
+    world.new_member(user_id="k-1")
+    world.kakao.codes["code-1"] = world.kakao.user("k-1")
+    old = set_cookie(web_login(world)).split(";")[0].split("=", 1)[1]
+    assert world.client.post(f"{API}/auth/refresh", headers=WEB).status_code == 200
+    world.clock.advance(seconds=30)
+    b = world.client.post(f"{API}/auth/refresh", headers={**WEB, "Cookie": f"refresh_token={old}"})
+    assert error(b)[0] == 401 and "max-age=0" in set_cookie(b).lower()

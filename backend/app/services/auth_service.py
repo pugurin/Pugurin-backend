@@ -20,7 +20,7 @@ from app.auth.tokens import (
     new_opaque_token,
 )
 from app.core.dates import Clock
-from app.core.errors import source_unavailable, unauthorized, validation_error
+from app.core.errors import AppError, ErrorCode, source_unavailable, unauthorized, validation_error
 from app.repositories.ports import AccountRepository, SourceUnavailable
 from app.repositories.types import Account, RotateOutcome, SignupClaim, SocialProfile, SocialProvider
 
@@ -49,6 +49,13 @@ def normalize_nickname(value: str) -> str:
     if not _NICKNAME.fullmatch(name):
         raise validation_error("nickname", "한글·영문·숫자만 쓸 수 있어요(띄어쓰기·기호 없이)")
     return name
+
+
+class ConcurrentRefresh(AppError):
+    """같은 refresh token으로 방금(유예 안) 다른 갱신이 성공했다. 401이지만 웹 쿠키는 지우지 않는다."""
+
+    def __init__(self):
+        super().__init__(ErrorCode.UNAUTHORIZED, "이미 다른 요청이 로그인을 갱신했어요. 그 결과를 써 주세요")
 
 
 @dataclass(frozen=True)
@@ -198,6 +205,9 @@ class AuthService:
             expires_at=now + REFRESH_TTL,
             grace=self._reuse_grace,
         )
+        if outcome is RotateOutcome.concurrent:
+            # 다른 요청이 방금 이 토큰으로 갱신했다. 그쪽이 받은 새 토큰(웹은 새 쿠키)을 건드리지 않게 구분해 알린다
+            raise ConcurrentRefresh()
         if outcome is RotateOutcome.reused:
             logger.warning("폐기된 refresh token 재사용 감지: 사용자 %s의 세션을 모두 끊었습니다", user_id)
         account = await repo.get(user_id) if outcome is RotateOutcome.rotated and user_id else None

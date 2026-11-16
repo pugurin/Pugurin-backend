@@ -25,7 +25,7 @@ from app.schemas.auth import (
     UserOut,
 )
 from app.schemas.common import PlainEnvelope
-from app.services.auth_service import Session, SignupNeeded
+from app.services.auth_service import ConcurrentRefresh, Session, SignupNeeded
 
 router = APIRouter(tags=["auth"])
 
@@ -115,13 +115,14 @@ async def refresh(
     refresh_token: Annotated[str | None, Cookie(include_in_schema=False)] = None,
 ) -> JSONResponse:
     if client is ClientKind.web:
-        # 웹은 쿠키만 본다(본문의 토큰은 받지 않는다). 401이면 쓸모없어진 쿠키도 지운다
+        # 웹은 쿠키만 본다(본문의 토큰은 받지 않는다). 401이면(없음·만료·재사용) 쓸모없어진 쿠키도 지운다
         try:
             if not refresh_token:
                 raise unauthorized()
             tokens = await container.auth_service.refresh(refresh_token, device_id)
         except AppError as e:
-            if e.code is not ErrorCode.UNAUTHORIZED:
+            # 동시 갱신(유예)으로 진 쪽은 쿠키를 지우지 않는다: 먼저 끝난 갱신이 내려준 새 쿠키를 지우게 된다
+            if e.code is not ErrorCode.UNAUTHORIZED or isinstance(e, ConcurrentRefresh):
                 raise
             failed = JSONResponse(error_body(e.code, e.message, e.field), status_code=e.status_code)
             clear_refresh_cookie(failed)

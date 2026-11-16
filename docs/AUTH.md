@@ -133,3 +133,5 @@
 - M7 로그인 경로 전용 요청 한도 없음: 지금은 공통 `RateLimitMiddleware`(`main.py`, 기기·IP 한도)뿐이다. `X-Device-Id`는 클라이언트가 정해 우회되고, 웹은 Netlify IP로 묶인다. `/auth/oauth/*`에 IP 기준 별도 한도 필요(구글 tokeninfo 호출 증폭 방지)
 - M8 로그아웃으로 폐기한 토큰(`replaced_by` 없음)을 다시 보내도 `rotate_refresh_token`이 전체 세션을 폐기한다(유예 규칙 밖). 의도된 동작이지만 재시도 시 불편할 수 있음
 - M9 `AuthService.signup`이 가입 토큰을 먼저 지우고(`take_signup_token`) 사용자를 만든다(`repo.create`): 생성 중 DB 오류면 토큰만 잃는다(다시 로그인하면 됨)
+- 유예 trade-off: 공격자가 훔친 토큰으로 먼저 갱신하고 30초 안에 피해자가 옛 토큰을 보내면 전체 폐기 없이 피해자만 401(`concurrent`)이라 재사용 감지 신호를 놓친다
+- 카카오 연결 끊기(`AuthService.withdraw`)는 실패해도 재시도하지 않는다(소셜 ID는 이미 삭제). 카카오가 느리면 탈퇴 응답이 최대 10초(어댑터 timeout) 늦어진다

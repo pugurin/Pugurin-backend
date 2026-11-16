@@ -171,10 +171,46 @@ def classify_location(location) -> tuple[LocationKind, str | None]:
     return LocationKind.lot, query
 
 
+# 원천이 빈 칸을 채우는 자리 채움 값(2026-11 실데이터 확인). 화면에 "용적률 0%"·가짜 번호가 뜨지 않게 null로 둔다
+_PLACEHOLDER_LABEL = {"0", "1"}  # 업체명 같은 글자 칸
+_PLACEHOLDER_MAX = 1  # 세대수·동수·조합원수·용적률·건폐율의 0·1
+_MIN_AREA_M2 = 100  # 구역 면적 1㎡·10㎡ 같은 입력 오류
+
+
+def _label(v) -> str | None:
+    s = _text(v)
+    return None if s in _PLACEHOLDER_LABEL else s
+
+
+def _real(n: float | int | None):
+    return n if n is not None and n > _PLACEHOLDER_MAX else None
+
+
+def _area(v) -> float | None:
+    n = parse_number(v)
+    return n if n is not None and n >= _MIN_AREA_M2 else None
+
+
+def _tel(v) -> str | None:
+    """000-0000-0000, 051-000-0000, 0-0-0처럼 자리만 채운 번호는 뺀다. 02-787-0000처럼 끝이 0인 번호는 둔다."""
+    s = _text(v)
+    if s is None:
+        return None
+    groups = re.findall(r"\d+", s)
+    if len("".join(groups)) < 9:
+        return None
+    if len(groups) >= 2 and set(groups[1]) == {"0"}:
+        return None
+    return s
+
+
 def _image_url(v) -> str | None:
-    """원천은 http로 주지만 그 주소는 401이고 https만 열린다. https로 바꿔 둔다(https 화면에서도 쓸 수 있게)."""
+    """원천은 http로 주지만 그 주소는 401이고 https만 열린다. https로 바꿔 둔다(https 화면에서도 쓸 수 있게).
+    파일명 없이 폴더(`…/busi_ara/`)로 끝나는 주소는 열리지 않아 뺀다."""
     url = _text(v)
-    if url and url.startswith("http://"):
+    if url is None or url.endswith("/"):
+        return None
+    if url.startswith("http://"):
         return "https://" + url.removeprefix("http://")
     return url
 
@@ -213,19 +249,19 @@ def zone_from_row(row: dict) -> RedevelopmentItem:
         location=location,
         location_kind=location_kind,
         geocode_query=query,
-        area_m2=parse_number(row.get("areaUnit")),
-        households=_int(row.get("generationJoo")),
-        buildings=_int(row.get("wingNum")),
-        union_members=_int(row.get("guildMemNum")),
-        floor_area_ratio=parse_number(row.get("gage")),
-        building_coverage_ratio=parse_number(row.get("longPyeyul")),
-        scale=_text(row.get("scale")),
-        business_entity=_text(row.get("businessEntities")),
-        contractor=_text(row.get("contractor")),
-        engineer=_text(row.get("engineer")),
-        architect=_text(row.get("architect")),
-        specialists=_text(row.get("specialists")),
-        tel=_text(row.get("telNo")),
+        area_m2=_area(row.get("areaUnit")),
+        households=_real(_int(row.get("generationJoo"))),
+        buildings=_real(_int(row.get("wingNum"))),
+        union_members=_real(_int(row.get("guildMemNum"))),
+        floor_area_ratio=_real(parse_number(row.get("gage"))),
+        building_coverage_ratio=_real(parse_number(row.get("longPyeyul"))),
+        scale=_label(row.get("scale")),
+        business_entity=_label(row.get("businessEntities")),
+        contractor=_label(row.get("contractor")),
+        engineer=_label(row.get("engineer")),
+        architect=_label(row.get("architect")),
+        specialists=_label(row.get("specialists")),
+        tel=_tel(row.get("telNo")),
         images=images,
     )
 

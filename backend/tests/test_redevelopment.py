@@ -51,7 +51,7 @@ def test_a_row_keeps_the_code_numbers_and_images_and_drops_blanks():
         None,
         None,
     )
-    assert z.tel == "051-000-0000"  # phone(휴대전화일 수 있다)은 옮기지 않는다
+    assert z.tel == "051-123-4567"  # phone(휴대전화일 수 있다)은 옮기지 않는다
     assert "010-0000-0000" not in repr(z)
     # 원천은 http로 주지만 http는 401이고 https만 열린다(2026-11 확인). https로 바꿔 저장한다
     assert z.images == {
@@ -59,6 +59,42 @@ def test_a_row_keeps_the_code_numbers_and_images_and_drops_blanks():
         "location": "https://dynamice.busan.go.kr/data/busi_ara/BARA_20260001_loct.jpg",
     }
     assert (z.location_kind, z.geocode_query) == ("lot", "부산광역시 부산진구 가야동 101")
+
+
+def test_placeholder_values_from_the_source_become_null():
+    # 실데이터는 빈 칸을 0·1, "1", 자리만 채운 전화번호, 파일명 없는 사진 폴더 주소로 채운다(2026-11 확인)
+    folder = "http://dynamice.busan.go.kr/data/busi_ara/"
+    z = zone_from_row(
+        zone_row(
+            1,
+            areaUnit="10",
+            generationJoo="0",
+            wingNum="1",
+            guildMemNum="0",
+            gage="0",
+            longPyeyul="1",
+            architect="1",
+            engineer="0",
+            telNo="000-0000-0000",
+            viewImgPath=folder,
+            loctImgPath=f"{folder}BARA_1_loct.jpg",
+        )
+    )
+    assert (z.area_m2, z.households, z.buildings, z.union_members) == (None, None, None, None)
+    assert (z.floor_area_ratio, z.building_coverage_ratio) == (None, None)
+    assert (z.architect, z.engineer, z.tel) == (None, None, None)
+    assert z.images == {"location": "https://dynamice.busan.go.kr/data/busi_ara/BARA_1_loct.jpg"}
+
+
+@pytest.mark.parametrize(
+    "tel", ["000-0000-0000", "051-000-0000", "051-0000-000", "010-0000-0000", "0-0-0", "1-1-1", "1"]
+)
+def test_phone_numbers_that_only_fill_the_slot_are_null(tel):
+    assert zone_from_row(zone_row(1, telNo=tel)).tel is None
+
+
+def test_real_looking_phone_numbers_are_kept():
+    assert zone_from_row(zone_row(1, telNo="02-787-0000")).tel == "02-787-0000"
 
 
 def test_undecided_text_fields_are_null():

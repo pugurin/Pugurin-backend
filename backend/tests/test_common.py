@@ -74,6 +74,7 @@ def test_openapi_schema_builds_for_all_endpoints(client):
         f"{API}/interests/complexes/{{complex_id}}",
         f"{API}/interests/auctions",
         f"{API}/interests/auctions/{{auction_id}}",
+        f"{API}/transit/routes",
         f"{API}/auth/oauth/{{provider}}",
         f"{API}/auth/signup",
         f"{API}/auth/refresh",

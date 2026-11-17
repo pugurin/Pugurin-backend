@@ -30,6 +30,8 @@ def schools_rows() -> list[dict]:
         school(50, SD_SCHUL_CODE="7240099", SCHUL_KND_SC_NM="중학교", SCHUL_NM="가상중학교"),
         school(60, SD_SCHUL_CODE="       ", SCHUL_NM="(가칭)가상초등학교", FOAS_MEMRD="20300301"),  # 개교 전
         school(70, SCHUL_KND_SC_NM="특수학교"),
+        # 영문·가운뎃점이 든 이름. 약 5.5km 떨어져 주변 학교 결과에는 나오지 않는다
+        school(5000, SCHUL_KND_SC_NM="고등학교", SCHUL_NM="가상ICT·과학고등학교"),
     ]
 
 
@@ -231,6 +233,8 @@ def test_academy_fields_map_to_categories(value, expected):
         ("가상10", ["가상10초등학교"]),
         ("가상 중학", ["가상중학교"]),  # 띄어 써도 찾는다
         ("가상초등", []),  # 이름이 맞아도 개교 전 학교는 뺀다
+        ("ict과학", ["가상ICT·과학고등학교"]),  # 대소문자·가운뎃점과 상관없이 찾는다
+        ("가상ICT 과학고", ["가상ICT·과학고등학교"]),
     ],
 )
 async def test_schools_are_searched_by_name(facility_api_db, q, names):

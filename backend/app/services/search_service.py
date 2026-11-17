@@ -27,12 +27,13 @@ _STATION, _SCHOOL, _COMPLEX, _ADDRESS = range(4)
 
 
 def station_score(query: str, name: str) -> int:
-    """역 이름(노선 앞 부분)과 비교한다. '서면'과 '서면역'은 모두 '서면역'에 정확 일치로 본다."""
+    """역 이름(노선 앞 부분)과 비교한다. '서면'과 '서면역'은 모두 '서면역'에 정확 일치로 본다.
+    '서면역 1호선'처럼 노선까지 친 검색어는 노선을 포함한 전체 이름과도 비교한다."""
     q = normalize(query)
     base = normalize(name.split()[0]) if name.split() else ""
     if q and (q == base or f"{q}역" == base):
         return 100
-    return match_score(q, base)
+    return max(match_score(q, base), match_score(q, normalize(name)))
 
 
 class SearchService:

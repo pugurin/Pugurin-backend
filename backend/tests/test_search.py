@@ -313,6 +313,9 @@ def test_station_name_with_or_without_the_station_suffix_is_an_exact_match():
     assert station_score("서", "서면역 1호선") == 80
     assert station_score("면역", "서면역 1호선") == 60
     assert station_score("해운대구", "해운대역 2호선") == 0
+    # 노선까지 쳐도 찾는다
+    assert station_score("서면역 1호선", "서면역 1호선") == 100
+    assert station_score("서면역 1", "서면역 1호선") == 80
 
 
 def test_stations_that_do_not_match_are_dropped():
@@ -456,6 +459,28 @@ async def test_kakao_station_search_is_cached_per_query():
     await geocoder.search_stations("서면", 5)
     assert len(await geocoder.search_stations(" 서 면 ", 1)) == 1
     assert len(seen) == 1
+
+
+@pytest.mark.anyio
+async def test_kakao_station_search_gives_up_fast_without_retrying():
+    # 역 검색은 입력할 때마다 불리므로 카카오가 느려도 검색 전체를 오래 붙잡지 않는다
+    def slow(_):
+        raise httpx.ReadTimeout("느림")
+
+    geocoder, seen = kakao(slow)
+    with pytest.raises(SourceUnavailable):
+        await geocoder.search_stations("서면", 5)
+    assert len(seen) == 1
+    assert seen[0].extensions["timeout"]["read"] <= 3
+
+
+@pytest.mark.anyio
+async def test_kakao_station_failures_are_not_cached():
+    responses = iter([httpx.Response(500), httpx.Response(200, json={"documents": [place("서면역 1호선")]})])
+    geocoder, _ = kakao(lambda _: next(responses))
+    with pytest.raises(SourceUnavailable):
+        await geocoder.search_stations("서면", 5)
+    assert len(await geocoder.search_stations("서면", 5)) == 1
 
 
 # ---------- 저장소 ----------

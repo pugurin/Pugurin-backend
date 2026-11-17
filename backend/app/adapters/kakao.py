@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 SUBWAY_CATEGORY = "SW8"  # 카카오 장소 분류: 지하철역
 BUSAN_RECT = "128.75,34.85,129.35,35.4"  # 부산 범위(경도,위도,경도,위도). 설정의 busan_bbox와 같다
 STATION_CACHE_SIZE = 1000  # 역 이름은 거의 안 바뀌어 검색어별 결과를 메모리에 둔다
+# 역 검색은 글자를 칠 때마다 불린다. 카카오가 느리면 기다리지 않고 역 결과만 뺀다(재시도도 하지 않는다)
+STATION_TIMEOUT_SECONDS = 3.0
 
 
 @dataclass(frozen=True)
@@ -121,7 +123,7 @@ class KakaoGeocoder:
         key = normalize(query)
         if key not in self._stations:
             params = {"query": query.strip(), "category_group_code": SUBWAY_CATEGORY, "rect": BUSAN_RECT, "size": 15}
-            documents = await self._get(self._keyword_url, params)
+            documents = await self._get(self._keyword_url, params, retries=0, timeout=STATION_TIMEOUT_SECONDS)
             self._stations[key] = [h for h in map(_station, documents) if h]
             if len(self._stations) > STATION_CACHE_SIZE:
                 self._stations.popitem(last=False)
@@ -131,12 +133,18 @@ class KakaoGeocoder:
     async def _search(self, query: str) -> list[dict]:
         return await self._get(self._url, {"query": query})
 
-    async def _get(self, url: str, params: dict) -> list[dict]:
+    async def _get(
+        self, url: str, params: dict, *, retries: int | None = None, timeout: float | None = None
+    ) -> list[dict]:
         last: Exception | None = None
-        for attempt in range(self._retries + 1):
+        retries = self._retries if retries is None else retries
+        extra = {} if timeout is None else {"timeout": timeout}
+        for attempt in range(retries + 1):
             self.calls_made += 1
             try:
-                response = await self._http.get(url, params=params, headers={"Authorization": f"KakaoAK {self._key}"})
+                response = await self._http.get(
+                    url, params=params, headers={"Authorization": f"KakaoAK {self._key}"}, **extra
+                )
             except httpx.TransportError as e:
                 last = e
             else:
@@ -151,7 +159,7 @@ class KakaoGeocoder:
                     return []
                 else:
                     return response.json().get("documents", [])
-            if attempt < self._retries:
+            if attempt < retries:
                 await self._sleep(self._backoff * 2**attempt)
         raise SourceUnavailable(f"카카오 호출 실패: {last}") from last
 

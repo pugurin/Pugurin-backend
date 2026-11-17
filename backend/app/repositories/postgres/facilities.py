@@ -247,11 +247,12 @@ class PostgresFacilityRepository:
             return [_school(r) for r in rows.mappings()]
 
     async def search_schools(self, query: str, limit: int, *, today: date) -> list[School]:
-        """이름(공백 무시)으로 학교를 찾는다. 정확 일치 → 접두 일치 → 포함 순, 같으면 이름순."""
+        """이름(공백·문장부호·대소문자 무시)으로 학교를 찾는다. 정확 일치 → 접두 일치 → 포함 순, 같으면 이름순."""
         key = normalize(query)
         if not key:
             return []
-        name = "replace(name, ' ', '')"
+        # 검색어 쪽 normalize와 맞춘다(공백·문장부호를 빼고 소문자로). 가운뎃점은 로캘과 상관없이 뺀다
+        name = "lower(regexp_replace(name, '[[:space:][:punct:]·]', '', 'g'))"
         async with self._engine.connect() as conn:
             rows = await conn.execute(
                 text(

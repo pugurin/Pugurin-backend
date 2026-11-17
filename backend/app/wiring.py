@@ -25,6 +25,8 @@ from app.repositories.ports import (
     GlossaryRepository,
     MarketRepository,
     ParcelSource,
+    SchoolSearch,
+    StationSearch,
     ZoningRuleRepository,
 )
 from app.repositories.postgres.accounts import PostgresAccountRepository
@@ -168,6 +170,9 @@ def build_container(
     account_repo: AccountRepository | None = None,
     oauth_providers: Mapping[SocialProvider, OAuthProvider] | None = None,
     social_unlinkers: Mapping[SocialProvider, SocialUnlinker] | None = None,
+    *,
+    station_search: StationSearch | None = None,
+    school_search: SchoolSearch | None = None,
 ) -> Container:
     as_of = latest_etl_time(clock())
     db_engine = make_engine(settings.database_url) if settings.database_url else None
@@ -180,6 +185,13 @@ def build_container(
     # 주소 검색은 카카오 REST 키가 있을 때만 켠다
     if address_search is None and settings.kakao_rest_key:
         address_search = KakaoGeocoder(settings.kakao_rest_key)
+    # 역 검색도 같은 카카오 키(키워드 검색)를 쓴다. 키가 없으면 역 결과 없이 검색한다
+    if station_search is None and isinstance(address_search, KakaoGeocoder):
+        station_search = address_search
+    facility_repo = PostgresFacilityRepository(db_engine) if db_engine else None
+    # 학교 이름 검색은 학교 표(DB)에서 한다
+    if school_search is None:
+        school_search = facility_repo
     redis = Redis.from_url(settings.redis_url) if settings.redis_url else None
     # 계정은 DB에만 둔다. DB가 없으면 인증 API가 503
     if account_repo is None and db_engine is not None:
@@ -209,14 +221,20 @@ def build_container(
         complex_service=complex_service,
         parcel_service=parcel_service,
         glossary_service=GlossaryService(glossary_repo),
-        search_service=SearchService(market_repo, address_search),
+        search_service=SearchService(
+            market_repo,
+            address_search,
+            station_search=station_search,
+            school_search=school_search,
+            today=lambda: clock().date(),
+        ),
         stats_service=StatsService(market_repo),
         transaction_service=TransactionService(market_repo),
         analysis_service=AnalysisService(market_repo, parcel_service),
         readiness_service=ReadinessService(db_engine, redis, market_repo),
         # 경매·공매는 DB에만 있다(파일 캐시 모드에서는 503 DATA_NOT_READY)
         auction_service=auction_service,
-        facility_service=FacilityService(PostgresFacilityRepository(db_engine) if db_engine else None, clock),
+        facility_service=FacilityService(facility_repo, clock),
         redevelopment_service=RedevelopmentService(PostgresRedevelopmentRepository(db_engine) if db_engine else None),
         # 관심 목록은 로그인 전이라 앱 설치(X-Device-Id) 단위로 DB에 둔다
         interest_service=InterestService(

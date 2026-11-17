@@ -15,6 +15,8 @@ from app.repositories.ports import (
     GlossaryRepository,
     MarketRepository,
     ParcelSource,
+    SchoolSearch,
+    StationSearch,
     ZoningRuleRepository,
 )
 from app.repositories.types import SocialProvider
@@ -61,6 +63,8 @@ def create_app(
     account_repo: AccountRepository | None = None,
     oauth_providers: Mapping[SocialProvider, OAuthProvider] | None = None,
     social_unlinkers: Mapping[SocialProvider, SocialUnlinker] | None = None,
+    station_search: StationSearch | None = None,
+    school_search: SchoolSearch | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     container = build_container(
@@ -74,6 +78,8 @@ def create_app(
         account_repo,
         oauth_providers,
         social_unlinkers,
+        station_search=station_search,
+        school_search=school_search,
     )
 
     @asynccontextmanager

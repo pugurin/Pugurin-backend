@@ -22,7 +22,7 @@ def zone_row(n: int, **over) -> dict:
         "longPyeyul": "19.5",
         "guildMemNum": "800",
         "businessEntities": f"가상{n}구역 재개발정비사업조합",
-        "telNo": "051-000-0000",
+        "telNo": "051-123-4567",
         "phone": "010-0000-0000",
         "contractor": "가상건설",
         "engineer": "미선정",

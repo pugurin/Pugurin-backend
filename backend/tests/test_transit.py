@@ -1,6 +1,7 @@
 """대중교통 길찾기: ODsay 응답 해석, 캐시·이유 처리, API. 실제 ODsay는 부르지 않는다(가짜 응답)."""
 
 import asyncio
+import logging
 from uuid import uuid4
 
 import httpx
@@ -199,8 +200,8 @@ def service(source, clock=None) -> TransitService:
     return TransitService(source, lambda: FIXED_NOW, monotonic=clock or Clock())
 
 
-def routes(svc, *, home=HOME, work=WORK, limit=3):
-    return asyncio.run(svc.routes(home[0], home[1], work[0], work[1], limit))
+def routes(svc, *, home=HOME, work=WORK, limit=3, include_path=False):
+    return asyncio.run(svc.routes(home[0], home[1], work[0], work[1], limit, include_path=include_path))
 
 
 def test_caches_same_trip_for_24_hours_by_5_decimals():
@@ -208,13 +209,13 @@ def test_caches_same_trip_for_24_hours_by_5_decimals():
     svc = service(fake, clock)
     first = routes(svc, limit=1)
     assert [r.total_minutes for r in first.routes] == [38]
-    assert first.routes[0].legs[1].path == [[129.15, 35.16], [129.06, 35.16]]
     assert first.unavailable_reason is None and first.data_as_of == FIXED_NOW
+    # 기본은 노선 그래픽을 부르지 않는다(path=null)
+    assert first.routes[0].legs[1].path is None and fake.lane_calls == []
     routes(svc, home=(HOME[0] + 0.000001, HOME[1]), limit=1)  # 소수 5자리가 같으면 같은 출발
-    assert (fake.searches, fake.lane_calls) == (1, ["72:2:1:15"])
-    # 더 많이 달라고 하면 모자란 경로의 노선 그래픽만 더 부른다
+    assert fake.searches == 1
     assert len(routes(svc, limit=5).routes) == 2
-    assert (fake.searches, len(fake.lane_calls)) == (1, 2)
+    assert fake.searches == 1
     clock.t = CACHE_SECONDS + 1
     routes(svc)
     assert fake.searches == 2
@@ -227,7 +228,8 @@ def test_caches_same_trip_for_24_hours_by_5_decimals():
         (OdsayError("-99", "없음"), UnavailableReason.no_route),
         (OdsayError("6", "서비스 지역 아님"), UnavailableReason.no_route),
         (OdsayError("500", "서버 오류"), UnavailableReason.source_unavailable),
-        (OdsayError("-8", "입력 오류"), UnavailableReason.source_unavailable),
+        (OdsayError("-8", "입력 오류"), UnavailableReason.no_route),  # 다시 해도 같아서 다시 시도를 띄우지 않는다
+        (OdsayError("-9", "입력 누락"), UnavailableReason.no_route),
         (SourceUnavailable("ODsay 호출 실패"), UnavailableReason.source_unavailable),
     ],
 )
@@ -256,6 +258,37 @@ def test_without_key_is_source_unavailable():
     assert routes(service(None)).unavailable_reason is UnavailableReason.source_unavailable
 
 
+def test_include_path_calls_lanes_only_for_requested_routes():
+    fake = FakeOdsay()
+    svc = service(fake)
+    first = routes(svc, limit=1, include_path=True)
+    assert first.routes[0].legs[1].path == [[129.15, 35.16], [129.06, 35.16]]
+    assert fake.lane_calls == ["72:2:1:15"]
+    routes(svc, limit=1, include_path=True)
+    assert len(fake.lane_calls) == 1  # 그래픽도 같이 캐시
+    # 더 많이 달라고 하면 모자란 경로의 그래픽만 더 부른다
+    assert len(routes(svc, limit=5, include_path=True).routes) == 2
+    assert (fake.searches, len(fake.lane_calls)) == (1, 2)
+
+
+def test_same_trip_at_the_same_time_calls_odsay_once():
+    class Slow(FakeOdsay):
+        async def search(self, *args):
+            await asyncio.sleep(0.01)
+            return await super().search(*args)
+
+    fake = Slow()
+    svc = service(fake)
+
+    async def both():
+        call = svc.routes(HOME[0], HOME[1], WORK[0], WORK[1], 3)
+        return await asyncio.gather(call, svc.routes(HOME[0], HOME[1], WORK[0], WORK[1], 3))
+
+    a, b = asyncio.run(both())
+    assert fake.searches == 1
+    assert [r.total_minutes for r in a.routes] == [r.total_minutes for r in b.routes] == [38, 45]
+
+
 def test_lane_failure_keeps_route_without_path():
     class NoLanes(FakeOdsay):
         async def lanes(self, map_obj):
@@ -264,9 +297,9 @@ def test_lane_failure_keeps_route_without_path():
 
     fake = NoLanes()
     svc = service(fake)
-    result = routes(svc, limit=1)
+    result = routes(svc, limit=1, include_path=True)
     assert result.routes[0].total_minutes == 38 and result.routes[0].legs[1].path is None
-    routes(svc, limit=1)
+    routes(svc, limit=1, include_path=True)
     assert len(fake.lane_calls) == 2  # 실패한 그래픽은 다음 요청에서 다시 시도
 
 
@@ -295,8 +328,39 @@ def test_api_returns_routes_in_spec_shape():
         "start_name": None, "end_name": "해운대", "stop_count": None, "path": None,
     }  # fmt: skip
     assert route["legs"][1]["line"] == {"name": "부산 2호선", "color": "#81BF48"}
-    assert route["legs"][1]["path"] == [[129.15, 35.16], [129.06, 35.16]]
+    assert route["legs"][1]["path"] is None  # 기본은 그래픽 없이
     assert body["meta"]["data_as_of"].startswith("2026-")
+
+
+def test_api_include_path_returns_leg_coordinates():
+    with client(FakeOdsay()) as c:
+        r = c.get(f"{API}/transit/routes", params={**PARAMS, "limit": 1, "include_path": "true"})
+    assert r.json()["data"]["routes"][0]["legs"][1]["path"] == [[129.15, 35.16], [129.06, 35.16]]
+
+
+def test_access_log_drops_transit_query_but_keeps_other_queries():
+    from app.core.access_log import RedactPrivateQuery
+
+    def record(path: str) -> logging.LogRecord:
+        args = ("1.2.3.4:5", "GET", path, "1.1", 200)
+        return logging.LogRecord("uvicorn.access", logging.INFO, "", 0, '%s - "%s %s HTTP/%s" %d', args, None)
+
+    f = RedactPrivateQuery()
+    transit = record(f"{API}/transit/routes?from_lat=35.16310&from_lng=129.16360&to_lat=35.1546&to_lng=129.0599")
+    assert f.filter(transit) is True
+    assert transit.getMessage() == f'1.2.3.4:5 - "GET {API}/transit/routes HTTP/1.1" 200'
+    other = record(f"{API}/auctions?page=2")
+    f.filter(other)
+    assert "page=2" in other.getMessage()
+
+
+def test_app_installs_access_log_filter_once():
+    from app.core.access_log import RedactPrivateQuery
+
+    create_app(clock=lambda: FIXED_NOW)
+    create_app(clock=lambda: FIXED_NOW)
+    access = logging.getLogger("uvicorn.access")
+    assert sum(isinstance(f, RedactPrivateQuery) for f in access.filters) == 1
 
 
 def test_api_default_limit_is_3_and_unavailable_is_200():

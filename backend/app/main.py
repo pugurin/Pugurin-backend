@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI
 
 from app.adapters.oauth import OAuthProvider, SocialUnlinker
+from app.core import access_log
 from app.core.config import Settings
 from app.core.dates import Clock, kst_now
 from app.core.errors import install_error_handlers
@@ -96,6 +97,8 @@ def create_app(
     app.state.container = container
 
     install_error_handlers(app)
+    # 집·직장 좌표 같은 개인 위치 쿼리는 접근 로그에 남기지 않는다
+    access_log.install()
     app.add_middleware(ConditionalGetMiddleware, max_age=settings.cache_max_age_seconds)
 
     @app.middleware("http")

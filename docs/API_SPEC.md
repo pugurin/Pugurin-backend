@@ -867,6 +867,7 @@
 | `from_lat`, `from_lng` | Y | 출발(집) WGS84. 프론트는 소수 5자리로 보낸다 |
 | `to_lat`, `to_lng` | Y | 도착(직장) WGS84 |
 | `limit` | N | 돌려줄 경로 수. 기본 3, 1~5 |
+| `include_path` | N | `true`면 구간 좌표(`legs[].path`)도 준다. 경로마다 ODsay를 한 번 더 불러 느려지고 호출 한도를 더 쓴다. 기본 `false`(`path`는 `null`) |
 
 `GET /transit/routes?from_lat=35.16310&from_lng=129.16360&to_lat=35.15460&to_lng=129.05990&limit=3`
 
@@ -887,7 +888,7 @@
           { "mode": "subway", "minutes": 24, "distance_m": 11900,
             "line": { "name": "부산 2호선", "color": "#81BF48" },
             "start_name": "해운대", "end_name": "서면", "stop_count": 15,
-            "path": [[129.1588, 35.1634], [129.0597, 35.1579]] },
+            "path": null },
           { "mode": "walk", "minutes": 4, "distance_m": 290, "line": null,
             "start_name": "서면", "end_name": null, "stop_count": null, "path": null }
         ]
@@ -911,7 +912,7 @@
 | `legs[].line` | 지하철 `lane[0].name`, 버스 `lane[0].busNo` | 걷기·`etc`는 `null`. `color`는 부산 도시철도(1~4호선·동해선·부산김해경전철)만 `#RRGGBB`, 버스·그 밖은 `null` |
 | `legs[].start_name`, `end_name` | `startName`, `endName` | 걷기는 앞뒤 대중교통 정류장 이름(처음 걷기의 `start_name`, 마지막 걷기의 `end_name`은 `null`) |
 | `legs[].stop_count` | `stationCount` | 걷기는 `null` |
-| `legs[].path` | `loadLane(info.mapObj)` | 구간 좌표 `[[lng, lat], ...]`. 노선 그래픽을 같은 종류(버스·지하철) 구간에 순서대로 붙인다. 못 구하면 `null` |
+| `legs[].path` | `loadLane(info.mapObj)` | `include_path=true`일 때만. 구간 좌표 `[[lng, lat], ...]`. 노선 그래픽을 같은 종류(버스·지하철) 구간에 순서대로 붙인다. 걷기·못 구하면 `null` |
 | `meta.data_as_of` | | 이 결과를 ODsay에서 받은 시각 |
 
 **경로를 줄 수 없을 때:** `200`에 `routes: []`와 `unavailable_reason`.
@@ -919,11 +920,12 @@
 | `unavailable_reason` | 언제 |
 |---|---|
 | `too_close` | 출발·도착 700m 이내 (ODsay `-98`) |
-| `no_route` | 대중교통 경로 없음 (ODsay `-99`, `3`·`4`·`5` 정류장 없음, `6` 서비스 지역 아님, 결과 0건), 한국 밖 좌표(ODsay를 부르지 않는다) |
-| `source_unavailable` | ODsay 장애·호출 한도·키 오류·입력 오류(`-8`·`-9`·`500`), 서버에 키(`ODSAY_API_KEY`)가 없음. 로그만 남기고 `500`을 주지 않는다 |
+| `no_route` | 대중교통 경로 없음 (ODsay `-99`, `3`·`4`·`5` 정류장 없음, `6` 서비스 지역 아님, `-8`·`-9` 입력 오류, 결과 0건), 한국 밖 좌표(ODsay를 부르지 않는다). 다시 시도해도 같은 결과다 |
+| `source_unavailable` | ODsay 장애(`500` 등)·호출 한도·키 오류, 서버에 키(`ODSAY_API_KEY`)가 없음. 로그만 남기고 `500`을 주지 않는다. 잠시 뒤 다시 시도할 수 있다 |
 
 - 좌표가 숫자가 아니거나 범위(위도 ±90, 경도 ±180)를 벗어나면, 또는 `limit`이 1~5가 아니면 `400 VALIDATION_ERROR`(`field`에 이름). 다른 API와 같은 오류 코드를 쓴다
-- **캐시:** 같은 출발·도착(소수 5자리)은 24시간 서버 메모리에 캐시한다. 노선 그래픽은 요청한 `limit`만큼만 부르고 같이 캐시한다. `source_unavailable`은 캐시하지 않는다(다음 요청에서 다시 시도). 서버를 다시 띄우면 캐시는 비워진다
+- **캐시:** 같은 출발·도착(소수 5자리)은 24시간 서버 메모리에 캐시한다. 프론트가 좌표를 소수 3자리(약 100m)로 줄여 보내므로 사실상 3자리 단위로 맞는다. 같은 출발·도착을 동시에 물으면 ODsay는 한 번만 부른다. 노선 그래픽(`include_path=true`)은 요청한 `limit`만큼만 부르고 같이 캐시한다. `source_unavailable`은 캐시하지 않는다(다음 요청에서 다시 시도). 서버를 다시 띄우면 캐시는 비워진다
+- **개인 위치:** 집·직장 좌표는 로그·DB에 남기지 않는다. 서버 접근 로그에서 이 경로의 쿼리(`?from_lat=…`)를 지우고 경로만 남긴다. 캐시는 서버 메모리에만 24시간 둔다
 - 키: ODsay 콘솔의 **Server 플랫폼** 키, 허용 IP에 배포 서버(34.64.207.41) 등록. 서버 `.env`의 `ODSAY_API_KEY`
 
 ## 7. 용어 해설 (Glossary) [1차]

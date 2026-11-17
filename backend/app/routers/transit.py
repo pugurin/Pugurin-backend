@@ -20,7 +20,15 @@ async def transit_routes(
     to_lat: Lat,
     to_lng: Lng,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT, description="돌려줄 경로 수(소요시간 짧은 순)")] = 3,
+    include_path: Annotated[
+        bool, Query(description="구간 좌표(legs[].path)도 받기. 경로마다 ODsay를 한 번 더 불러 느려진다. 기본은 null")
+    ] = False,
 ) -> TransitRoutesResponse:
-    """경로를 줄 수 없으면 200에 `routes: []`와 `unavailable_reason`(too_close·no_route·source_unavailable)."""
-    result = await container.transit_service.routes(from_lat, from_lng, to_lat, to_lng, limit)
+    """경로를 줄 수 없으면 200에 `routes: []`와 `unavailable_reason`(too_close·no_route·source_unavailable).
+
+    집·직장 좌표는 로그·DB에 남기지 않는다(접근 로그에서 이 경로의 쿼리를 지운다, `app.core.access_log`).
+    """
+    result = await container.transit_service.routes(
+        from_lat, from_lng, to_lat, to_lng, limit, include_path=include_path
+    )
     return TransitRoutesResponse.from_result(result)

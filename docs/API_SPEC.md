@@ -1170,17 +1170,17 @@
 
 ## 10. 관심 단지·경매 물건·지역·매물 찜 (Interests)
 
-**관심 단지·관심 경매 물건은 지금 쓸 수 있다.** 로그인(2차)이 없어서 앱 설치 단위(`X-Device-Id`)로 저장한다. 앱을 지우면 목록도 사라진다. 로그인이 생기면 기기 목록을 계정으로 옮긴다. 관심 지역·매물 찜은 2차·3차.
+**관심 단지·관심 경매 물건은 로그인한 회원만 쓴다.** access token(`Authorization: Bearer`)으로 회원 계정에 저장하므로 기기를 바꿔도 목록이 따라간다. 토큰이 없거나 틀리거나 만료됐으면 `401 UNAUTHORIZED`(앱은 로그인 안내 창을 띄운다). 관심 지역·매물 찜은 2차·3차.
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| GET | `/interests` | X-Device-Id | 내 관심 id 목록 (별 표시용, 최근 등록 순) |
-| PUT | `/interests/complexes/{complex_id}` | X-Device-Id | 관심 단지 등록 (멱등) |
-| DELETE | `/interests/complexes/{complex_id}` | X-Device-Id | 해제 (멱등, `204`) |
-| GET | `/interests/complexes` | X-Device-Id | 목록 (단지별 최신 매매 포함) |
-| PUT | `/interests/auctions/{auction_id}` | X-Device-Id | 관심 경매·공매 물건 등록 (멱등) |
-| DELETE | `/interests/auctions/{auction_id}` | X-Device-Id | 해제 (멱등, `204`) |
-| GET | `/interests/auctions` | X-Device-Id | 목록 (끝난 물건 포함) |
+| GET | `/interests` | 필요 | 내 관심 id 목록 (별 표시용, 최근 등록 순) |
+| PUT | `/interests/complexes/{complex_id}` | 필요 | 관심 단지 등록 (멱등) |
+| DELETE | `/interests/complexes/{complex_id}` | 필요 | 해제 (멱등, `204`) |
+| GET | `/interests/complexes` | 필요 | 목록 (단지별 최신 매매 포함) |
+| PUT | `/interests/auctions/{auction_id}` | 필요 | 관심 경매·공매 물건 등록 (멱등) |
+| DELETE | `/interests/auctions/{auction_id}` | 필요 | 해제 (멱등, `204`) |
+| GET | `/interests/auctions` | 필요 | 목록 (끝난 물건 포함) |
 | PUT | `/interests/regions/{region_code}` | 필요 | 관심 법정동 등록 (멱등, 최대 10개) [2차] |
 | DELETE | `/interests/regions/{region_code}` | 필요 | 해제 [2차] |
 | GET | `/interests/regions` | 필요 | 목록 [2차] |
@@ -1189,9 +1189,9 @@
 | GET | `/interests/listings` | 필요 | 찜 목록 [3차] |
 
 - 등록은 `PUT`으로 멱등 처리. 다시 넣어도 처음 등록 시각이 그대로 온다.
-- 종류별 기기당 **최대 200개**. 넘으면 `409 CONFLICT`. 이미 있는 대상을 다시 넣는 건 한도와 상관없이 `200`.
+- 종류별 회원당 **최대 200개**. 넘으면 `409 CONFLICT`. 이미 있는 대상을 다시 넣는 건 한도와 상관없이 `200`.
 - 없는 단지·물건은 `404`. 서버에 DB가 없으면 `503 DATA_NOT_READY`.
-- 응답은 기기마다 달라서 `Cache-Control: private, no-cache`로 내린다(ETag 재검증은 된다).
+- 응답은 회원마다 달라서 `Cache-Control: private, no-cache`로 내린다(ETag 재검증은 된다).
 - 최근 본 매물·단지는 **앱 로컬 저장** (서버 API 없음)
 
 **`PUT /interests/complexes/{complex_id}` · `PUT /interests/auctions/{auction_id}` 응답**

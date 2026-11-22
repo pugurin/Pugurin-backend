@@ -35,7 +35,7 @@ _ZONES_AS_OF = text("SELECT max(loaded_at) FROM redevelopment_zones")
 # 줌에 맞춰 단순화한다(화면에서 1px보다 작은 굴곡은 버림). 이어진 우리 구역의 이름·종류·단계를 함께 준다
 _ZONES_IN = text(
     """
-    SELECT z.zone_id, z.name, z.notice, z.designated_on,
+    SELECT z.zone_id, z.layer, z.name, z.notice, z.designated_on,
            ST_AsGeoJSON(ST_Multi(ST_SimplifyPreserveTopology(z.geom, :tolerance)), 6) AS geometry,
            r.id AS redevelopment_id, r.area_name, r.kind, r.stage
     FROM redevelopment_zones z
@@ -82,6 +82,7 @@ class PostgresRedevelopmentRepository:
         return [
             RedevelopmentZone(
                 zone_id=r["zone_id"],
+                layer=r["layer"],
                 name=r["name"],
                 notice=r["notice"],
                 designated_on=r["designated_on"],

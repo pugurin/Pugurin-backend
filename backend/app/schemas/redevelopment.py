@@ -15,7 +15,7 @@ from app.repositories.types import (
 from app.schemas.common import DataMeta
 
 ATTRIBUTION = "부산광역시 정비사업 정보(공공데이터포털)"
-ZONE_ATTRIBUTION = "브이월드 용도지역지구정보(정비구역)"
+ZONE_ATTRIBUTION = "브이월드 용도지역지구정보"
 # 부산시 정비사업 통합홈페이지의 구역 페이지. aCode가 곧 페이지 주소다
 CITY_PAGE = "https://dynamice.busan.go.kr/home/{code}/main.do"
 
@@ -125,6 +125,7 @@ class RedevelopmentZoneMeta(DataMeta):
 
 class RedevelopmentZoneOut(BaseModel):
     zone_id: str
+    layer: Literal["zone", "promotion", "planned"]  # 정비구역 / 재정비촉진구역 / 정비예정구역
     name: str | None  # 원천 이름. 비었거나 안내 문구면 null
     notice: str | None  # 이름 대신 고시 번호만 있을 때
     designated_on: date | None  # 고시일

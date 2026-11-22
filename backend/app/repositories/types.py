@@ -589,6 +589,7 @@ class RedevelopmentZone:
     """정비구역 경계 한 개(docs/REDEVELOPMENT_ZONES.md). 우리 구역과 이어지면 그 이름·종류·단계를 함께 둔다."""
 
     zone_id: str
+    layer: str  # zone(정비구역) / promotion(재정비촉진구역) / planned(정비예정구역)
     name: str | None
     notice: str | None
     designated_on: date | None

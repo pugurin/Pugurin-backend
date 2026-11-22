@@ -858,16 +858,17 @@
 
 **`GET /redevelopment-zones?bbox=&zoom=` ⚠️(추가)**
 
-- 브이월드 용도지역지구정보 "도시및주거환경정비/정비구역" 경계 중 부산 것(구역 안의 도로·통로 같은 시설, 1,000㎡ 미만 조각, 다른 구역 안에 든 조각은 뺌). 파일을 받아 `python -m app.ingestion redevelopment-zones`로 싣는다
+- 브이월드 용도지역지구정보의 "도시및주거환경정비/정비구역"(필수)·"도시재정비/재정비촉진지구"·"정비예정구역" 경계 중 부산 것(구역 안의 도로·통로 같은 시설, 1,000㎡ 미만 조각, 다른 구역 안에 든 조각은 뺌). 파일을 받아 `python -m app.ingestion redevelopment-zones`로 싣는다
 - `bbox` 필수. `zoom`(앱 줌)을 주면 화면 1px보다 작은 굴곡을 줄여 보낸다. 큰 구역부터 최대 300개
-- 우리 정비사업 구역과 일대일로 이어지면(지번 좌표가 경계 안 → 핵심 이름이 같음 순) `redevelopment_id`·`area_name`·`kind`·`stage`가 채워진다. 누르면 `/redevelopments/{redevelopment_id}`로 상세를 연다
-- 화면에 출처 `meta.source_attribution`("브이월드 용도지역지구정보(정비구역)")을 표시한다
+- 우리 정비사업 구역과 일대일로 이어지면(지번 좌표가 경계 안 → 핵심 이름이 같음 → 조합 사무실이 경계 안이고 동네 이름이 맞음 순) `redevelopment_id`·`area_name`·`kind`·`stage`가 채워진다. 누르면 `/redevelopments/{redevelopment_id}`로 상세를 연다
+- 화면에 출처 `meta.source_attribution`("브이월드 용도지역지구정보")을 표시한다
 
 ```json
 {
   "data": [
     {
       "zone_id": "62600002620020160415UDT1000001000",
+      "layer": "zone",
       "name": "괴정3재건축정비구역",
       "notice": null,
       "designated_on": "2016-12-21",
@@ -876,9 +877,10 @@
       "kind": "reconstruction", "stage": "construction"
     }
   ],
-  "meta": { "data_as_of": "2026-11-22T21:00:00+09:00", "source_attribution": "브이월드 용도지역지구정보(정비구역)" }
+  "meta": { "data_as_of": "2026-11-22T21:00:00+09:00", "source_attribution": "브이월드 용도지역지구정보" }
 }
 ```
+- `layer`: `zone`(정비구역) / `promotion`(재정비촉진구역) / `planned`(정비예정구역)
 - `name`: 원천 이름. 비었거나 안내 문구("별도문의")면 `null`. `notice`: 이름 칸에 고시 번호만 있을 때(예: "부산광역시 고시 제2016-415호")
 - 경계 파일을 한 번도 안 실었으면 `503 DATA_NOT_READY`. `bbox`가 없거나 잘못되면 `400`
 

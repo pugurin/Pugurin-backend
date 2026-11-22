@@ -27,6 +27,11 @@ def _rows(tmp_path):
         FakeZone("Z7", name="(자세한사항은 별도문의 : 건축과)", designated="", rings=[square(ORIGIN_5186, 100)]),
         FakeZone("Z8", name="공동주택용지", rings=[square(ORIGIN_5186, 100)]),  # 부속 시설
         # 실제 파일은 빈 칸을 NUL(\x00)로 채운다
+        FakeZone(
+            "Z10",
+            name="수안1 재건축 정비구역\r\n토지정보과-8259(2022.06.22.)호로 정정",
+            rings=[square(ORIGIN_5186, 90)],
+        ),
         FakeZone("Z9", name="\x00" * 20, note="\x00" * 20, designated="\x00" * 8, rings=[square(ORIGIN_5186, 100)]),
     ]
     files = find_zone_files(write_zone_files(tmp_path, zones))
@@ -36,7 +41,7 @@ def _rows(tmp_path):
 
 def test_only_busan_zones_without_facilities_are_kept_with_their_record_index(tmp_path):
     zones = busan_zone_records(_rows(tmp_path))
-    assert [(z.index, z.zone_id) for z in zones] == [(0, "Z1"), (1, "Z2"), (2, "Z3"), (6, "Z7"), (8, "Z9")]
+    assert [(z.index, z.zone_id) for z in zones] == [(0, "Z1"), (1, "Z2"), (2, "Z3"), (6, "Z7"), (8, "Z10"), (9, "Z9")]
 
 
 def test_names_notices_and_dates_are_cleaned(tmp_path):
@@ -48,6 +53,8 @@ def test_names_notices_and_dates_are_cleaned(tmp_path):
     # "별도문의" 안내 문구는 이름이 아니다
     assert by_id["Z7"].name is None and by_id["Z7"].designated_on is None
     assert (by_id["Z9"].name, by_id["Z9"].notice, by_id["Z9"].designated_on) == (None, None, None)
+    # 이름 뒤 줄바꿈으로 붙은 정정 메모는 떼어 낸다
+    assert by_id["Z10"].name == "수안1 재건축 정비구역"
     assert by_id["Z1"].designated_on == date(2020, 1, 1) and by_id["Z1"].base_date == date(2026, 11, 6)
     assert by_id["Z1"].sigungu_code == "26230"
 
@@ -78,6 +85,9 @@ def test_default_dir_is_found_from_the_backend_folder_or_its_parent(tmp_path):
         ("아미4 주거환경개선 정비구역", "아미4"),
         ("시민공원주변재정비촉진1구역 재개발", "시민공원주변1"),
         ("주택재개발정비구역", ""),
+        # 문장부호는 무시한다(재정비촉진구역 이름이 양쪽에서 다르게 적힌다)
+        ("서,금사 재정비촉진(A)구역", "서금사A"),
+        ("서금사재정비촉진A구역 재개발", "서금사A"),
     ],
 )
 def test_core_name_strips_business_words(raw, core):
@@ -85,12 +95,12 @@ def test_core_name_strips_business_words(raw, core):
 
 
 OURS = [
-    ("R1", "가상1 재개발", "redevelopment"),
-    ("R2", "가상2 재건축", "reconstruction"),
-    ("R3", "가상3 가로주택정비", "street_housing"),  # 정비법 구역이 아니라 잇지 않는다
-    ("R4", "같은이름 재개발", "redevelopment"),
-    ("R5", "같은이름 재개발", "redevelopment"),  # 우리 쪽 핵심 이름이 겹친다
-    ("R6", "가상6 재개발", "redevelopment"),
+    ("R1", "가상1 재개발", "redevelopment", "가상동 101"),
+    ("R2", "가상2 재건축", "reconstruction", "가상동 202"),
+    ("R3", "가상3 가로주택정비", "street_housing", None),  # 정비법 구역이 아니라 잇지 않는다
+    ("R4", "같은이름 재개발", "redevelopment", None),
+    ("R5", "같은이름 재개발", "redevelopment", None),  # 우리 쪽 핵심 이름이 겹친다
+    ("R6", "가상6 재개발", "redevelopment", None),
 ]
 ZONES = [
     ("Z1", "가상1주택재개발정비구역"),
@@ -118,3 +128,25 @@ def test_a_zone_takes_only_one_of_ours():
     hits = [("R1", "Z1", 100.0), ("R6", "Z1", 100.0)]
     pairs = link_pairs(hits, OURS, ZONES)
     assert pairs == {"R1": ("Z1", "point")}  # 같은 경계에 둘이 들면 ID 순으로 하나만
+
+
+OFFICE_OURS = [
+    ("O1", "대연5 재개발", "redevelopment", "용소로28번길 8, 7층 (대연동,금하빌딩)"),
+    ("O2", "망미1 재개발", "redevelopment", "수영구 광안로 10, 2층"),  # 사무실 동네(광안)가 구역 이름과 다르다
+    ("O3", "구포3 재개발", "redevelopment", "구포동 백양대로 1139, 2층"),
+    ("O4", "구포8 재개발", "redevelopment", "구포동 백양대로 1139, 3층"),  # 같은 건물에 다른 조합
+]
+
+
+def test_offices_link_only_inside_an_unlinked_zone_whose_name_matches_the_neighbourhood():
+    offices = [("O1", "ZO1", 9000.0), ("O2", "ZO2", 9000.0), ("O3", "ZO3", 9000.0), ("O4", "ZO3", 9000.0)]
+    zones = [("ZO1", None), ("ZO2", None), ("ZO3", None)]
+    pairs = link_pairs([], OFFICE_OURS, zones, office_hits=offices)
+    # O2는 사무실 동네가 이름과 달라서, O3·O4는 한 경계에 둘이 들어서 잇지 않는다
+    assert pairs == {"O1": ("ZO1", "office")}
+
+
+def test_points_and_names_come_before_offices():
+    offices = [("O1", "ZO1", 9000.0)]
+    pairs = link_pairs([("R1", "ZO1", 9000.0)], [*OURS, *OFFICE_OURS], [("ZO1", None)], office_hits=offices)
+    assert pairs == {"R1": ("ZO1", "point")}

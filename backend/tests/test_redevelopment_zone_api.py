@@ -22,7 +22,7 @@ from tests.conftest import API, FIXED_NOW, create_database
 from tests.fakes.app import create_app
 from tests.fakes.madangs import FakeLookup
 from tests.fakes.redevelopment import FakeRedevelopmentSource, zone_row
-from tests.fakes.redevelopment_zones import FakeZone, write_zone_files
+from tests.fakes.redevelopment_zones import OFFICE_5186, PROMOTION_5186, FakeZone, write_zone_files
 from tests.fakes.schoolzone import FAR_5186, NORTH_5186, ORIGIN_5186, square
 
 OFFICE = "부산광역시 부산진구 가상로 266, 2층(가야동)"
@@ -35,6 +35,10 @@ def ours() -> list[dict]:
         zone_row(1),  # 가상1구역 재개발 · 가야동 101(지번 좌표) → 경계 A 안
         zone_row(2, areaName="가상2구역 재건축", location=OFFICE),  # 좌표 없음 → 이름으로 경계 B
         zone_row(3, areaName="가상3 가로주택정비사업", location=OFFICE),  # 가로주택은 잇지 않는다
+        # 조합 사무실이 이름 없는 경계 H 안에 있고, 사무실 동네(가상)가 구역 이름과 맞는다 → 사무실로 잇는다
+        zone_row(9, areaName="가상9구역 재개발", location="부산광역시 해운대구 가상로 2500, 2층(가상동)"),
+        # 재정비촉진 구역: 경계 이름이 "서,금사 재정비촉진(A)구역-국토…"로 적혀 있어도 이름으로 잇는다
+        zone_row(10, areaName="서금사재정비촉진A구역 재개발", location=OFFICE),
     ]
 
 
@@ -48,6 +52,17 @@ def boundaries() -> list[FakeZone]:
         FakeZone("E", name="정비기반시설(도로)", rings=[square(ORIGIN_5186, 20)]),  # 시설
         FakeZone("F", name="효제1구역", sigungu="11110", rings=[square(FAR_5186, 300)]),  # 서울
         FakeZone("G", name="부산광역시 고시 제2016-415호", rings=[square(FAR_5186, 200)]),  # 이을 구역 없음
+        FakeZone("H", rings=[square(OFFICE_5186, 150)]),  # 이름 없음, 가상9구역 사무실이 안에 있다
+    ]
+
+
+def promotion() -> list[FakeZone]:
+    law = "-국토의계획및이용에관한법률제56조규정에 의한 개발행위허가제한구역"
+    return [
+        FakeZone("P1", name=f"서,금사 재정비촉진(A)구역{law}", rings=[square(PROMOTION_5186, 150)]),
+        FakeZone("P2", name="2구역:존치관리구역", rings=[square(PROMOTION_5186, 400)]),  # 존치 구역은 뺀다
+        FakeZone("P3", name="교육9", rings=[square(OFFICE_5186, 400)]),  # 지구 안 시설
+        FakeZone("P4", note="영도제1재정비촉진지구", rings=[square(PROMOTION_5186, 600)]),  # 지구 바깥 경계
     ]
 
 
@@ -74,7 +89,9 @@ def zone_db(postgis: str, tmp_path_factory) -> tuple[str, object]:
     migrate.upgrade(url)
     cache = GeocodeCache(tmp_path_factory.mktemp("redev_zone_geo") / "geocode.json")
     asyncio.run(_sync(url, cache, ours()))
-    report = asyncio.run(_load(url, write_zone_files(tmp_path_factory.mktemp("redev_zones"), boundaries())))
+    files = write_zone_files(tmp_path_factory.mktemp("redev_zones"), boundaries())
+    write_zone_files(files, promotion(), folder="promotion")
+    report = asyncio.run(_load(url, files))
     return url, report
 
 
@@ -87,9 +104,20 @@ def client(url: str) -> TestClient:
 
 def test_load_keeps_real_zones_and_links_by_point_then_name(zone_db):
     _, report = zone_db
-    assert report.zones == 3  # A, B, G
-    assert report.skipped == {"시설": 1, "도형 없음": 0, "1,000㎡ 미만": 1, "다른 구역 안": 1}
-    assert (report.linked_by_point, report.linked_by_name) == (1, 1)
+    assert report.zones == 5  # A, B, G, H, P1
+    assert report.layers == {"zone": 4, "promotion": 1}
+    assert report.skipped == {"시설": 4, "도형 없음": 0, "1,000㎡ 미만": 1, "다른 구역 안": 1}
+    assert (report.linked_by_point, report.linked_by_name, report.linked_by_office) == (1, 2, 1)
+
+
+def test_promotion_and_office_links(zone_db):
+    url, _ = zone_db
+    with client(url) as c:
+        body = c.get(f"{API}/redevelopment-zones", params={"bbox": "128.75,34.85,129.35,35.4"}).json()
+    by_id = {z["zone_id"]: z for z in body["data"]}
+    assert (by_id["P1"]["layer"], by_id["P1"]["redevelopment_id"]) == ("promotion", "BARA_0000000000010")
+    assert by_id["P1"]["name"] == "서,금사 재정비촉진(A)구역"  # 법 조문 꼬리를 뗀다
+    assert (by_id["H"]["layer"], by_id["H"]["redevelopment_id"]) == ("zone", "BARA_0000000000009")
 
 
 def test_zones_in_view_carry_geometry_names_and_the_linked_zone(zone_db):
@@ -108,7 +136,7 @@ def test_zones_in_view_carry_geometry_names_and_the_linked_zone(zone_db):
     assert a["geometry"]["type"] == "MultiPolygon"
     ring = a["geometry"]["coordinates"][0][0]
     assert all(129.15 < lng < 129.17 and 35.15 < lat < 35.17 for lng, lat in ring)
-    assert body["meta"]["source_attribution"] == "브이월드 용도지역지구정보(정비구역)"
+    assert body["meta"]["source_attribution"] == "브이월드 용도지역지구정보"
     assert body["meta"]["data_as_of"]
 
 
@@ -170,4 +198,4 @@ def test_the_daily_sync_relinks_zones(postgis, tmp_path):
         await engine.dispose()
         return dict(rows)
 
-    assert asyncio.run(links()) == {"A": "BARA_0000000000001", "B": None, "G": None}
+    assert asyncio.run(links()) == {"A": "BARA_0000000000001", "B": None, "G": None, "H": None}

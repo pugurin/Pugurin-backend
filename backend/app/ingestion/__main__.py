@@ -318,7 +318,8 @@ async def _redevelopment_zones(settings: Settings, directory: Path | None) -> in
     base = r.base_date.isoformat() if r.base_date else "모름"
     skipped = ", ".join(f"{why} {n}" for why, n in r.skipped.items() if n)
     print(f"정비구역 경계 적재: 부산 {r.zones:,}개 (기준일 {base}){f' · 뺀 것: {skipped}' if skipped else ''}")
-    print(f"  우리 정비사업 구역과 잇기: 좌표로 {r.linked_by_point}개, 이름으로 {r.linked_by_name}개")
+    links = f"좌표로 {r.linked_by_point}개, 이름으로 {r.linked_by_name}개, 사무실로 {r.linked_by_office}개"
+    print(f"  우리 정비사업 구역과 잇기: {links}")
     return 0
 
 

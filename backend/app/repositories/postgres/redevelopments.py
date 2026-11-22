@@ -27,7 +27,11 @@ _COLS = """
     r.business_entity, r.contractor, r.engineer, r.architect, r.specialists, r.tel, r.images,
     r.first_seen_at, r.last_seen_at, r.closed_at
 """
-_FROM = " FROM redevelopments r LEFT JOIN redevelopment_zones z ON z.redevelopment_id = r.id"
+# 조각이 여럿이면 가장 큰 조각을 대표로 쓴다
+_FROM = """ FROM redevelopments r LEFT JOIN LATERAL (
+    SELECT zone_id, label_point FROM redevelopment_zones
+    WHERE redevelopment_id = r.id ORDER BY area_m2 DESC, zone_id LIMIT 1
+) z ON true"""
 # 사업이 많이 나간 구역부터. 모르는 단계(NULL)는 뒤로
 _ORDER = "r.stage_order DESC NULLS LAST, r.area_name, r.id"
 

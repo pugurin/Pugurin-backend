@@ -31,7 +31,7 @@ def upgrade() -> None:
             geom              geometry(MultiPolygon, 4326) NOT NULL,   -- 원천 EPSG:5186을 변환
             label_point       geometry(Point, 4326) NOT NULL,          -- 경계 안의 대표점(ST_PointOnSurface). 마커 위치 보강용
             area_m2           double precision NOT NULL,
-            redevelopment_id  text REFERENCES redevelopments (id) ON DELETE SET NULL,  -- 이어진 우리 구역(일대일)
+            redevelopment_id  text REFERENCES redevelopments (id) ON DELETE SET NULL,  -- 이어진 우리 구역(조각이면 여럿이 같은 구역)
             link_method       text CHECK (link_method IN ('point', 'name', 'office')),
             base_date         date,                                    -- 원천 기준일(A3)
             loaded_at         timestamptz NOT NULL
@@ -40,8 +40,9 @@ def upgrade() -> None:
     )
     op.execute("CREATE INDEX redevelopment_zones_geom ON redevelopment_zones USING gist (geom)")
     op.execute("ALTER TABLE redevelopments ADD COLUMN office_geom geometry(Point, 4326)")
+    # 한 구역이 조각 여러 개로 나뉘면 조각마다 같은 구역을 가리킨다(일대다)
     op.execute(
-        "CREATE UNIQUE INDEX redevelopment_zones_redevelopment ON redevelopment_zones (redevelopment_id) "
+        "CREATE INDEX redevelopment_zones_redevelopment ON redevelopment_zones (redevelopment_id) "
         "WHERE redevelopment_id IS NOT NULL"
     )
 

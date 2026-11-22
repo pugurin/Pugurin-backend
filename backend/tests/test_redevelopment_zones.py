@@ -88,6 +88,14 @@ def test_default_dir_is_found_from_the_backend_folder_or_its_parent(tmp_path):
         # 문장부호는 무시한다(재정비촉진구역 이름이 양쪽에서 다르게 적힌다)
         ("서,금사 재정비촉진(A)구역", "서금사A"),
         ("서금사재정비촉진A구역 재개발", "서금사A"),
+        # 괄호 안 날짜·단지명은 뺀다(한두 글자 기호는 남긴다)
+        ("우동1재건축정비구역(19.8.)", "우동1"),
+        ("연산5(망미주공) 재건축", "연산5"),
+        ("남천2-3(삼익비치) 재건축", "남천2-3"),
+        # 앞에 붙은 사업 설명("…-")은 뺀다
+        ("주택재건축정비사업-남천2주택재건축구역", "남천2"),
+        # 이름 칸에 고시 제목이 통째로 들어가면 "정비계획" 앞까지만 본다
+        ("만덕4 재건축사업 정비계획 결정 및 정비구역 지정 고시", "만덕4"),
     ],
 )
 def test_core_name_strips_business_words(raw, core):
@@ -116,18 +124,21 @@ def test_points_link_first_then_unique_names():
     # 좌표로 R2 → Z2(가장 큰 것), R1 → Z1. 이름으로는 R1이 이미 이어졌다
     hits = [("R2", "Z2", 90000.0), ("R2", "Z1", 5000.0), ("R1", "Z1", 5000.0)]
     pairs = link_pairs(hits, OURS, ZONES)
-    assert pairs == {"R1": ("Z1", "point"), "R2": ("Z2", "point")}
+    # R6은 이름이 같은 조각 둘(Z6·Z7)로 잇는다
+    assert pairs == {"Z1": ("R1", "point"), "Z2": ("R2", "point"), "Z6": ("R6", "name"), "Z7": ("R6", "name")}
 
 
 def test_names_link_when_both_sides_are_unique_and_the_kind_is_linkable():
     pairs = link_pairs([], OURS, ZONES)
-    assert pairs == {"R1": ("Z1", "name")}  # R3 가로주택, R4·R5 겹침, R6 경계 겹침은 잇지 않는다
+    # R3 가로주택, R4·R5 우리 쪽 겹침은 잇지 않는다. 같은 이름 경계 둘(Z6·Z7)은 한 구역의 조각이라 둘 다 R6에
+    assert pairs == {"Z1": ("R1", "name"), "Z6": ("R6", "name"), "Z7": ("R6", "name")}
 
 
 def test_a_zone_takes_only_one_of_ours():
     hits = [("R1", "Z1", 100.0), ("R6", "Z1", 100.0)]
     pairs = link_pairs(hits, OURS, ZONES)
-    assert pairs == {"R1": ("Z1", "point")}  # 같은 경계에 둘이 들면 ID 순으로 하나만
+    # 같은 경계에 둘이 들면 ID 순으로 하나만(R6은 이름 조각으로 따로 이어진다)
+    assert pairs == {"Z1": ("R1", "point"), "Z6": ("R6", "name"), "Z7": ("R6", "name")}
 
 
 OFFICE_OURS = [
@@ -143,10 +154,38 @@ def test_offices_link_only_inside_an_unlinked_zone_whose_name_matches_the_neighb
     zones = [("ZO1", None), ("ZO2", None), ("ZO3", None)]
     pairs = link_pairs([], OFFICE_OURS, zones, office_hits=offices)
     # O2는 사무실 동네가 이름과 달라서, O3·O4는 한 경계에 둘이 들어서 잇지 않는다
-    assert pairs == {"O1": ("ZO1", "office")}
+    assert pairs == {"ZO1": ("O1", "office")}
 
 
 def test_points_and_names_come_before_offices():
     offices = [("O1", "ZO1", 9000.0)]
     pairs = link_pairs([("R1", "ZO1", 9000.0)], [*OURS, *OFFICE_OURS], [("ZO1", None)], office_hits=offices)
-    assert pairs == {"R1": ("ZO1", "point")}
+    assert pairs == {"ZO1": ("R1", "point")}
+
+
+def test_same_number_redevelopment_and_reconstruction_are_told_apart_by_kind():
+    ours = [
+        ("GA", "거제2 재개발", "redevelopment", None),
+        ("GB", "거제2 재건축", "reconstruction", None),
+        # 경계는 재건축으로 적혀 있다. 광안2가 양쪽에 하나뿐이어도 재개발 ↔ 재건축은 다른 사업일 수 있어 잇지 않는다
+        ("K1", "광안2 재개발", "redevelopment", None),
+        # 옛 도시환경정비구역은 지금 재개발로 바뀌었다. 동네 번호가 하나뿐이면 잇는다
+        ("C1", "초량1-3 재개발", "redevelopment", None),
+    ]
+    zones = [
+        ("ZA", "거제2 재개발사업 정비구역"),
+        ("ZB", "거제2 재건축사업 정비구역"),
+        ("ZK", "광안2주택재건축구역"),
+        ("ZC", "초량1-3 도시환경정비구역"),
+    ]
+    assert link_pairs([], ours, zones) == {
+        "ZA": ("GA", "name"),
+        "ZB": ("GB", "name"),
+        "ZC": ("C1", "name"),
+    }
+
+
+def test_pieces_with_the_same_name_all_go_to_one_zone():
+    ours = [("M1", "명서1 재개발", "redevelopment", None)]
+    zones = [("P1", "명서1 재개발사업 정비구역"), ("P2", "명서1 재개발사업 정비구역")]
+    assert link_pairs([], ours, zones) == {"P1": ("M1", "name"), "P2": ("M1", "name")}

@@ -1,5 +1,6 @@
 """정비구역 경계(브이월드 용도지역지구정보 "도시및주거환경정비/정비구역" SHP)를 `redevelopment_zones`에
-통째로 갈아 끼우고, 우리 정비사업 구역(`redevelopments`)과 일대일로 잇는다. 설계: docs/REDEVELOPMENT_ZONES.md
+통째로 갈아 끼우고, 우리 정비사업 구역(`redevelopments`)과 잇는다(조각 여럿이 한 구역에
+붙을 수 있다). 설계: docs/REDEVELOPMENT_ZONES.md
 
 원천은 내려받아 둔 파일이다(브이월드 로그인 필요, API 호출 없음). 기본 위치는 `default_zone_dir()`의
 `data/redevelopment`(git 제외)이고, `zones/*.shp|.shx|.dbf`를 읽는다. 좌표계 EPSG:5186, DBF는 cp949.
@@ -153,18 +154,43 @@ def busan_zone_records(rows: list[dict[str, str]], layer: str = "zone") -> list[
     return out
 
 
+# 괄호 안 한두 글자 기호("(A)")는 이름의 일부라 남긴다. 그 밖의 괄호 내용(날짜·단지명)은 뺀다
+_PAREN_NOTE = re.compile(r"\(([^)]*)\)")
+# 사업 종류를 가리키는 말(이름에서 종류를 읽을 때 긴 것부터 본다)
+_KIND_WORDS = [
+    ("도시환경", "urban_environment"),
+    ("주거환경", "residential_improvement"),
+    ("재건축", "reconstruction"),
+    ("재개발", "redevelopment"),
+    ("주택개량", "redevelopment"),
+]
+
+
 def core_name(name: str) -> str:
-    """이름에서 공백과 사업 이름을 지운 핵심 이름. 예: "광안2주택재건축구역" → "광안2"."""
-    core = re.sub(r"[\s,.·()\[\]]+", "", name)
+    """이름에서 공백·문장부호·괄호 메모·사업 이름을 지운 핵심 이름. 예: "광안2주택재건축구역" → "광안2"."""
+    text = _PAREN_NOTE.sub(lambda m: m.group(1) if re.fullmatch(r"[A-Za-z0-9]{1,2}", m.group(1)) else "", name)
+    text = text.split("정비계획")[0]  # 고시 제목("… 정비계획 결정 및 … 고시")은 앞부분만
+    if "-" in text and not re.match(r"[가-힣]+\d", text.split("-")[0].strip()):
+        text = text.split("-", 1)[1]  # "주택재건축정비사업-남천2…"처럼 앞에 붙은 사업 설명
+    core = re.sub(r"[\s,.·\[\]]+", "", text)
     for word in _BUSINESS_WORDS:
         core = core.replace(word, "")
     return core
+
+
+def name_kind(name: str) -> str | None:
+    """이름에 적힌 사업 종류. 없으면 None."""
+    compact = re.sub(r"\s+", "", name)
+    return next((kind for word, kind in _KIND_WORDS if word in compact), None)
 
 
 def _neighbourhood(core: str) -> str:
     """핵심 이름 앞의 한글(동네 이름). 예: "대연5" → "대연"."""
     m = re.match(r"[가-힣]+", core)
     return m.group() if m else ""
+
+
+_SWAPPED = {"redevelopment", "reconstruction"}
 
 
 def link_pairs(
@@ -174,18 +200,28 @@ def link_pairs(
     *,
     office_hits: Iterable[tuple[str, str, float]] = (),
 ) -> dict[str, tuple[str, str]]:
-    """우리 구역 → (경계, 잇는 방법). 일대일이고, 좌표 → 이름 → 조합 사무실 순으로 잇는다.
+    """경계 → (우리 구역, 잇는 방법). 좌표 → 이름 → 조합 사무실 순으로 잇는다.
 
+    경계 하나는 우리 구역 하나에만 붙는다. 우리 구역 하나에는 이름이 같은 조각(경계) 여럿이 붙을 수 있다.
     - point_hits: (우리 구역, 그 지번 좌표를 품은 경계, 경계 면적). 여럿이면 가장 큰 경계.
     - ours: (우리 구역, 구역명, 사업 종류, 위치 원문). `LINKABLE_KINDS`만 잇는다.
-    - zones: (경계, 이름). 이름은 양쪽에서 핵심 이름이 하나뿐일 때만 잇는다.
+    - zones: (경계, 이름). 핵심 이름과 사업 종류가 같은 경계 묶음이 우리 쪽에도 하나뿐이면 잇는다(같은 번호의
+      재개발·재건축을 가른다). 종류로 못 가르면 핵심 이름만으로, 양쪽에서 그 이름이 하나뿐일 때 잇는다
+      (재개발 ↔ 재건축으로 엇갈리면 잇지 않는다).
     - office_hits: (우리 구역, 그 조합 사무실 좌표를 품은 경계, 면적). 사무실은 구역 밖일 수 있어 빡빡하게 본다:
       아직 안 이어진 경계에 사무실이 하나만 들고, 구역 이름 앞의 동네(예: "대연5"의 "대연")가 사무실 주소에 있을 때만.
     """
     ours = [o for o in ours if o[2] in LINKABLE_KINDS]
     linkable = {o[0] for o in ours}
-    taken: set[str] = set()
-    pairs: dict[str, tuple[str, str]] = {}
+    links: dict[str, tuple[str, str]] = {}  # 경계 → (우리 구역, 방법)
+    done: set[str] = set()  # 이미 이어진 우리 구역
+
+    def link(zone_ids: Iterable[str], ours_id: str, method: str) -> None:
+        free = [z for z in zone_ids if z not in links]
+        for zone_id in free:
+            links[zone_id] = (ours_id, method)
+        if free:
+            done.add(ours_id)
 
     by_ours: dict[str, list[tuple[float, str]]] = defaultdict(list)
     for ours_id, zone_id, area in point_hits:
@@ -193,33 +229,39 @@ def link_pairs(
             by_ours[ours_id].append((area, zone_id))
     for ours_id in sorted(by_ours):
         for _, zone_id in sorted(by_ours[ours_id], key=lambda h: (-h[0], h[1])):
-            if zone_id not in taken:
-                pairs[ours_id] = (zone_id, "point")
-                taken.add(zone_id)
+            if zone_id not in links:
+                link([zone_id], ours_id, "point")
                 break
 
-    zone_cores: dict[str, list[str]] = defaultdict(list)
+    zones_by_kind: dict[tuple[str, str | None], list[str]] = defaultdict(list)
+    zones_by_core: dict[str, set[str | None]] = defaultdict(set)
     for zone_id, name in zones:
         if name and (core := core_name(name)):
-            zone_cores[core].append(zone_id)
-    our_cores: dict[str, list[str]] = defaultdict(list)
-    for ours_id, area_name, *_ in ours:
+            zones_by_kind[(core, name_kind(name))].append(zone_id)
+            zones_by_core[core].add(name_kind(name))
+    ours_by_kind: dict[tuple[str, str], list[str]] = defaultdict(list)
+    ours_by_core: dict[str, list[str]] = defaultdict(list)
+    for ours_id, area_name, kind, _ in ours:
         if core := core_name(area_name):
-            our_cores[core].append(ours_id)
-    for core, ids in sorted(our_cores.items()):
-        found = zone_cores.get(core, [])
-        if len(ids) != 1 or len(found) != 1:
+            ours_by_kind[(core, kind)].append(ours_id)
+            ours_by_core[core].append(ours_id)
+    for (core, kind), ids in sorted(ours_by_kind.items()):
+        if len(ids) != 1 or ids[0] in done:
             continue
-        ours_id, zone_id = ids[0], found[0]
-        if ours_id not in pairs and zone_id not in taken:
-            pairs[ours_id] = (zone_id, "name")
-            taken.add(zone_id)
+        if (core, kind) in zones_by_kind:
+            link(zones_by_kind[(core, kind)], ids[0], "name")
+        elif len(ours_by_core[core]) == 1 and len(zones_by_core.get(core, ())) == 1:
+            # 종류가 없거나 옛 이름(도시환경정비 → 재개발)이어도 그 동네 번호가 양쪽에 하나뿐이면 같은 구역이다.
+            # 재개발 ↔ 재건축은 같은 번호라도 다른 사업일 수 있어 잇지 않는다
+            (zone_kind,) = zones_by_core[core]
+            if {zone_kind, kind} != _SWAPPED:
+                link(zones_by_kind[(core, zone_kind)], ids[0], "name")
 
     where = {o[0]: o[3] or "" for o in ours}
     names = {o[0]: o[1] for o in ours}
     offices: dict[str, list[tuple[float, str]]] = defaultdict(list)
     for ours_id, zone_id, area in office_hits:
-        if ours_id in linkable and ours_id not in pairs and zone_id not in taken:
+        if ours_id in linkable and ours_id not in done and zone_id not in links:
             offices[ours_id].append((area, zone_id))
     picks = {
         ours_id: max(found, key=lambda h: (h[0], h[1]))[1]
@@ -229,9 +271,8 @@ def link_pairs(
     crowded = {z for z in picks.values() if list(picks.values()).count(z) > 1}  # 한 건물에 여러 조합
     for ours_id, zone_id in sorted(picks.items()):
         if zone_id not in crowded:
-            pairs[ours_id] = (zone_id, "office")
-            taken.add(zone_id)
-    return pairs
+            link([zone_id], ours_id, "office")
+    return links
 
 
 # ST_BuildArea로 면을 만들고 4326 MultiPolygon으로 맞춘다. 면이 안 나오면 건너뛴다(학구도와 같음)
@@ -286,13 +327,14 @@ async def relink(conn: AsyncConnection) -> tuple[int, int, int]:
     offices = [(r.ours_id, r.zone_id, r.area_m2) for r in await conn.execute(_OFFICE_HITS)]
     ours = [(r.id, r.area_name, r.kind, r.location) for r in await conn.execute(_OURS)]
     zones = [(r.zone_id, r.name) for r in await conn.execute(_ZONES)]
-    pairs = link_pairs(hits, ours, zones, office_hits=offices)
+    links = link_pairs(hits, ours, zones, office_hits=offices)
     await conn.execute(_CLEAR_LINKS)
-    if pairs:
+    if links:
         await conn.execute(
-            _SET_LINK, [{"ours_id": o, "zone_id": z, "method": m} for o, (z, m) in sorted(pairs.items())]
+            _SET_LINK, [{"ours_id": o, "zone_id": z, "method": m} for z, (o, m) in sorted(links.items())]
         )
-    methods = [m for _, m in pairs.values()]
+    # 우리 구역 수로 센다(조각 여럿이 붙어도 하나)
+    methods = list({o: m for o, m in links.values()}.values())
     return methods.count("point"), methods.count("name"), methods.count("office")
 
 

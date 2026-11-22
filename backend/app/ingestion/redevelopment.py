@@ -23,6 +23,7 @@ from app.adapters.molit.types import QuotaExceeded, SourceAuthError
 from app.adapters.redevelopment import RedevelopmentItem
 from app.ingestion.geocode import GeocodeCache
 from app.ingestion.load import LoadBusy
+from app.ingestion.redevelopment_zones import relink
 from app.repositories.ports import SourceUnavailable
 from app.repositories.types import LocationKind, RedevelopmentStage
 
@@ -198,6 +199,8 @@ async def _sync(engine, source, geocoder, cache, *, now, out) -> RedevelopmentRe
                     report.updated += 1
             closed = await conn.execute(_CLOSE, {"now": now, "seen": [i.id for i in items]})
             report.closed = closed.rowcount
+            # 새 구역·좌표 변화를 정비구역 경계 잇기에 반영한다(경계를 아직 안 실었으면 잇는 것이 없다)
+            await relink(conn)
         cache.save()
 
     if not items:

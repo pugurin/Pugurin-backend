@@ -579,6 +579,24 @@ class Redevelopment:
     first_seen_at: datetime
     last_seen_at: datetime
     closed_at: datetime | None
+    # 위치 출처: lot(지번 좌표) / zone(이어진 정비구역 경계의 대표점) / none
+    position_source: str = "none"
+    zone_id: str | None = None  # 이어진 정비구역 경계
+
+
+@dataclass(frozen=True)
+class RedevelopmentZone:
+    """정비구역 경계 한 개(docs/REDEVELOPMENT_ZONES.md). 우리 구역과 이어지면 그 이름·종류·단계를 함께 둔다."""
+
+    zone_id: str
+    name: str | None
+    notice: str | None
+    designated_on: date | None
+    geometry: dict  # GeoJSON MultiPolygon (경도, 위도)
+    redevelopment_id: str | None
+    area_name: str | None
+    kind: RedevelopmentKind | None
+    stage: RedevelopmentStage | None
 
 
 @dataclass(frozen=True)

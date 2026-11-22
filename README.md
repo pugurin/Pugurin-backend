@@ -311,4 +311,28 @@ docker compose -f compose.yaml -f compose.prod.yaml run --rm \
 
 출력에 연결하지 못한 학교(이름이 학교 목록에 없음, 같은 이름인데 위치로 고르지 못함)와 좌표가 없는 학교가 나오니 확인합니다.
 
+### 정비구역 경계 넣기
+
+재개발 레이어의 구역(면)은 브이월드 정비구역 경계 파일로 채웁니다(설계: [`docs/REDEVELOPMENT_ZONES.md`](./docs/REDEVELOPMENT_ZONES.md)). 브이월드 로그인이 필요해서 서버가 직접 받지 못합니다. 파일을 받아 두고 넣습니다(통째로 갈아 끼움).
+
+1. [브이월드](https://www.vworld.kr) 로그인 → 공간정보 다운로드 → **용도지역지구정보** → "전국 **도시및주거환경정비/정비구역**", 구분 **전체데이터**, SHP를 받습니다(약 3MB zip, 파일 이름 `AL_D029_00_YYYYMMDD.zip`). "변동데이터"는 바뀐 것만 담은 작은 파일이라 쓰지 않습니다.
+2. 저장소 루트에 풉니다. `zones/`의 `*.shp` 한 벌(이름 끝 날짜가 가장 늦은 것)을 찾습니다.
+   ```bash
+   mkdir -p data/redevelopment/zones && unzip -o -j AL_D029_00_YYYYMMDD.zip -d data/redevelopment/zones
+   ```
+3. 정비사업 구역이 먼저 있어야 잇기가 됩니다(`python -m app.ingestion redevelopments` 또는 worker가 한 번 돈 뒤). 그다음 넣기:
+   ```bash
+   cd backend
+   uv run python -m app.ingestion redevelopment-zones                 # 기본: 저장소 루트 data/redevelopment
+   uv run python -m app.ingestion redevelopment-zones --dir /어딘가   # 다른 위치. 거기에 파일이 없으면 실패(종료 코드 2)
+   ```
+   이후 매일 정비사업 동기화가 끝날 때 다시 잇습니다(경계 파일은 다시 받을 때만 갈아 끼움).
+
+**운영 서버:** 받은 파일을 올리고(예: `scp -r data/redevelopment 서버:~/Pugurin-backend/data/`) worker 이미지로 한 번 돌립니다.
+
+```bash
+docker compose -f compose.yaml -f compose.prod.yaml run --rm \
+  -v ./data/redevelopment:/app/data/redevelopment:ro worker python -m app.ingestion redevelopment-zones
+```
+
 개발 규칙은 [`backend/AGENTS.md`](./backend/AGENTS.md)를 따릅니다.

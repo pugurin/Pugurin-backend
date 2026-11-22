@@ -95,6 +95,8 @@ def test_a_zone_carries_stage_location_numbers_and_the_city_page(redevelopment_a
         "lat": pytest.approx(35.16101),
         "lng": pytest.approx(129.16101),
         "location_precise": True,
+        "position_source": "lot",  # 정비구역 경계를 안 실은 DB라 이어진 경계가 없다
+        "zone_id": None,
         "area_m2": 45123.5,
         "area_pyeong": 13649.8,
         "households": 1234,

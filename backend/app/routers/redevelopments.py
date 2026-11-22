@@ -14,6 +14,9 @@ from app.schemas.redevelopment import (
     RedevelopmentPageMeta,
     RedevelopmentResponse,
     RedevelopmentsResponse,
+    RedevelopmentZoneMeta,
+    RedevelopmentZoneOut,
+    RedevelopmentZonesResponse,
 )
 
 router = APIRouter(tags=["redevelopments"])
@@ -78,3 +81,21 @@ async def list_redevelopments(
 async def get_redevelopment(redevelopment_id: str, container: ContainerDep) -> RedevelopmentResponse:
     found, as_of = await container.redevelopment_service.get(redevelopment_id)
     return RedevelopmentResponse(data=RedevelopmentOut.from_domain(found), meta=RedevelopmentMeta(data_as_of=as_of))
+
+
+@router.get(
+    "/redevelopment-zones",
+    response_model=RedevelopmentZonesResponse,
+    summary="지도 화면 안의 정비구역 경계 (최대 300개, 큰 구역부터)",
+)
+async def list_redevelopment_zones(
+    container: ContainerDep,
+    bbox: Annotated[str, Query(description="min_lng,min_lat,max_lng,max_lat")],
+    zoom: Annotated[
+        int | None, Query(ge=0, le=21, description="앱 줌. 주면 화면 1px보다 작은 굴곡을 줄여 보낸다")
+    ] = None,
+) -> RedevelopmentZonesResponse:
+    zones, as_of = await container.redevelopment_service.zones(BBox.parse(bbox), zoom)
+    return RedevelopmentZonesResponse(
+        data=[RedevelopmentZoneOut.from_domain(z) for z in zones], meta=RedevelopmentZoneMeta(data_as_of=as_of)
+    )

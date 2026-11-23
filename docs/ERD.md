@@ -481,18 +481,18 @@ CREATE UNIQUE INDEX mv_monthly_stats_key
 - 구역명에 "테스트"가 들어간 원천 시험 행은 저장하지 않는다. 버린 건수, 중복 ID, 모르는 단계, 위치 종류별 건수는 `etl_runs.report`에 남는다.
 - `etl_runs.job`에 `'redevelopment'`를 더했다(0010).
 
-### 4.4 관심 목록 `device_interests` (마이그레이션 0012)
+### 4.4 관심 목록 `user_interests` (마이그레이션 0015)
 
-로그인(2차)이 없어서 관심 단지·관심 경매 물건을 **앱 설치 단위(`X-Device-Id`)**로 저장한다. 로그인이 생기면 기기 행을 사용자 계정(`interests_complexes` 등)으로 옮긴다.
+관심 단지·관심 경매 물건을 **회원 계정**에 저장한다. 로그인해야 쓴다. 처음엔 앱 설치 단위(`device_interests`, 0012)였지만 0015에서 지웠다(기기에 쌓인 목록은 옮기지 않고 버렸다).
 
 | 컬럼 | 설명 |
 |---|---|
-| `device_id uuid` | `X-Device-Id` |
+| `user_id uuid` | `users.id` (ON DELETE CASCADE). 탈퇴는 사용자 행을 익명화만 하므로 탈퇴 트랜잭션에서 직접 지운다 |
 | `kind text` | `complex`·`auction` (CHECK) |
 | `target_id text` | 단지 UUID 또는 경매 물건 id |
 | `created_at` | 등록 시각. 목록은 최근 것부터 |
 
-- **PK `(device_id, kind, target_id)`** 라 다시 넣어도 한 행(멱등). 종류별 기기당 최대 200개.
+- **PK `(user_id, kind, target_id)`** 라 다시 넣어도 한 행(멱등). 종류별 회원당 최대 200개.
 - 대상이 닫히거나 지워져도 행은 남긴다(외래키 없음). 끝난 경매는 목록에 `is_closed=true`로 보이고, 실거래 데이터에서 사라진 단지·원천에서 지워진 물건은 목록에서 빠진다.
 
 ## 5. 2·3차 테이블 윤곽

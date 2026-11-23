@@ -1,19 +1,29 @@
-"""관심 단지·관심 경매 물건 API (실제 PostGIS). 단지·거래·경매는 경매 API 테스트와 같은 데이터로 채운다."""
+"""관심 단지·관심 경매 물건 API (실제 PostGIS). 로그인한 회원만 쓴다(docs/AUTH.md).
+
+단지·거래·경매는 경매 API 테스트와 같은 데이터로 채운다. 회원은 가짜 카카오로 가입한다.
+"""
 
 import asyncio
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 import app.services.interest_service as interest_service
 from app.core.config import Settings
 from app.db import migrate
+from app.db.engine import make_engine
 from app.ingestion.geocode import GeocodeCache
 from app.main import create_app
+from app.repositories.types import SocialProvider
 from tests.conftest import API, FIXED_NOW, create_database
+from tests.fakes.oauth import FakeOAuth
 from tests.test_auction_api import COMPLEX_ID, OFFICETEL_ID
 from tests.test_auction_api import _populate as populate_market_and_auctions
+
+SECRET = "test-secret-" + "x" * 32
+AGREE = {"terms": True, "privacy": True, "age14": True, "marketing": False}
 
 
 @pytest.fixture(scope="module")
@@ -25,11 +35,34 @@ def interest_db(postgis: str, tmp_path_factory) -> str:
     return url
 
 
-def client(url: str | None, device: str | None = None) -> TestClient:
-    settings = Settings(database_url=url) if url else Settings()
-    return TestClient(
-        create_app(settings=settings, clock=lambda: FIXED_NOW), headers={"X-Device-Id": device or str(uuid4())}
+def app_for(url: str | None, kakao: FakeOAuth | None = None):
+    settings = Settings(database_url=url, jwt_secret=SECRET) if url else Settings(jwt_secret=SECRET)
+    providers = {p: FakeOAuth(p) for p in SocialProvider}
+    if kakao:
+        providers[SocialProvider.kakao] = kakao
+    return create_app(settings=settings, clock=lambda: FIXED_NOW, oauth_providers=providers)
+
+
+def sign_up(c: TestClient, kakao: FakeOAuth) -> str:
+    """새 카카오 회원으로 가입하고 access token을 돌려준다."""
+    token = f"sdk-{uuid4()}"
+    kakao.tokens[token] = kakao.user(str(uuid4()))
+    first = c.post(f"{API}/auth/oauth/kakao", json={"access_token": token}).json()["data"]
+    r = c.post(
+        f"{API}/auth/signup", json={"signup_token": first["signup_token"], "nickname": "부산사람", "agreements": AGREE}
     )
+    assert r.status_code == 200, r.text
+    return r.json()["data"]["access_token"]
+
+
+def client(url: str | None) -> TestClient:
+    """가입을 마친 회원의 클라이언트(요청마다 Bearer 토큰을 붙인다)."""
+    kakao = FakeOAuth(SocialProvider.kakao)
+    c = TestClient(app_for(url, kakao), headers={"X-Device-Id": str(uuid4())})
+    if url:
+        with c:
+            c.headers["Authorization"] = f"Bearer {sign_up(c, kakao)}"
+    return c
 
 
 def auction_ids(c: TestClient) -> dict[str, str]:
@@ -60,9 +93,8 @@ def test_complex_interest_is_idempotent_and_lists_latest_sale(interest_db):
     assert item["added_at"]
 
 
-def test_lists_are_separate_per_device_and_newest_first(interest_db):
-    device = str(uuid4())
-    with client(interest_db, device) as c:
+def test_lists_are_separate_per_member_and_newest_first(interest_db):
+    with client(interest_db) as c:
         assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200
         assert c.put(f"{API}/interests/complexes/{OFFICETEL_ID}").status_code == 200
         ids = c.get(f"{API}/interests").json()["data"]
@@ -70,6 +102,14 @@ def test_lists_are_separate_per_device_and_newest_first(interest_db):
     with client(interest_db) as other:
         assert other.get(f"{API}/interests").json()["data"] == {"complexes": [], "auctions": []}
         assert other.get(f"{API}/interests/complexes").json()["data"] == []
+
+
+def test_the_list_follows_the_member_across_devices(interest_db):
+    with client(interest_db) as c:
+        assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200
+        # 같은 회원이 다른 기기(다른 X-Device-Id)에서 봐도 같은 목록이다
+        r = c.get(f"{API}/interests", headers={"X-Device-Id": str(uuid4())})
+    assert r.json()["data"]["complexes"] == [str(COMPLEX_ID)]
 
 
 def test_auction_interest_keeps_closed_items(interest_db):
@@ -119,13 +159,45 @@ def test_limit_per_kind_is_409(interest_db, monkeypatch):
         assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200  # 이미 있는 건 한도와 상관없다
 
 
-def test_requires_device_id(interest_db):
-    with TestClient(create_app(settings=Settings(database_url=interest_db), clock=lambda: FIXED_NOW)) as c:
-        r = c.get(f"{API}/interests")
-    assert (r.status_code, r.json()["error"]["field"]) == (400, "X-Device-Id")
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/interests"),
+        ("GET", "/interests/complexes"),
+        ("PUT", f"/interests/complexes/{COMPLEX_ID}"),
+        ("DELETE", f"/interests/complexes/{COMPLEX_ID}"),
+        ("GET", "/interests/auctions"),
+        ("PUT", "/interests/auctions/CA-00-0000-0000-0"),
+        ("DELETE", "/interests/auctions/CA-00-0000-0000-0"),
+    ],
+)
+@pytest.mark.parametrize("authorization", [None, "Bearer not-a-token"])
+def test_interests_need_login(interest_db, method, path, authorization):
+    headers = {"Authorization": authorization} if authorization else {}
+    with TestClient(app_for(interest_db)) as c:
+        r = c.request(method, f"{API}{path}", headers=headers)
+    assert (r.status_code, r.json()["error"]["code"]) == (401, "UNAUTHORIZED")
 
 
-def test_without_a_database_it_says_there_is_no_data():
+def test_withdrawing_deletes_the_list(interest_db):
+    with client(interest_db) as c:
+        assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200
+        user_id = c.get(f"{API}/users/me").json()["data"]["id"]
+        assert c.delete(f"{API}/users/me").status_code == 204
+
+    async def rows() -> int:
+        engine = make_engine(interest_db)
+        async with engine.connect() as conn:
+            n = await conn.execute(text("SELECT count(*) FROM user_interests WHERE user_id = :id"), {"id": user_id})
+            count = n.scalar()
+        await engine.dispose()
+        return count
+
+    assert asyncio.run(rows()) == 0
+
+
+def test_without_a_database_interests_are_503():
+    # DB가 없으면 로그인부터 쓸 수 없다(인증이 먼저 503)
     with client(None) as c:
-        r = c.get(f"{API}/interests")
-    assert (r.status_code, r.json()["error"]["code"]) == (503, "DATA_NOT_READY")
+        r = c.get(f"{API}/interests", headers={"Authorization": "Bearer x"})
+    assert r.status_code == 503

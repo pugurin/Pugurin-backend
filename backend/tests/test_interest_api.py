@@ -16,6 +16,7 @@ from app.db import migrate
 from app.db.engine import make_engine
 from app.ingestion.geocode import GeocodeCache
 from app.main import create_app
+from app.repositories.postgres.interests import InterestKind
 from app.repositories.types import SocialProvider
 from tests.conftest import API, FIXED_NOW, create_database
 from tests.fakes.oauth import FakeOAuth
@@ -156,7 +157,16 @@ def test_limit_per_kind_is_409(interest_db, monkeypatch):
         assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200
         r = c.put(f"{API}/interests/complexes/{OFFICETEL_ID}")
         assert (r.status_code, r.json()["error"]["code"]) == (409, "CONFLICT")
+        assert r.json()["error"]["message"] == "관심 단지는 1개까지 등록할 수 있어요"
         assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200  # 이미 있는 건 한도와 상관없다
+
+
+def test_limit_message_uses_the_right_particle():
+    # "경매 물건는"이 아니라 "경매 물건은"
+    assert (
+        interest_service.limit_message(InterestKind.AUCTION)
+        == f"관심 경매 물건은 {interest_service.MAX_PER_KIND}개까지 등록할 수 있어요"
+    )
 
 
 @pytest.mark.parametrize(

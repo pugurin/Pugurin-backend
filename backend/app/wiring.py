@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.adapters.kakao import KakaoGeocoder
 from app.adapters.oauth import GoogleOAuth, KakaoOAuth, KakaoUnlink, NaverOAuth, OAuthProvider, SocialUnlinker
+from app.adapters.odsay import OdsayClient
 from app.adapters.unconfigured import UnconfiguredParcelSource
 from app.auth.tokens import MIN_SECRET_BYTES, JwtSigner
 from app.core.config import Settings
@@ -50,6 +51,7 @@ from app.services.redevelopment_service import RedevelopmentService
 from app.services.search_service import SearchService
 from app.services.stats_service import StatsService
 from app.services.transaction_service import TransactionService
+from app.services.transit_service import TransitService, TransitSource
 
 # uvicorn이 기본으로 출력하는 로거에 남겨야 서버 로그에서 보인다
 logger = logging.getLogger("uvicorn.error")
@@ -71,12 +73,14 @@ class Container:
     facility_service: FacilityService
     redevelopment_service: RedevelopmentService
     interest_service: InterestService
+    transit_service: TransitService
     auth_service: AuthService
     oauth_providers: Mapping[SocialProvider, OAuthProvider] = field(default_factory=dict)
     social_unlinkers: Mapping[SocialProvider, SocialUnlinker] = field(default_factory=dict)
     address_search: AddressSearch | None = None
     db_engine: AsyncEngine | None = None
     redis: Redis | None = None
+    transit_source: TransitSource | None = None
     market_repo: MarketRepository | None = None
 
     async def has_market_data(self) -> bool:
@@ -100,6 +104,9 @@ class Container:
             await close()
         for provider in (*self.oauth_providers.values(), *self.social_unlinkers.values()):
             await provider.aclose()
+        close = getattr(self.transit_source, "aclose", None)
+        if close is not None:
+            await close()
         if self.db_engine is not None:
             await self.db_engine.dispose()
         if self.redis is not None:
@@ -173,8 +180,11 @@ def build_container(
     *,
     station_search: StationSearch | None = None,
     school_search: SchoolSearch | None = None,
+    transit_source: TransitSource | None = None,
 ) -> Container:
     as_of = latest_etl_time(clock())
+    if transit_source is None and settings.odsay_api_key:
+        transit_source = OdsayClient(settings.odsay_api_key)
     db_engine = make_engine(settings.database_url) if settings.database_url else None
     if market_repo is None:
         market_repo = _real_market(settings, db_engine, as_of)
@@ -245,6 +255,9 @@ def build_container(
             auction_repo,
             clock,
         ),  # fmt: skip
+        # 대중교통 길찾기는 ODsay 키가 있을 때만 부른다(없으면 source_unavailable)
+        transit_service=TransitService(transit_source, clock),
+        transit_source=transit_source,
         auth_service=auth_service,
         oauth_providers=oauth_providers,
         social_unlinkers=social_unlinkers,

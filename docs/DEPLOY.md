@@ -154,6 +154,14 @@ dc exec -T db pg_restore -U pugurin -d pugurin --clean --if-exists < ~/backups/p
 ```
 거래 데이터는 원천에서 다시 받을 수 있다. 다만 2차부터는 사용자 데이터가 생기므로 백업을 서버 밖(다른 저장소)에도 둔다.
 
+## 8-1. 접속 기록(접근 로그) 보관
+
+개인정보처리방침에 "접속 기록(IP·요청 경로)은 최대 14일"로 적었다. 운영 api는 접근 로그를 도커 로그가 아니라 `access_logs` 볼륨(`/app/logs/access.log`)에 쓰고, 자정(UTC)마다 새 파일로 나눠 최근 14일치만 남긴다(`app/core/log_retention.py`, `PUGURIN_ACCESS_LOG_DIR`). 볼 때:
+```bash
+dc exec api tail -f /app/logs/access.log
+```
+**이 볼륨은 백업하지 않는다**(14일보다 오래 남게 되므로).
+
 ## 9. 문제 해결
 
 | 증상 | 확인 |

@@ -17,7 +17,7 @@ COPY app ./app
 
 ENV PATH="/app/.venv/bin:$PATH"
 # .cache(수집 캐시)를 미리 만들어 두어야 새 볼륨도 app 사용자 소유로 생긴다
-RUN useradd --create-home app && mkdir -p /app/.cache && chown -R app /app
+RUN useradd --create-home app && mkdir -p /app/.cache /app/logs && chown -R app /app
 USER app
 
 EXPOSE 8000

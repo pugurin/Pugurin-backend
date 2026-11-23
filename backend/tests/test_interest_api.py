@@ -98,9 +98,9 @@ def test_lists_are_separate_per_member_and_newest_first(interest_db):
         assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200
         assert c.put(f"{API}/interests/complexes/{OFFICETEL_ID}").status_code == 200
         ids = c.get(f"{API}/interests").json()["data"]
-    assert ids == {"complexes": [str(OFFICETEL_ID), str(COMPLEX_ID)], "auctions": []}
+    assert ids == {"complexes": [str(OFFICETEL_ID), str(COMPLEX_ID)], "auctions": [], "regions": []}
     with client(interest_db) as other:
-        assert other.get(f"{API}/interests").json()["data"] == {"complexes": [], "auctions": []}
+        assert other.get(f"{API}/interests").json()["data"] == {"complexes": [], "auctions": [], "regions": []}
         assert other.get(f"{API}/interests/complexes").json()["data"] == []
 
 
@@ -138,7 +138,7 @@ def test_delete_is_idempotent(interest_db):
         for _ in range(2):
             assert c.delete(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 204
             assert c.delete(f"{API}/interests/auctions/{auction}").status_code == 204
-        assert c.get(f"{API}/interests").json()["data"] == {"complexes": [], "auctions": []}
+        assert c.get(f"{API}/interests").json()["data"] == {"complexes": [], "auctions": [], "regions": []}
 
 
 def test_unknown_targets_are_404(interest_db):
@@ -147,7 +147,7 @@ def test_unknown_targets_are_404(interest_db):
         assert (r.status_code, r.json()["error"]["code"]) == (404, "RESOURCE_NOT_FOUND")
         r = c.put(f"{API}/interests/auctions/CA-00-0000-0000-0")
         assert (r.status_code, r.json()["error"]["code"]) == (404, "RESOURCE_NOT_FOUND")
-        assert c.get(f"{API}/interests").json()["data"] == {"complexes": [], "auctions": []}
+        assert c.get(f"{API}/interests").json()["data"] == {"complexes": [], "auctions": [], "regions": []}
 
 
 def test_limit_per_kind_is_409(interest_db, monkeypatch):
@@ -201,3 +201,81 @@ def test_without_a_database_interests_are_503():
     with client(None) as c:
         r = c.get(f"{API}/interests", headers={"Authorization": "Bearer x"})
     assert r.status_code == 503
+
+
+def dong_codes(url: str, n: int, *, with_centroid: bool = False) -> list[str]:
+    """테스트 DB의 법정동 코드 n개. `with_centroid`면 첫 동에 중심점을 심어 좌표 응답을 확인할 수 있게 한다."""
+
+    async def pick() -> list[str]:
+        engine = make_engine(url)
+        async with engine.begin() as conn:
+            rows = await conn.execute(
+                text("SELECT code FROM regions WHERE level = 'dong' ORDER BY code LIMIT :n"), {"n": n}
+            )
+            codes = [r.code for r in rows]
+            if with_centroid:
+                await conn.execute(
+                    text("UPDATE regions SET centroid = ST_SetSRID(ST_MakePoint(129.1, 35.1), 4326) WHERE code = :c"),
+                    {"c": codes[0]},
+                )
+        await engine.dispose()
+        return codes
+
+    codes = asyncio.run(pick())
+    assert len(codes) == n
+    return codes
+
+
+def test_region_interest_is_idempotent_and_listed(interest_db):
+    [code] = dong_codes(interest_db, 1, with_centroid=True)
+    with client(interest_db) as c:
+        first = c.put(f"{API}/interests/regions/{code}")
+        again = c.put(f"{API}/interests/regions/{code}")
+        assert first.status_code == again.status_code == 200
+        assert first.json()["data"] == again.json()["data"]  # 다시 넣어도 처음 등록 시각 그대로
+        assert first.json()["data"]["target_id"] == code
+
+        r = c.get(f"{API}/interests/regions")
+        ids = c.get(f"{API}/interests").json()["data"]
+    assert r.status_code == 200
+    assert r.headers["cache-control"] == "private, no-cache"
+    body = r.json()
+    assert body["meta"] == {"total": 1, "max_items": 10}
+    [item] = body["data"]
+    assert set(item) == {"code", "name", "sigungu_name", "lat", "lng", "added_at"}
+    assert item["code"] == code and item["name"] and item["sigungu_name"]
+    assert (item["lat"], item["lng"]) == (pytest.approx(35.1), pytest.approx(129.1))
+    assert ids["regions"] == [code]
+
+
+def test_region_limit_is_10(interest_db):
+    codes = dong_codes(interest_db, 11)
+    with client(interest_db) as c:
+        for code in codes[:10]:
+            assert c.put(f"{API}/interests/regions/{code}").status_code == 200
+        r = c.put(f"{API}/interests/regions/{codes[10]}")
+        assert (r.status_code, r.json()["error"]["code"]) == (409, "CONFLICT")
+        assert "10개" in r.json()["error"]["message"]
+        assert c.put(f"{API}/interests/regions/{codes[0]}").status_code == 200  # 이미 있는 건 한도와 상관없다
+
+
+@pytest.mark.parametrize("code", ["2699999999", "26230"])  # 없는 동, 시군구(동만 등록할 수 있다)
+def test_unknown_or_sigungu_region_is_404(interest_db, code):
+    with client(interest_db) as c:
+        r = c.put(f"{API}/interests/regions/{code}")
+        assert (r.status_code, r.json()["error"]["code"]) == (404, "RESOURCE_NOT_FOUND")
+        assert c.get(f"{API}/interests").json()["data"]["regions"] == []
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PUT", "/interests/regions/2635010500"),
+        ("DELETE", "/interests/regions/2635010500"),
+        ("GET", "/interests/regions"),
+    ],
+)
+def test_region_needs_login(interest_db, method, path):
+    with TestClient(app_for(interest_db)) as c:
+        r = c.request(method, f"{API}{path}")
+    assert (r.status_code, r.json()["error"]["code"]) == (401, "UNAUTHORIZED")

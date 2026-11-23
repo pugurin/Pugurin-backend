@@ -1,5 +1,7 @@
 """관심 목록(회원 단위)."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -12,11 +14,22 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 class InterestKind(StrEnum):
     COMPLEX = "complex"
     AUCTION = "auction"
+    REGION = "region"  # target_id는 법정동 코드(10자리)
 
 
 @dataclass(frozen=True)
 class Interest:
     target_id: str
+    added_at: datetime
+
+
+@dataclass(frozen=True)
+class RegionInterest:
+    code: str
+    name: str
+    sigungu_name: str
+    lat: float | None
+    lng: float | None
     added_at: datetime
 
 
@@ -44,6 +57,17 @@ _LIST = text(
     ORDER BY created_at DESC, target_id
     """
 )
+_IS_DONG = text("SELECT EXISTS (SELECT 1 FROM regions WHERE code = :code AND level = 'dong')")
+_LIST_REGIONS = text(
+    """
+    SELECT d.code, d.name, g.name AS sigungu_name, ST_Y(d.centroid) AS lat, ST_X(d.centroid) AS lng, ui.created_at
+    FROM user_interests ui
+    JOIN regions d ON d.code = ui.target_id AND d.level = 'dong'
+    JOIN regions g ON g.code = d.parent_code
+    WHERE ui.user_id = :user AND ui.kind = 'region'
+    ORDER BY ui.created_at DESC, d.code
+    """
+)
 
 
 class PostgresInterestRepository:
@@ -69,3 +93,13 @@ class PostgresInterestRepository:
         async with self._engine.connect() as conn:
             rows = await conn.execute(_LIST, {"user": user_id, "kind": kind.value})
             return [Interest(r.target_id, r.created_at) for r in rows]
+
+    async def is_dong(self, code: str) -> bool:
+        async with self._engine.connect() as conn:
+            return bool((await conn.execute(_IS_DONG, {"code": code})).scalar())
+
+    async def list_regions(self, user_id: UUID) -> list[RegionInterest]:
+        """관심 지역을 동·시군구 이름, 중심점과 함께. 최근에 등록한 것부터."""
+        async with self._engine.connect() as conn:
+            rows = await conn.execute(_LIST_REGIONS, {"user": user_id})
+            return [RegionInterest(r.code, r.name, r.sigungu_name, r.lat, r.lng, r.created_at) for r in rows]

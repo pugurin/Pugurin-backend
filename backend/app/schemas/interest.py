@@ -4,7 +4,7 @@ from pydantic import BaseModel
 
 from app.schemas.auction import ATTRIBUTION, ATTRIBUTION_URL, AuctionOut
 from app.schemas.complex import ComplexOut, TransactionOut
-from app.services.interest_service import InterestedAuction, InterestedComplex
+from app.services.interest_service import InterestedAuction, InterestedComplex, InterestedRegion
 
 
 class InterestAddedOut(BaseModel):
@@ -19,6 +19,7 @@ class InterestAddedResponse(BaseModel):
 class InterestIdsOut(BaseModel):
     complexes: list[str]  # 최근 등록한 것부터
     auctions: list[str]
+    regions: list[str]  # 법정동 코드
 
 
 class InterestIdsResponse(BaseModel):
@@ -66,3 +67,28 @@ class InterestAuctionsMeta(InterestListMeta):
 class InterestAuctionsResponse(BaseModel):
     data: list[InterestAuctionOut]
     meta: InterestAuctionsMeta
+
+
+class InterestRegionOut(BaseModel):
+    code: str  # 법정동 코드 10자리
+    name: str
+    sigungu_name: str
+    lat: float | None  # 중심점이 아직 없으면 null
+    lng: float | None
+    added_at: datetime
+
+    @classmethod
+    def from_domain(cls, item: InterestedRegion) -> "InterestRegionOut":
+        return cls(
+            code=item.code,
+            name=item.name,
+            sigungu_name=item.sigungu_name,
+            lat=item.lat,
+            lng=item.lng,
+            added_at=item.added_at,
+        )
+
+
+class InterestRegionsResponse(BaseModel):
+    data: list[InterestRegionOut]
+    meta: InterestListMeta

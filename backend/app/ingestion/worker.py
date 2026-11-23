@@ -56,14 +56,10 @@ async def run_weekly(
     out: Callable[[str], None] = print,
     max_runs: int | None = None,
 ) -> None:
-    """매주 정해진 요일·시각(KST)에 job을 돈다. 시작하자마자 돌지는 않는다.
-    실패해도 죽지 않고 기록한 뒤 다음 주를 기다린다(일일 수집 루프와 서로 영향 없음). `max_runs`는 테스트용."""
+    """시작하자마자 한 번 돌고(재시작·배포로 놓친 주를 메운다. job이 멱등이라 안전),
+    이후 매주 정해진 요일·시각(KST)에 돈다. 실패해도 죽지 않고 기록한 뒤 다음 주를 기다린다(일일 수집 루프와 서로 영향 없음). `max_runs`는 테스트용."""
     runs = 0
     while True:
-        now = clock()
-        wake = next_weekly_at(now, weekday, hour)
-        out(f"다음 주간 실행 {wake.isoformat()}")
-        await sleep((wake - now).total_seconds())
         try:
             result = await job()
             out(f"주간 작업 끝: {result}")
@@ -72,3 +68,7 @@ async def run_weekly(
         runs += 1
         if max_runs is not None and runs >= max_runs:
             return
+        now = clock()
+        wake = next_weekly_at(now, weekday, hour)
+        out(f"다음 주간 실행 {wake.isoformat()}")
+        await sleep((wake - now).total_seconds())

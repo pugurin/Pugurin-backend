@@ -58,8 +58,8 @@ def test_next_weekly_at_is_monday_eight_kst():
     assert next_weekly_at(datetime(2026, 11, 22, 23, 0, tzinfo=KST)) == datetime(2026, 11, 23, 8, 0, tzinfo=KST)
 
 
-async def test_worker_runs_reports_on_monday():
-    now = [datetime(2026, 11, 22, 12, 0, tzinfo=KST)]  # 일요일 낮
+async def test_weekly_loop_runs_at_start_then_waits_for_next_monday():
+    now = [datetime(2026, 11, 25, 12, 0, tzinfo=KST)]  # 수요일 낮(재시작·배포 시나리오)
     sleeps: list[float] = []
     runs: list[datetime] = []
 
@@ -72,11 +72,11 @@ async def test_worker_runs_reports_on_monday():
         now[0] = now[0] + timedelta(seconds=seconds)
 
     await run_weekly(job, clock=lambda: now[0], sleep=sleep, out=lambda _: None, max_runs=2)
-    assert runs == [datetime(2026, 11, 23, 8, 0, tzinfo=KST), datetime(2026, 11, 30, 8, 0, tzinfo=KST)]
-    assert sleeps == [20 * 3600, 7 * 24 * 3600]
+    assert runs == [datetime(2026, 11, 25, 12, 0, tzinfo=KST), datetime(2026, 11, 30, 8, 0, tzinfo=KST)]
+    assert sleeps == [5 * 24 * 3600 - 4 * 3600]  # 수 12:00 -> 다음 월 08:00
 
 
-async def test_a_failing_weekly_run_does_not_stop_the_loop_or_the_daily_one():
+async def test_a_failing_weekly_run_does_not_stop_the_weekly_loop():
     calls = 0
 
     async def job() -> str:

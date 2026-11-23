@@ -29,7 +29,7 @@ async def list_notifications(
     user: CurrentUser,
     container: ContainerDep,
     response: Response,
-    page: Annotated[int, Query(ge=1)] = 1,
+    page: Annotated[int, Query(ge=1, le=1000)] = 1,
     page_size: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> NotificationsResponse:
     response.headers["Cache-Control"] = PRIVATE

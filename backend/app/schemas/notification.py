@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.repositories.postgres.notifications import Notification
 
@@ -54,5 +54,5 @@ class NotificationResponse(BaseModel):
 
 
 class NotificationReadIn(BaseModel):
-    ids: list[UUID] | None = None  # 이 알림들만 읽음
+    ids: list[UUID] | None = Field(default=None, max_length=100)  # 이 알림들만 읽음
     all: bool = False  # 전부 읽음

@@ -129,6 +129,33 @@ def test_same_week_inserts_once(notification_db):
         assert c.get(f"{API}/notifications").json()["meta"]["total"] == 1
 
 
+def test_bounds_on_page_and_ids(notification_db):
+    with client(notification_db) as c:
+        assert c.get(f"{API}/notifications?page=1001").status_code == 400
+        assert c.get(f"{API}/notifications?page=1000").status_code == 200
+        too_many = [str(uuid4()) for _ in range(101)]
+        assert c.post(f"{API}/notifications/read", json={"ids": too_many}).status_code == 400
+        assert c.post(f"{API}/notifications/read", json={"ids": too_many[:100]}).status_code == 204
+
+
+def test_insert_report_skips_withdrawn_users(notification_db):
+    with client(notification_db) as c:
+        uid = my_id(c)
+        assert c.delete(f"{API}/users/me").status_code == 204
+    assert insert_reports(notification_db, uid, weeks=1) == [False]
+
+    async def rows() -> int:
+        engine = make_engine(notification_db)
+        async with engine.connect() as conn:
+            n = (
+                await conn.execute(text("SELECT count(*) FROM notifications WHERE user_id = :id"), {"id": uid})
+            ).scalar()
+        await engine.dispose()
+        return n
+
+    assert asyncio.run(rows()) == 0
+
+
 def test_delete_older_than(notification_db):
     async def run(user_id: str) -> int:
         engine = make_engine(notification_db)

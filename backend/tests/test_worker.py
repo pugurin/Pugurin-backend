@@ -93,3 +93,24 @@ async def test_a_failing_weekly_run_does_not_stop_the_weekly_loop():
     )
     assert calls == 3
     assert any("아직 끝나지 않은 주" in line for line in lines)
+
+
+async def test_a_failing_weekly_run_is_retried_after_an_hour_not_a_week():
+    now = [datetime(2026, 11, 23, 8, 0, tzinfo=KST)]
+    sleeps: list[float] = []
+    calls = 0
+
+    async def job() -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ValueError("일시 장애")
+        return "ok"
+
+    async def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        now[0] = now[0] + timedelta(seconds=seconds)
+
+    await run_weekly(job, clock=lambda: now[0], sleep=sleep, out=lambda _: None, max_runs=2)
+    assert calls == 2
+    assert sleeps == [3600]

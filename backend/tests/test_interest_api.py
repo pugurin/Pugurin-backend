@@ -279,3 +279,26 @@ def test_region_needs_login(interest_db, method, path):
     with TestClient(app_for(interest_db)) as c:
         r = c.request(method, f"{API}{path}")
     assert (r.status_code, r.json()["error"]["code"]) == (401, "UNAUTHORIZED")
+
+
+def test_dong_without_centroid_falls_back_to_the_sigungu_point(interest_db):
+    [code] = dong_codes(interest_db, 1)
+
+    async def prepare() -> None:
+        engine = make_engine(interest_db)
+        async with engine.begin() as conn:
+            await conn.execute(text("UPDATE regions SET centroid = NULL WHERE code = :c"), {"c": code})
+            await conn.execute(
+                text(
+                    "UPDATE regions SET centroid = ST_SetSRID(ST_MakePoint(128.5, 35.5), 4326) "
+                    "WHERE code = (SELECT parent_code FROM regions WHERE code = :c)"
+                ),
+                {"c": code},
+            )
+        await engine.dispose()
+
+    asyncio.run(prepare())
+    with client(interest_db) as c:
+        assert c.put(f"{API}/interests/regions/{code}").status_code == 200
+        [item] = c.get(f"{API}/interests/regions").json()["data"]
+    assert (item["lat"], item["lng"]) == (pytest.approx(35.5), pytest.approx(128.5))

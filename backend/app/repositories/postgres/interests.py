@@ -60,7 +60,9 @@ _LIST = text(
 _IS_DONG = text("SELECT EXISTS (SELECT 1 FROM regions WHERE code = :code AND level = 'dong')")
 _LIST_REGIONS = text(
     """
-    SELECT d.code, d.name, g.name AS sigungu_name, ST_Y(d.centroid) AS lat, ST_X(d.centroid) AS lng, ui.created_at
+    SELECT d.code, d.name, g.name AS sigungu_name,
+           ST_Y(coalesce(d.centroid, g.centroid)) AS lat, ST_X(coalesce(d.centroid, g.centroid)) AS lng,
+           ui.created_at
     FROM user_interests ui
     JOIN regions d ON d.code = ui.target_id AND d.level = 'dong'
     JOIN regions g ON g.code = d.parent_code

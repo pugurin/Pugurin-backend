@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI
 
 from app.adapters.oauth import OAuthProvider, SocialUnlinker
+from app.core import log_retention
 from app.core.config import Settings
 from app.core.dates import Clock, kst_now
 from app.core.errors import install_error_handlers
@@ -67,6 +68,8 @@ def create_app(
     school_search: SchoolSearch | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
+    # 접속 기록(IP·요청 경로)은 최대 14일만 남긴다(개인정보처리방침)
+    log_retention.install(settings.access_log_dir)
     container = build_container(
         settings,
         clock or kst_now,

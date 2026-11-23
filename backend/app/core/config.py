@@ -100,3 +100,6 @@ class Settings(BaseSettings):
     rate_limit_ip_per_minute: int = 3000
     parcel_cache_ttl_days: int = 30
     parcel_negative_cache_ttl_days: int = 1
+
+    # 접근 로그 파일 폴더(운영). 있으면 날짜별 파일에 14일치만 남긴다(app/core/log_retention.py)
+    access_log_dir: Path | None = None

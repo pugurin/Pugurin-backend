@@ -5,7 +5,7 @@
 ```
 인터넷 ──▶ caddy (80·443, HTTPS 자동) ──▶ api ──▶ db (PostGIS)
                                             └──▶ redis
-           worker (매일 04시 수집·적재) ──▶ db
+           worker (매일 04시 수집·적재, 월 08시 주간 리포트) ──▶ db
 ```
 
 - 밖으로 열리는 포트는 **caddy의 80·443뿐**이다. db·redis·api는 서버 안에서만 닿는다.
@@ -106,7 +106,7 @@ dc logs -f worker                                # 수집 진행 상황
 
 ## 5. 처음 데이터 채우기 (백필)
 
-worker는 시작하자마자 한 번 돌고, 이후 매일 04시(KST)에 돈다.
+worker는 시작하자마자 한 번 돌고, 이후 매일 04시(KST)에 돈다. 같은 프로세스에서 매주 월요일 08:00(KST)에 관심 지역 주간 리포트도 만든다(`python -m app.ingestion region-reports`와 같은 일, 시작할 때는 돌지 않는다). 그 주에 끝난 수집이 없으면 만들지 않고 로그만 남긴다. 설계는 [`INTEREST_REGION_REPORT.md`](./INTEREST_REGION_REPORT.md).
 - 처음에는 `PUGURIN_BACKFILL_MONTHS`(기본 60개월)만큼 받는다.
   - 실거래가 API를 약 6,700회 부른다. 공공데이터포털 개발계정 한도는 API마다 하루 1만 회라서 대개 하루 안에 끝난다.
   - 카카오 지오코딩은 새로 나온 주소만 부른다.

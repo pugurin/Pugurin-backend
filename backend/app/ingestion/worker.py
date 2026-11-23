@@ -37,3 +37,38 @@ async def run_daily(
         wake = next_run_at(now, hour)
         out(f"다음 실행 {wake.isoformat()}")
         await sleep((wake - now).total_seconds())
+
+
+def next_weekly_at(now: datetime, weekday: int = 0, hour: int = 8) -> datetime:
+    """다음 `weekday`(월=0) `hour`시 KST. 정각이면 다음 주."""
+    now = now.astimezone(KST)
+    day = datetime.combine(now.date() + timedelta(days=(weekday - now.weekday()) % 7), time(hour, 0), tzinfo=KST)
+    return day if now < day else day + timedelta(days=7)
+
+
+async def run_weekly(
+    job: Callable[[], Awaitable[object]],
+    *,
+    weekday: int = 0,
+    hour: int = 8,
+    clock: Clock = kst_now,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    out: Callable[[str], None] = print,
+    max_runs: int | None = None,
+) -> None:
+    """매주 정해진 요일·시각(KST)에 job을 돈다. 시작하자마자 돌지는 않는다.
+    실패해도 죽지 않고 기록한 뒤 다음 주를 기다린다(일일 수집 루프와 서로 영향 없음). `max_runs`는 테스트용."""
+    runs = 0
+    while True:
+        now = clock()
+        wake = next_weekly_at(now, weekday, hour)
+        out(f"다음 주간 실행 {wake.isoformat()}")
+        await sleep((wake - now).total_seconds())
+        try:
+            result = await job()
+            out(f"주간 작업 끝: {result}")
+        except Exception as e:  # noqa: BLE001
+            out(f"주간 작업 실패: {type(e).__name__}: {e}")
+        runs += 1
+        if max_runs is not None and runs >= max_runs:
+            return

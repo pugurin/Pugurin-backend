@@ -495,6 +495,25 @@ CREATE UNIQUE INDEX mv_monthly_stats_key
 - **PK `(user_id, kind, target_id)`** 라 다시 넣어도 한 행(멱등). 종류별 회원당 최대 200개.
 - 대상이 닫히거나 지워져도 행은 남긴다(외래키 없음). 끝난 경매는 목록에 `is_closed=true`로 보이고, 실거래 데이터에서 사라진 단지·원천에서 지워진 물건은 목록에서 빠진다.
 
+### 4.5 관심 지역 `user_interests`(kind `region`)와 알림 `notifications` (마이그레이션 0016)
+
+- **관심 지역:** `user_interests.kind`에 `region`을 더했다(CHECK 확장). `target_id`는 법정동 코드 10자리, 회원당 최대 10개. 나머지는 4.4와 같다.
+- **정비사업 새 컬럼 3개:** `redevelopments.previous_stage`(바뀌기 전 단계), `stage_changed_at`(단계가 바뀐 시각, 리포트의 "이번 주 단계 변화"), `region_code`(구역의 법정동 코드, 지역별 묶음용, 지번 좌표가 있는 구역만).
+- **`notifications`:** 회원에게 보낸 알림. 지금은 주간 리포트(`kind='region_report'`)만 담는다. 설계는 [`INTEREST_REGION_REPORT.md`](./INTEREST_REGION_REPORT.md).
+
+| 컬럼 | 설명 |
+|---|---|
+| `id uuid` | PK |
+| `user_id uuid` | `users.id` (ON DELETE CASCADE). 탈퇴는 사용자 행을 익명화만 하므로 탈퇴 트랜잭션에서 직접 지운다 |
+| `kind text` | `region_report` (CHECK) |
+| `period_start date` | 리포트 주의 월요일(KST) |
+| `title`, `summary` | 목록에 보이는 제목·한 줄 요약 |
+| `payload jsonb` | 리포트 내용(지역별 거래·시세·정비사업 단계 변화) |
+| `created_at`, `read_at` | 만든 시각, 읽은 시각(NULL이면 안 읽음) |
+
+- **`UNIQUE (user_id, kind, period_start)`** 라 같은 주를 다시 돌려도 덮지 않는다(멱등). 인덱스 `(user_id, created_at DESC)`.
+- 90일이 지난 알림은 지우고, 관심 지역을 해제해도 받은 리포트는 남긴다.
+
 ## 5. 2·3차 테이블 윤곽
 
 ```mermaid

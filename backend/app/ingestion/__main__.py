@@ -1,7 +1,7 @@
 import argparse
 import asyncio
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from app.adapters.building import BuildingRegisterClient
@@ -26,7 +26,8 @@ from app.ingestion.redevelopment import sync_redevelopments
 from app.ingestion.refresh import refresh
 from app.ingestion.school_zones import NoElementarySchools, default_zone_dir, find_zone_files, load_school_zones
 from app.ingestion.supply import sync_supply_areas
-from app.ingestion.worker import run_daily
+from app.ingestion.worker import run_daily, run_weekly
+from app.services.region_report import ReportRun, generate_region_reports, week_start
 
 
 def _status(settings: Settings) -> int:
@@ -295,7 +296,59 @@ def _worker(settings: Settings, args: argparse.Namespace) -> int:
     if not settings.database_url:
         print("worker에는 PUGURIN_DATABASE_URL이 필요합니다")
         return 2
-    asyncio.run(run_daily(lambda: _daily(settings, args), hour=settings.worker_run_hour))
+    asyncio.run(_worker_loops(settings, args))
+    return 0
+
+
+async def _worker_loops(settings: Settings, args: argparse.Namespace) -> None:
+    """일일 수집 루프와 주간 리포트 루프를 함께 돌린다. 각 루프가 자기 예외를 잡아 서로를 멈추지 않는다."""
+    await asyncio.gather(
+        run_daily(lambda: _daily(settings, args), hour=settings.worker_run_hour),
+        run_weekly(lambda: _weekly_job(settings), weekday=0, hour=8),
+    )
+
+
+async def _weekly_job(settings: Settings) -> str:
+    try:
+        return await _weekly_reports(settings)
+    except ValueError as e:  # 아직 끝나지 않은 주: 기록만 하고 다음 주를 기다린다
+        return f"리포트를 만들지 않음: {e}"
+
+
+def _format_report(week: date, r: ReportRun) -> str:
+    if r.no_collect:
+        return f"{week} 주 리포트: 그 주에 끝난 실거래 수집이 없어 만들지 않음 (회원 {r.users}명)"
+    return (
+        f"{week} 주 리포트: 회원 {r.users}명 · 새로 {r.created} · 무소식 {r.skipped_empty}"
+        f" · 이미 있음 {r.skipped_existing}"
+    )
+
+
+async def _weekly_reports(settings: Settings, week: date | None = None) -> str:
+    """직전에 끝난 주(또는 --week)의 관심 지역 리포트를 만든다. 결과는 한 줄 요약.
+    월요일이 아니거나 아직 끝나지 않은 주면 ValueError."""
+    engine = make_engine(settings.database_url)
+    try:
+        now = datetime.now(KST)
+        week = week or week_start(now)
+        r = await generate_region_reports(engine, week=week, now=now)
+    finally:
+        await engine.dispose()
+    return _format_report(week, r)
+
+
+async def _region_reports(settings: Settings, week: date | None) -> int:
+    if not settings.database_url:
+        print("관심 지역 리포트에는 PUGURIN_DATABASE_URL이 필요합니다")
+        return 2
+    try:
+        print(await _weekly_reports(settings, week))
+    except ValueError as e:
+        print(f"리포트를 만들 수 없는 주입니다: {e}")
+        return 2
+    except Exception as e:  # noqa: BLE001
+        print(f"관심 지역 리포트 실패: {type(e).__name__}: {e}")
+        return 3
     return 0
 
 
@@ -353,9 +406,14 @@ def main() -> int:
         "supply", help="건축물대장으로 아파트 평형별 공급면적을 채운다 (하루 호출 한도 안에서 나눠 받음)"
     )
     supply.add_argument("--max-calls", type=int, help="이번에 쓸 최대 호출 수 (기본: PUGURIN_BUILDING_DAILY_CALLS)")
+    rr = sub.add_parser(
+        "region-reports", help="관심 지역 주간 리포트를 만들어 알림함에 넣는다 (이미 있는 회원·주는 건너뜀)"
+    )
+    rr.add_argument("--week", type=date.fromisoformat, help="리포트 주의 월요일 YYYY-MM-DD (기본: 직전에 끝난 주)")
     sub.add_parser(
         "worker",
-        help="refresh(수집 → 지오코딩 → DB 적재)와 경매·시설·공급면적·정비사업 동기화를 지금 한 번, 이후 매일 실행",
+        help="refresh(수집 → 지오코딩 → DB 적재)와 경매·시설·공급면적·정비사업 동기화를 지금 한 번, 이후 매일 실행."
+        " 매주 월요일 08:00 KST에는 관심 지역 리포트도 만든다",
     )
     args = parser.parse_args()
     settings = Settings()
@@ -376,6 +434,8 @@ def main() -> int:
         return asyncio.run(_school_zones(settings, args.dir))
     if args.command == "redevelopment-zones":
         return asyncio.run(_redevelopment_zones(settings, args.dir))
+    if args.command == "region-reports":
+        return asyncio.run(_region_reports(settings, args.week))
     if args.command == "supply":
         return asyncio.run(_supply(settings, args.max_calls))
     if args.command == "worker":

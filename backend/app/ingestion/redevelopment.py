@@ -72,12 +72,12 @@ _UPSERT = text(
     """
     INSERT INTO redevelopments (
         id, area_name, kind, step_raw, stage, stage_order, location, location_kind,
-        lat, lng, location_precise, geom, office_geom, area_m2, households, buildings, union_members,
+        lat, lng, location_precise, region_code, geom, office_geom, area_m2, households, buildings, union_members,
         floor_area_ratio, building_coverage_ratio, scale, business_entity, contractor, engineer, architect,
         specialists, tel, images, first_seen_at, last_seen_at, closed_at
     ) VALUES (
         :id, :area_name, :kind, :step_raw, :stage, :stage_order, :location, :location_kind,
-        CAST(:lat AS float8), CAST(:lng AS float8), :precise,
+        CAST(:lat AS float8), CAST(:lng AS float8), :precise, :region_code,
         ST_SetSRID(ST_MakePoint(CAST(:lng AS float8), CAST(:lat AS float8)), 4326),
         ST_SetSRID(ST_MakePoint(CAST(:office_lng AS float8), CAST(:office_lat AS float8)), 4326),
         :area_m2, :households, :buildings, :union_members,
@@ -88,6 +88,11 @@ _UPSERT = text(
         area_name = excluded.area_name,
         kind = excluded.kind,
         step_raw = excluded.step_raw,
+        -- 단계가 바뀐 경우에만 이전 단계와 바뀐 시각을 남긴다(같은 단계가 이어지면 기록을 그대로 둔다)
+        previous_stage = CASE WHEN redevelopments.stage IS DISTINCT FROM excluded.stage
+                              THEN redevelopments.stage ELSE redevelopments.previous_stage END,
+        stage_changed_at = CASE WHEN redevelopments.stage IS DISTINCT FROM excluded.stage
+                                THEN CAST(:now AS timestamptz) ELSE redevelopments.stage_changed_at END,
         stage = excluded.stage,
         stage_order = excluded.stage_order,
         location = excluded.location,
@@ -103,6 +108,10 @@ _UPSERT = text(
         location_precise = CASE WHEN CAST(:keep_location AS boolean)
                         AND redevelopments.location IS NOT DISTINCT FROM excluded.location
                                 THEN redevelopments.location_precise ELSE excluded.location_precise END,
+        -- 법정동 코드는 좌표와 같은 규칙을 따른다
+        region_code = CASE WHEN CAST(:keep_location AS boolean)
+                        AND redevelopments.location IS NOT DISTINCT FROM excluded.location
+                           THEN redevelopments.region_code ELSE excluded.region_code END,
         geom = CASE WHEN CAST(:keep_location AS boolean)
                         AND redevelopments.location IS NOT DISTINCT FROM excluded.location
                     THEN redevelopments.geom ELSE excluded.geom END,
@@ -333,6 +342,8 @@ def _row(
         "lat": geo.lat if geo else None,
         "lng": geo.lng if geo else None,
         "precise": bool(geo and geo.precise),
+        # 지번을 건물까지 맞게 찾은 구역만 법정동 코드를 갖는다(사무실 주소 구역은 NULL)
+        "region_code": geo.b_code if geo and geo.precise else None,
         "keep_location": keep_location,
         "area_m2": item.area_m2,
         "households": item.households,

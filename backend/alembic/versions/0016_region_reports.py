@@ -29,9 +29,24 @@ def _interest_kind_region_down() -> None:
     op.execute(f"ALTER TABLE user_interests ADD CONSTRAINT {KIND_CHECK} CHECK (kind IN ('complex', 'auction'))")
 
 
+def _redevelopment_stage_change_up() -> None:
+    # 단계가 바뀐 시각(리포트의 "이번 주 단계 변화")과 구역의 법정동 코드(지역 리포트 묶음용)
+    op.execute("ALTER TABLE redevelopments ADD COLUMN previous_stage text")
+    op.execute("ALTER TABLE redevelopments ADD COLUMN stage_changed_at timestamptz")
+    op.execute("ALTER TABLE redevelopments ADD COLUMN region_code varchar(10)")
+
+
+def _redevelopment_stage_change_down() -> None:
+    op.execute("ALTER TABLE redevelopments DROP COLUMN region_code")
+    op.execute("ALTER TABLE redevelopments DROP COLUMN stage_changed_at")
+    op.execute("ALTER TABLE redevelopments DROP COLUMN previous_stage")
+
+
 def upgrade() -> None:
     _interest_kind_region_up()
+    _redevelopment_stage_change_up()
 
 
 def downgrade() -> None:
+    _redevelopment_stage_change_down()
     _interest_kind_region_down()

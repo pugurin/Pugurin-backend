@@ -135,6 +135,7 @@ class PostgresAccountRepository:
             await conn.execute(text("DELETE FROM user_identities WHERE user_id = :id"), {"id": user_id})
             # 사용자 행은 익명화만 하고 남기므로(ON DELETE CASCADE가 안 걸린다) 관심 목록은 직접 지운다
             await conn.execute(text("DELETE FROM user_interests WHERE user_id = :id"), {"id": user_id})
+            await conn.execute(text("DELETE FROM notifications WHERE user_id = :id"), {"id": user_id})
             await conn.execute(
                 text(
                     """

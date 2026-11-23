@@ -31,6 +31,7 @@ from app.routers import (
     interests,
     internal,
     map,
+    notifications,
     parcels,
     redevelopments,
     search,
@@ -128,6 +129,7 @@ def create_app(
         facilities,
         redevelopments,
         interests,
+        notifications,
         auth,
         users,
     ):

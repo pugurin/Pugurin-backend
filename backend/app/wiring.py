@@ -34,6 +34,7 @@ from app.repositories.postgres.auctions import PostgresAuctionRepository
 from app.repositories.postgres.facilities import PostgresFacilityRepository
 from app.repositories.postgres.interests import PostgresInterestRepository
 from app.repositories.postgres.market import PostgresMarketRepository
+from app.repositories.postgres.notifications import PostgresNotificationRepository
 from app.repositories.postgres.redevelopments import PostgresRedevelopmentRepository
 from app.repositories.types import SocialProvider
 from app.services.analysis_service import AnalysisService
@@ -44,6 +45,7 @@ from app.services.facility_service import FacilityService
 from app.services.glossary_service import GlossaryService
 from app.services.interest_service import InterestService
 from app.services.map_service import MapService
+from app.services.notification_service import NotificationService
 from app.services.parcel_service import ParcelService
 from app.services.readiness_service import ReadinessService
 from app.services.redevelopment_service import RedevelopmentService
@@ -71,6 +73,7 @@ class Container:
     facility_service: FacilityService
     redevelopment_service: RedevelopmentService
     interest_service: InterestService
+    notification_service: NotificationService
     auth_service: AuthService
     oauth_providers: Mapping[SocialProvider, OAuthProvider] = field(default_factory=dict)
     social_unlinkers: Mapping[SocialProvider, SocialUnlinker] = field(default_factory=dict)
@@ -245,6 +248,9 @@ def build_container(
             auction_repo,
             clock,
         ),  # fmt: skip
+        notification_service=NotificationService(
+            PostgresNotificationRepository(db_engine) if db_engine else None, clock
+        ),
         auth_service=auth_service,
         oauth_providers=oauth_providers,
         social_unlinkers=social_unlinkers,

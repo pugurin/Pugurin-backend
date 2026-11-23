@@ -28,6 +28,10 @@ services:
       PUGURIN_DATABASE_URL: *database-url
       # api는 caddy 뒤에만 있고 밖에서 직접 닿지 않으므로, X-Forwarded-For를 믿어 실제 사용자 IP로 요청 한도를 센다
       FORWARDED_ALLOW_IPS: "*"
+      # 접속 기록(IP·요청 경로)은 날짜별 파일에 최근 14일치만 남긴다(개인정보처리방침). 도커 로그에는 남기지 않는다
+      PUGURIN_ACCESS_LOG_DIR: /app/logs
+    volumes:
+      - access_logs:/app/logs
     restart: unless-stopped
 
   worker:
@@ -59,6 +63,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  access_logs:
   ingest_cache:
   caddy_data:
   caddy_config:

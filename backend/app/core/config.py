@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # 비우면 작업 폴더와 상관없이 backend/data/schoolzone(Docker 마운트) → 저장소 루트 data/schoolzone 순서로 찾는다
     school_zone_dir: Path | None = None
 
+    # 대중교통 길찾기: ODsay LAB Server 플랫폼 키(허용 IP에 배포 서버 등록).
+    # 프론트 요청대로 접두어 없는 ODSAY_API_KEY로 읽는다(PUGURIN_ODSAY_API_KEY도 된다).
+    # 비우면 /transit/routes가 200 + unavailable_reason=source_unavailable
+    odsay_api_key: str = Field("", validation_alias=AliasChoices("ODSAY_API_KEY", "PUGURIN_ODSAY_API_KEY"))
+
     # 로그인(docs/AUTH.md). 키는 사용자가 .env에 직접 넣는다. 제공자 키가 없으면 그 제공자는 503
     jwt_secret: str = ""  # access token 서명 키(HS256). 32바이트 이상이 아니면 인증 API 전체가 503
     kakao_client_secret: str = ""  # 카카오 로그인 client_id는 kakao_rest_key. 시크릿은 콘솔에서 켰을 때만
@@ -100,3 +105,6 @@ class Settings(BaseSettings):
     rate_limit_ip_per_minute: int = 3000
     parcel_cache_ttl_days: int = 30
     parcel_negative_cache_ttl_days: int = 1
+
+    # 접근 로그 파일 폴더(운영). 있으면 날짜별 파일에 14일치만 남긴다(app/core/log_retention.py)
+    access_log_dir: Path | None = None

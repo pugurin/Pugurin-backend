@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import APIRouter, Depends, FastAPI
 
 from app.adapters.oauth import OAuthProvider, SocialUnlinker
-from app.core import log_retention
+from app.core import access_log, log_retention
 from app.core.config import Settings
 from app.core.dates import Clock, kst_now
 from app.core.errors import install_error_handlers
@@ -37,9 +37,11 @@ from app.routers import (
     search,
     stats,
     transactions,
+    transit,
     users,
 )
 from app.routers.deps import require_device_id
+from app.services.transit_service import TransitSource
 from app.wiring import build_container
 
 API_PREFIX = "/api/v1"
@@ -66,6 +68,7 @@ def create_app(
     social_unlinkers: Mapping[SocialProvider, SocialUnlinker] | None = None,
     station_search: StationSearch | None = None,
     school_search: SchoolSearch | None = None,
+    transit_source: TransitSource | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     # 접속 기록(IP·요청 경로)은 최대 14일만 남긴다(개인정보처리방침)
@@ -82,6 +85,7 @@ def create_app(
         oauth_providers,
         social_unlinkers,
         station_search=station_search,
+        transit_source=transit_source,
         school_search=school_search,
     )
 
@@ -95,6 +99,8 @@ def create_app(
     app.state.container = container
 
     install_error_handlers(app)
+    # 집·직장 좌표 같은 개인 위치 쿼리는 접근 로그에 남기지 않는다
+    access_log.install()
     app.add_middleware(ConditionalGetMiddleware, max_age=settings.cache_max_age_seconds)
 
     @app.middleware("http")
@@ -131,6 +137,7 @@ def create_app(
         facilities,
         redevelopments,
         interests,
+        transit,
         auth,
         users,
     ):

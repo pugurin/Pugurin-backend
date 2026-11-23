@@ -84,6 +84,7 @@ def test_detail_and_read(notification_db):
 
         r = c.post(f"{API}/notifications/read", json={"ids": [first]})
         assert r.status_code == 204
+        assert r.headers["Cache-Control"] == "private, no-cache"
         listed = c.get(f"{API}/notifications").json()
         assert listed["meta"]["unread_count"] == 2
         assert listed["data"][0]["read_at"] is not None

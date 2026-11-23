@@ -48,7 +48,10 @@ async def list_notifications(
 
 # 고정 경로라 `/notifications/{notification_id}`보다 먼저 둔다
 @router.post("/notifications/read", status_code=status.HTTP_204_NO_CONTENT, summary="알림 읽음 처리 (ids 또는 all)")
-async def read_notifications(body: NotificationReadIn, user: CurrentUser, container: ContainerDep) -> None:
+async def read_notifications(
+    body: NotificationReadIn, user: CurrentUser, container: ContainerDep, response: Response
+) -> None:
+    response.headers["Cache-Control"] = PRIVATE
     await container.notification_service.mark_read(user.id, body.ids, body.all)
 
 

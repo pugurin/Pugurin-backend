@@ -526,3 +526,36 @@ async def test_old_notifications_are_cleaned(engine):
 async def test_week_must_be_a_monday(engine):
     with pytest.raises(ValueError):
         await generate(engine, week=date(2026, 11, 17))
+
+
+async def test_unfinished_week_is_refused(engine):
+    await run_(engine, IN_WEEK)
+    # 이번 주(11/23~)는 아직 끝나지 않았다. 일부 데이터로 리포트가 굳지 않게 막는다
+    with pytest.raises(ValueError):
+        await generate(engine, week=date(2026, 11, 23))
+    assert await reports(engine) == []
+
+
+async def test_zero_price_trades_are_not_counted(engine):
+    run = await run_(engine, IN_WEEK)
+    await sale(engine, run, 0)
+    await sale(engine, run, 500_000_000)
+    await user(engine, DAEYEON)
+
+    await generate(engine)
+
+    [row] = await reports(engine)
+    daeyeon = region(row, DAEYEON)
+    assert daeyeon["sales"]["count"] == 1
+    assert daeyeon["sales"]["median_per_pyeong"] == 16_670_000
+
+
+async def test_only_zero_price_trades_make_no_news(engine):
+    run = await run_(engine, IN_WEEK)
+    await sale(engine, run, 0)
+    await user(engine, DAEYEON)
+
+    result = await generate(engine)
+
+    assert result.skipped_empty == 1
+    assert await reports(engine) == []

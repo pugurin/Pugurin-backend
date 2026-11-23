@@ -122,10 +122,12 @@ def _stage_label(stage: str, step_raw: str | None) -> str:
 
 # ── SQL ────────────────────────────────────────────────────
 
-# 그 주에 처음 수집된(정기 수집이 끝난) 새 아파트 매매. :start·:end는 실행 종료 시각, :min_contract는 계약일 하한
+# 그 주에 처음 수집된(정기 수집이 끝난) 새 아파트 매매. 0원 거래는 지도 마커(_METRICS)처럼 뺀다.
+# :start·:end는 실행 종료 시각, :min_contract는 계약일 하한
 _NEW_SALE_FROM = "FROM transactions t JOIN etl_runs r ON r.id = t.first_seen_run_id"
 _NEW_SALE_WHERE = """
     WHERE t.property_type = 'apartment' AND t.deal_type = 'sale' AND NOT t.is_cancelled AND t.deleted_at IS NULL
+      AND t.price <> 0
       AND t.region_code = ANY(:codes)
       AND r.job = 'collect' AND r.status IN ('success', 'partial')
       AND r.finished_at >= :start AND r.finished_at < :end
@@ -377,6 +379,9 @@ async def generate_region_reports(engine: AsyncEngine, *, week: date, now: datet
     """그 주(week = 월요일) 리포트를 회원마다 한 통씩 만든다. 이미 있으면 덮지 않는다."""
     if week.weekday() != 0:
         raise ValueError(f"리포트 주는 월요일이어야 합니다: {week}")
+    if _bounds(week)[1] > now:
+        # 끝나지 않은 주는 일부 데이터로 만든 리포트가 그대로 굳으므로(다시 돌려도 덮지 않는다) 막는다
+        raise ValueError(f"아직 끝나지 않은 주입니다: {week}")
     repo = PostgresNotificationRepository(engine)
     await repo.delete_older_than(now - RETENTION)
 

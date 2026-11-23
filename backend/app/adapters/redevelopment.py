@@ -90,6 +90,10 @@ _DONG_LOT = re.compile(r"(동|리)(\d+(?:-\d+)?)(?![\d가])")  # "칠산동246" 
 _OFFICE = re.compile(r"\d+\s*층|\d+\s*호|빌딩|상가|[가-힣0-9]+(?:로|길)\s*\d")
 # 구역 지번: 동·가·리 이름 + (산) 지번. "감천1동 202", "중앙동4가 33", "영주동 산 10-3"
 _LOT = re.compile(r"[가-힣0-9]+(?:동|가|리)\s*(?:산\s*)?\d+(?:-\d+)?")
+# 행정동(감천1동·연산2동)은 지번 주소에 쓰는 법정동(감천동·연산동)으로 바꾼다. 부산 법정동 이름에는 "숫자+동"이 없다
+_ADMIN_DONG = re.compile(r"([가-힣]+)\d+동(?=\s|\d|$)")
+# 사무실 주소의 도로명 + 건물번호("냉정로 266", "법원로32번길 15", "백양대로 1139")
+_ROAD = re.compile(r"[가-힣0-9]+(?:로|길)\s*\d+(?:-\d+)?")
 
 
 @dataclass(frozen=True)
@@ -117,6 +121,7 @@ class RedevelopmentItem:
     specialists: str | None
     tel: str | None
     images: dict[str, str]  # view(조감도) / location(위치도) / panorama(전경) / layout(배치도), 있는 것만
+    office_query: str | None = None  # location_kind가 office일 때 조합 사무실 지오코딩 검색어(경계 잇기용)
 
 
 def _text(v) -> str | None:
@@ -166,9 +171,33 @@ def classify_location(location) -> tuple[LocationKind, str | None]:
     if lot is None:
         return LocationKind.none, None
     query = " ".join(bare[: lot.end()].replace("번지", " ").replace("일원", " ").split())
-    if not query.startswith(("부산광역시", "부산 ")):  # "부산진구"는 접두어가 아니다
-        query = f"부산광역시 {query}"
-    return LocationKind.lot, query
+    query = _ADMIN_DONG.sub(r"\1동", query)
+    return LocationKind.lot, _busan(query)
+
+
+def _busan(query: str) -> str:
+    return query if query.startswith(("부산광역시", "부산 ")) else f"부산광역시 {query}"  # "부산진구"는 접두어가 아니다
+
+
+def office_query(location) -> str | None:
+    """조합 사무실 주소 → 지오코딩 검색어(도로명+건물번호, 없으면 지번까지). 사무실 주소가 아니면 None.
+
+    사무실은 구역 위치가 아니라서 지도 위치로 쓰지 않고, 정비구역 경계와 잇는 데에만 쓴다(docs/REDEVELOPMENT_ZONES.md).
+    """
+    s = _text(location)
+    if s is None:
+        return None
+    bare = " ".join(_PAREN.sub(" ", s).split())
+    bare = _DONG_LOT.sub(r"\1 \2", _DONG_GA.sub(r"\1\2", bare))
+    if bare.startswith("부산시 "):
+        bare = "부산광역시 " + bare.removeprefix("부산시 ")
+    if not _OFFICE.search(bare):
+        return None
+    first = bare.split(",")[0]
+    found = _ROAD.search(first) or _LOT.search(first)
+    if found is None:
+        return None
+    return _busan(" ".join(first[: found.end()].replace("번지", " ").split()))
 
 
 # 원천이 빈 칸을 채우는 자리 채움 값(2026-11 실데이터 확인). 화면에 "용적률 0%"·가짜 번호가 뜨지 않게 null로 둔다
@@ -249,6 +278,7 @@ def zone_from_row(row: dict) -> RedevelopmentItem:
         location=location,
         location_kind=location_kind,
         geocode_query=query,
+        office_query=office_query(location) if location_kind == LocationKind.office else None,
         area_m2=_area(row.get("areaUnit")),
         households=_real(_int(row.get("generationJoo"))),
         buildings=_real(_int(row.get("wingNum"))),

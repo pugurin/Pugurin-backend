@@ -14,6 +14,7 @@ from app.adapters.redevelopment import BusanRedevelopmentClient
 from app.core.config import Settings
 from app.core.dates import KST
 from app.db.engine import make_engine
+from app.ingestion import redevelopment_zones
 from app.ingestion.auctions import sync_auctions
 from app.ingestion.build import GeoIndex
 from app.ingestion.facilities import sync_facilities
@@ -298,6 +299,30 @@ def _worker(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+async def _redevelopment_zones(settings: Settings, directory: Path | None) -> int:
+    """--dir을 줬는데 파일이 없으면 2, 기본 위치에 없으면 안내만 하고 0."""
+    target = directory or redevelopment_zones.default_zone_dir()
+    if redevelopment_zones.find_zone_files(target) is None:
+        print(f"정비구역 경계 파일이 없습니다({target}). 브이월드에서 내려받아 두세요(로그인 필요):")
+        print("  공간정보 다운로드 › 용도지역지구정보 › 도시및주거환경정비/정비구역 전국 전체데이터 SHP")
+        print("  zones/AL_D029_00_YYYYMMDD.shp(.shx·.dbf) (다른 곳이면 --dir)")
+        return 2 if directory else 0
+    if not settings.database_url:
+        print("정비구역 경계 적재에는 PUGURIN_DATABASE_URL이 필요합니다")
+        return 2
+    engine = make_engine(settings.database_url)
+    try:
+        r = await redevelopment_zones.load_redevelopment_zones(engine, target, now=datetime.now(KST))
+    finally:
+        await engine.dispose()
+    base = r.base_date.isoformat() if r.base_date else "모름"
+    skipped = ", ".join(f"{why} {n}" for why, n in r.skipped.items() if n)
+    print(f"정비구역 경계 적재: 부산 {r.zones:,}개 (기준일 {base}){f' · 뺀 것: {skipped}' if skipped else ''}")
+    links = f"좌표로 {r.linked_by_point}개, 이름으로 {r.linked_by_name}개, 사무실로 {r.linked_by_office}개"
+    print(f"  우리 정비사업 구역과 잇기: {links}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m app.ingestion", description="실거래가 수집·지오코딩 캐시 관리")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -319,6 +344,11 @@ def main() -> int:
     zones.add_argument(
         "--dir", type=Path, help="학구도 파일 위치 (기본: PUGURIN_SCHOOL_ZONE_DIR, 없으면 data/schoolzone을 찾음)"
     )
+    redev_zones = sub.add_parser(
+        "redevelopment-zones",
+        help="내려받아 둔 브이월드 정비구역 경계 파일에서 부산 구역을 DB에 통째로 갈아 끼우고 정비사업 구역과 잇는다",
+    )
+    redev_zones.add_argument("--dir", type=Path, help="경계 파일 위치 (기본: data/redevelopment을 찾음)")
     supply = sub.add_parser(
         "supply", help="건축물대장으로 아파트 평형별 공급면적을 채운다 (하루 호출 한도 안에서 나눠 받음)"
     )
@@ -344,6 +374,8 @@ def main() -> int:
         return asyncio.run(_redevelopments(settings))
     if args.command == "school-zones":
         return asyncio.run(_school_zones(settings, args.dir))
+    if args.command == "redevelopment-zones":
+        return asyncio.run(_redevelopment_zones(settings, args.dir))
     if args.command == "supply":
         return asyncio.run(_supply(settings, args.max_calls))
     if args.command == "worker":

@@ -1,3 +1,6 @@
+from datetime import date
+from typing import Literal
+
 from pydantic import BaseModel
 
 from app.core.geo import m2_to_pyeong
@@ -7,10 +10,12 @@ from app.repositories.types import (
     Redevelopment,
     RedevelopmentKind,
     RedevelopmentStage,
+    RedevelopmentZone,
 )
 from app.schemas.common import DataMeta
 
 ATTRIBUTION = "부산광역시 정비사업 정보(공공데이터포털)"
+ZONE_ATTRIBUTION = "브이월드 용도지역지구정보"
 # 부산시 정비사업 통합홈페이지의 구역 페이지. aCode가 곧 페이지 주소다
 CITY_PAGE = "https://dynamice.busan.go.kr/home/{code}/main.do"
 
@@ -46,6 +51,9 @@ class RedevelopmentOut(BaseModel):
     lat: float | None
     lng: float | None
     location_precise: bool
+    # 위치 출처: lot(지번 좌표) / zone(이어진 정비구역 경계 안의 대표점, location_precise는 false) / none
+    position_source: Literal["lot", "zone", "none"]
+    zone_id: str | None  # 이어진 정비구역 경계(GET /redevelopment-zones의 zone_id)
     area_m2: float | None
     area_pyeong: float | None
     households: int | None
@@ -78,6 +86,8 @@ class RedevelopmentOut(BaseModel):
             lat=z.lat,
             lng=z.lng,
             location_precise=z.location_precise,
+            position_source=z.position_source,
+            zone_id=z.zone_id,
             area_m2=z.area_m2,
             area_pyeong=m2_to_pyeong(z.area_m2) if z.area_m2 is not None else None,
             households=z.households,
@@ -106,3 +116,31 @@ class RedevelopmentsResponse(BaseModel):
 class RedevelopmentResponse(BaseModel):
     data: RedevelopmentOut
     meta: RedevelopmentMeta
+
+
+class RedevelopmentZoneMeta(DataMeta):
+    reporting_lag_notice: bool = False
+    source_attribution: str = ZONE_ATTRIBUTION  # 화면에 출처로 표시해야 한다
+
+
+class RedevelopmentZoneOut(BaseModel):
+    zone_id: str
+    layer: Literal["zone", "promotion", "planned"]  # 정비구역 / 재정비촉진구역 / 정비예정구역
+    name: str | None  # 원천 이름. 비었거나 안내 문구면 null
+    notice: str | None  # 이름 대신 고시 번호만 있을 때
+    designated_on: date | None  # 고시일
+    geometry: dict  # GeoJSON MultiPolygon, 좌표는 [경도, 위도]
+    # 이어진 우리 정비사업 구역(없으면 모두 null). 누르면 GET /redevelopments/{redevelopment_id}로 상세를 연다
+    redevelopment_id: str | None
+    area_name: str | None
+    kind: RedevelopmentKind | None
+    stage: RedevelopmentStage | None
+
+    @classmethod
+    def from_domain(cls, z: RedevelopmentZone) -> "RedevelopmentZoneOut":
+        return cls(**{f: getattr(z, f) for f in cls.model_fields})
+
+
+class RedevelopmentZonesResponse(BaseModel):
+    data: list[RedevelopmentZoneOut]
+    meta: RedevelopmentZoneMeta

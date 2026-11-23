@@ -779,6 +779,7 @@
 |---|---|---|
 | GET | `/redevelopments` | 구역 목록. 지도(좌표 있는 구역)와 목록 화면용 |
 | GET | `/redevelopments/{id}` | 구역 1건. `id`는 원천 `aCode`(예: `BARA_0000000000056`) |
+| GET | `/redevelopment-zones?bbox=&zoom=` | 화면 안의 정비구역 **경계**(브이월드 정비구역 SHP). 설계는 [`REDEVELOPMENT_ZONES.md`](./REDEVELOPMENT_ZONES.md) |
 
 **쿼리 (`/redevelopments`)**
 
@@ -845,10 +846,13 @@
   - `office`: 조합 사무실 주소다(원천 위치의 약 절반). 구역 위치가 아니라서 좌표를 비운다
   - `none`: 위치가 비었거나 지번이 없다
   - 좌표가 없는 구역은 지도(`bbox`)에는 안 나오고 목록에만 나온다. 화면에서 "위치 정보 없음(사무실 주소만 있음)"처럼 안내한다
+  - ⚠️ 단, 정비구역 경계와 이어진 구역은 경계 안의 대표점을 `lat`·`lng`로 쓰고 지도에도 나온다(`position_source: "zone"`, `location_precise: false`)
+- `position_source` ⚠️: 위치 출처. `lot`(지번 좌표) / `zone`(이어진 정비구역 경계의 대표점) / `none`
+- `zone_id` ⚠️: 이어진 정비구역 경계(`/redevelopment-zones`의 `zone_id`). 없으면 `null`
 - 숫자 항목은 원천 값을 읽을 수 없거나 "미선정"이면 `null`이다. `engineer`·`contractor` 등 글자 항목도 "미선정"이면 `null`이다
 - `images`: 조감도·위치도·전경·배치도 원본 주소(시 홈페이지, http). 없으면 `null`
 - `source_url`: 부산시 정비사업 통합홈페이지의 구역 페이지. 원천에 `aCode`가 없던 구역(`NOCODE_…`)은 `null`
-- 구역 경계(폴리곤)와 단계별 인가 날짜는 원천에 없다
+- 구역 경계(폴리곤)와 단계별 인가 날짜는 원천에 없다. 경계는 아래 `/redevelopment-zones`가 따로 준다
 
 **오류:** 동기화가 한 번도 끝나지 않았으면 `503 DATA_NOT_READY`, 없는 id는 `404 RESOURCE_NOT_FOUND`, 잘못된 `kind`·`stage`·`bbox`는 `400 VALIDATION_ERROR`(field는 그 이름).
 
@@ -927,6 +931,34 @@
 - **캐시:** 같은 출발·도착(소수 5자리)은 24시간 서버 메모리에 캐시한다. 프론트가 좌표를 소수 3자리(약 100m)로 줄여 보내므로 사실상 3자리 단위로 맞는다. 같은 출발·도착을 동시에 물으면 ODsay는 한 번만 부른다. 노선 그래픽(`include_path=true`)은 요청한 `limit`만큼만 부르고 같이 캐시한다. `source_unavailable`은 캐시하지 않는다(다음 요청에서 다시 시도). 서버를 다시 띄우면 캐시는 비워진다
 - **개인 위치:** 집·직장 좌표는 로그·DB에 남기지 않는다. 서버 접근 로그에서 이 경로의 쿼리(`?from_lat=…`)를 지우고 경로만 남긴다. 캐시는 서버 메모리에만 24시간 둔다
 - 키: ODsay 콘솔의 **Server 플랫폼** 키, 허용 IP에 배포 서버(34.64.207.41) 등록. 서버 `.env`의 `ODSAY_API_KEY`
+
+**`GET /redevelopment-zones?bbox=&zoom=` ⚠️(추가)**
+
+- 브이월드 용도지역지구정보의 "도시및주거환경정비/정비구역"(필수)·"도시재정비/재정비촉진지구"·"정비예정구역" 경계 중 부산 것(구역 안의 도로·통로 같은 시설, 1,000㎡ 미만 조각, 다른 구역 안에 든 조각은 뺌). 파일을 받아 `python -m app.ingestion redevelopment-zones`로 싣는다
+- `bbox` 필수. `zoom`(앱 줌)을 주면 화면 1px보다 작은 굴곡을 줄여 보낸다. 큰 구역부터 최대 300개
+- 우리 정비사업 구역과 일대일로 이어지면(지번 좌표가 경계 안 → 핵심 이름이 같음 → 조합 사무실이 경계 안이고 동네 이름이 맞음 순) `redevelopment_id`·`area_name`·`kind`·`stage`가 채워진다. 누르면 `/redevelopments/{redevelopment_id}`로 상세를 연다
+- 화면에 출처 `meta.source_attribution`("브이월드 용도지역지구정보")을 표시한다
+
+```json
+{
+  "data": [
+    {
+      "zone_id": "62600002620020160415UDT1000001000",
+      "layer": "zone",
+      "name": "괴정3재건축정비구역",
+      "notice": null,
+      "designated_on": "2016-12-21",
+      "geometry": { "type": "MultiPolygon", "coordinates": [[[[129.0, 35.1], [129.01, 35.1], [129.01, 35.11], [129.0, 35.1]]]] },
+      "redevelopment_id": "BARA_0000000000056", "area_name": "괴정3 재건축",
+      "kind": "reconstruction", "stage": "construction"
+    }
+  ],
+  "meta": { "data_as_of": "2026-11-22T21:00:00+09:00", "source_attribution": "브이월드 용도지역지구정보" }
+}
+```
+- `layer`: `zone`(정비구역) / `promotion`(재정비촉진구역) / `planned`(정비예정구역)
+- `name`: 원천 이름. 비었거나 안내 문구("별도문의")면 `null`. `notice`: 이름 칸에 고시 번호만 있을 때(예: "부산광역시 고시 제2016-415호")
+- 경계 파일을 한 번도 안 실었으면 `503 DATA_NOT_READY`. `bbox`가 없거나 잘못되면 `400`
 
 ## 7. 용어 해설 (Glossary) [1차]
 

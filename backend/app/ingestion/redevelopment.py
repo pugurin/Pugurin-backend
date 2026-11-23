@@ -23,6 +23,7 @@ from app.adapters.molit.types import QuotaExceeded, SourceAuthError
 from app.adapters.redevelopment import RedevelopmentItem
 from app.ingestion.geocode import GeocodeCache
 from app.ingestion.load import LoadBusy
+from app.ingestion.redevelopment_zones import relink
 from app.repositories.ports import SourceUnavailable
 from app.repositories.types import LocationKind, RedevelopmentStage
 
@@ -71,13 +72,14 @@ _UPSERT = text(
     """
     INSERT INTO redevelopments (
         id, area_name, kind, step_raw, stage, stage_order, location, location_kind,
-        lat, lng, location_precise, geom, area_m2, households, buildings, union_members,
+        lat, lng, location_precise, geom, office_geom, area_m2, households, buildings, union_members,
         floor_area_ratio, building_coverage_ratio, scale, business_entity, contractor, engineer, architect,
         specialists, tel, images, first_seen_at, last_seen_at, closed_at
     ) VALUES (
         :id, :area_name, :kind, :step_raw, :stage, :stage_order, :location, :location_kind,
         CAST(:lat AS float8), CAST(:lng AS float8), :precise,
         ST_SetSRID(ST_MakePoint(CAST(:lng AS float8), CAST(:lat AS float8)), 4326),
+        ST_SetSRID(ST_MakePoint(CAST(:office_lng AS float8), CAST(:office_lat AS float8)), 4326),
         :area_m2, :households, :buildings, :union_members,
         :floor_area_ratio, :building_coverage_ratio, :scale, :business_entity, :contractor, :engineer, :architect,
         :specialists, :tel, CAST(:images AS jsonb), :now, :now, NULL
@@ -104,6 +106,10 @@ _UPSERT = text(
         geom = CASE WHEN CAST(:keep_location AS boolean)
                         AND redevelopments.location IS NOT DISTINCT FROM excluded.location
                     THEN redevelopments.geom ELSE excluded.geom END,
+        -- 조합 사무실 좌표: 이번에 찾았으면 그것, 못 해 봤고 위치 문구가 그대로면 예전 값, 문구가 바뀌었으면 비운다
+        office_geom = CASE WHEN excluded.office_geom IS NOT NULL THEN excluded.office_geom
+                           WHEN redevelopments.location IS NOT DISTINCT FROM excluded.location
+                           THEN redevelopments.office_geom END,
         area_m2 = excluded.area_m2,
         households = excluded.households,
         buildings = excluded.buildings,
@@ -190,7 +196,8 @@ async def _sync(engine, source, geocoder, cache, *, now, out) -> RedevelopmentRe
         async with engine.begin() as conn:
             for item in items:
                 found, tried = await geo.find(item)
-                row = _row(item, found, keep_location=not tried, now=now)
+                office = await geo.office(item)
+                row = _row(item, found, keep_location=not tried, now=now, office=office)
                 inserted = (await conn.execute(_UPSERT, row)).scalar_one()
                 if inserted:
                     report.inserted += 1
@@ -198,6 +205,8 @@ async def _sync(engine, source, geocoder, cache, *, now, out) -> RedevelopmentRe
                     report.updated += 1
             closed = await conn.execute(_CLOSE, {"now": now, "seen": [i.id for i in items]})
             report.closed = closed.rowcount
+            # 새 구역·좌표 변화를 정비구역 경계 잇기에 반영한다(경계를 아직 안 실었으면 잇는 것이 없다)
+            await relink(conn)
         cache.save()
 
     if not items:
@@ -264,12 +273,15 @@ class _Geo:
         self._geocoder, self._cache, self._report = geocoder, cache, report
         self._stopped = False
 
-    async def find(self, item: RedevelopmentItem) -> tuple[GeoResult | None, bool]:
-        """(결과, 이번에 위치를 정할 수 있었는지). 지번이 아니면 좌표 없음으로 정해진다."""
-        query = item.geocode_query
-        if item.location_kind != LocationKind.lot or not query:
-            self._report.without_location += 1
-            return None, True
+    async def office(self, item: RedevelopmentItem) -> GeoResult | None:
+        """조합 사무실 좌표(건물까지 맞은 것만). 구역 위치가 아니라 정비구역 경계와 잇는 데에만 쓴다."""
+        if not item.office_query:
+            return None
+        found = await self._lookup(item.office_query)
+        return found if found is not None and found.precise else None
+
+    async def _lookup(self, query: str) -> GeoResult | None:
+        """캐시에 없으면 지오코딩해 넣는다(부산 밖·못 찾음은 None으로 기억). 한도·인증 오류면 이후 호출을 멈춘다."""
         key = geocode_key(query)
         if key not in self._cache and self._geocoder is not None and not self._stopped:
             try:
@@ -282,6 +294,16 @@ class _Geo:
             else:
                 busan = result is not None and (result.b_code or "").startswith(BUSAN_PREFIX)
                 self._cache.put(key, result if busan else None)
+        return self._cache.get(key)
+
+    async def find(self, item: RedevelopmentItem) -> tuple[GeoResult | None, bool]:
+        """(결과, 이번에 위치를 정할 수 있었는지). 지번이 아니면 좌표 없음으로 정해진다."""
+        query = item.geocode_query
+        if item.location_kind != LocationKind.lot or not query:
+            self._report.without_location += 1
+            return None, True
+        key = geocode_key(query)
+        await self._lookup(query)
         tried = key in self._cache
         found = self._cache.get(key)
         if found is None:
@@ -289,8 +311,17 @@ class _Geo:
         return found, tried
 
 
-def _row(item: RedevelopmentItem, geo: GeoResult | None, *, keep_location: bool, now: datetime) -> dict:
+def _row(
+    item: RedevelopmentItem,
+    geo: GeoResult | None,
+    *,
+    keep_location: bool,
+    now: datetime,
+    office: GeoResult | None = None,
+) -> dict:
     return {
+        "office_lat": office.lat if office else None,
+        "office_lng": office.lng if office else None,
         "id": item.id,
         "area_name": item.area_name,
         "kind": item.kind.value,

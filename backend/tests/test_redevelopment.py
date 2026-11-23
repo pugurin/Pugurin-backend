@@ -13,6 +13,7 @@ from app.adapters.redevelopment import (
     classify_kind,
     classify_location,
     normalize_stage,
+    office_query,
     parse_number,
     parse_page,
     zone_from_row,
@@ -187,7 +188,10 @@ def test_unknown_or_blank_steps_are_unknown_without_order(step):
     [
         ("가야동 410번지 일원(가야초교 남측 일원)", "lot", "부산광역시 가야동 410"),
         ("부산진구 가야동 122-2", "lot", "부산광역시 부산진구 가야동 122-2"),
-        ("사하구 감천1동 202일원", "lot", "부산광역시 사하구 감천1동 202"),
+        # 행정동(감천1동)은 지번 주소에 쓰는 법정동(감천동)으로 바꾼다
+        ("사하구 감천1동 202일원", "lot", "부산광역시 사하구 감천동 202"),
+        ("대연6동 1595번지 일원", "lot", "부산광역시 대연동 1595"),
+        ("연제구 연산2동 834-4번지 일원(양동초교 일원)", "lot", "부산광역시 연제구 연산동 834-4"),
         ("중구 영주동 산 10-3 일대", "lot", "부산광역시 중구 영주동 산 10-3"),
         ("동구 범일동 830-1번지, 830-2번지", "lot", "부산광역시 동구 범일동 830-1"),
         ("부산광역시 남구 용호동 123", "lot", "부산광역시 남구 용호동 123"),  # '호'가 들어간 동 이름
@@ -208,6 +212,24 @@ def test_unknown_or_blank_steps_are_unknown_without_order(step):
 )
 def test_location_text_is_sorted_into_lot_office_or_none(text, kind, query):
     assert classify_location(text) == (kind, query)
+
+
+@pytest.mark.parametrize(
+    ("text", "query"),
+    [
+        ("용소로28번길 8, 7층 (대연동,금하빌딩)", "부산광역시 용소로28번길 8"),
+        ("부산광역시 부산진구 냉정로 266, 2층(가야동)", "부산광역시 부산진구 냉정로 266"),
+        ("연제구 법원로32번길 15,502호", "부산광역시 연제구 법원로32번길 15"),
+        ("구포동 백양대로 1139, 2층", "부산광역시 구포동 백양대로 1139"),
+        ("부산광역시 해운대구 중동 785-8번지, 1층", "부산광역시 해운대구 중동 785-8"),
+        ("가야동 12 가상상가 2동", "부산광역시 가야동 12"),
+        ("부산진구 가야동 101", None),  # 사무실 주소가 아니다
+        (None, None),
+    ],
+)
+def test_office_addresses_get_their_own_geocode_query(text, query):
+    # 조합 사무실은 구역 위치가 아니라서 지도 위치로는 쓰지 않고, 정비구역 경계와 잇는 데에만 쓴다
+    assert office_query(text) == query
 
 
 # ── 응답 감싸기 ─────────────────────────────────────────────
@@ -374,22 +396,23 @@ async def fetch(engine, sql: str):
         return [tuple(r) for r in (await conn.execute(text(sql))).all()]
 
 
-async def test_first_sync_stores_zones_and_geocodes_only_lot_addresses(engine, cache):
+async def test_first_sync_stores_zones_and_keeps_office_points_apart(engine, cache):
     rows = [zone_row(1), zone_row(2, location=OFFICE, step="착공"), zone_row(3, location="", step="준공")]
     lookup = FakeLookup()
     report = await sync(engine, FakeRedevelopmentSource(rows), cache, lookup=lookup)
     assert (report.status, report.fetched, report.inserted, report.closed) == ("success", 3, 3, 0)
     assert (report.lot, report.office, report.none, report.without_location) == (1, 1, 1, 2)
-    assert lookup.queries == ["부산광역시 부산진구 가야동 101"]
+    # 사무실 주소도 지오코딩하지만(정비구역 경계 잇기용) 구역 위치(lat·geom)로는 쓰지 않는다
+    assert lookup.queries == ["부산광역시 부산진구 가야동 101", "부산광역시 부산진구 가상로 266"]
     got = await fetch(
         engine,
         "SELECT id, kind, stage, stage_order, location_kind, location_precise, round(lat::numeric, 5)::float8, "
-        "geom IS NOT NULL FROM redevelopments ORDER BY id",
+        "geom IS NOT NULL, office_geom IS NOT NULL FROM redevelopments ORDER BY id",
     )
     assert got == [
-        ("BARA_0000000000001", "redevelopment", "association", 4, "lot", True, 35.16101, True),
-        ("BARA_0000000000002", "redevelopment", "construction", 8, "office", False, None, False),
-        ("BARA_0000000000003", "redevelopment", "completed", 9, "none", False, None, False),
+        ("BARA_0000000000001", "redevelopment", "association", 4, "lot", True, 35.16101, True, False),
+        ("BARA_0000000000002", "redevelopment", "construction", 8, "office", False, None, False, True),
+        ("BARA_0000000000003", "redevelopment", "completed", 9, "none", False, None, False, False),
     ]
     [(images, households, engineer, area)] = await fetch(
         engine, "SELECT images, households, engineer, area_m2 FROM redevelopments WHERE id = 'BARA_0000000000001'"

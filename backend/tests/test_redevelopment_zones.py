@@ -10,8 +10,10 @@ from app.ingestion.redevelopment_zones import (
     default_zone_dir,
     find_zone_files,
     link_pairs,
+    sigungu_of,
 )
 from app.ingestion.school_zones import read_dbf
+from app.services.redevelopment_service import simplify_tolerance
 from tests.fakes.redevelopment_zones import FakeZone, write_zone_files
 from tests.fakes.schoolzone import ORIGIN_5186, square
 
@@ -189,3 +191,150 @@ def test_pieces_with_the_same_name_all_go_to_one_zone():
     ours = [("M1", "명서1 재개발", "redevelopment", None)]
     zones = [("P1", "명서1 재개발사업 정비구역"), ("P2", "명서1 재개발사업 정비구역")]
     assert link_pairs([], ours, zones) == {"P1": ("M1", "name"), "P2": ("M1", "name")}
+
+
+def test_a_point_linked_zone_still_takes_its_other_pieces_with_the_same_name():
+    # 대연5는 좌표로 Z1에 이어졌다. 같은 이름의 다른 조각 Z2도 받는다
+    ours = [("D5", "대연5 재개발", "redevelopment", None), ("R1", "가상1 재개발", "redevelopment", None)]
+    zones = [("Z1", "대연5재개발구역"), ("Z2", "대연5재개발구역")]
+    assert link_pairs([("D5", "Z1", 9000.0)], ours, zones) == {"Z1": ("D5", "point"), "Z2": ("D5", "name")}
+
+
+def test_same_name_pieces_linked_by_point_to_different_zones_lend_no_more_pieces():
+    # 같은 이름 조각이 좌표로 서로 다른 구역(D5, R1)에 이어졌으면 그 이름은 믿을 수 없다. 남은 Z2는 붙이지 않는다
+    # (리뷰 Psh-09의 안전장치. 리뷰 woo-rin 쪽 첫 수정은 Z2를 D5에 붙였으나 브리프에 따라 안전장치를 더했다)
+    ours = [("D5", "대연5 재개발", "redevelopment", None), ("R1", "가상1 재개발", "redevelopment", None)]
+    zones = [("Z1", "대연5재개발구역"), ("Z2", "대연5재개발구역"), ("Z3", "대연5재개발구역")]
+    hits = [("D5", "Z1", 9000.0), ("R1", "Z3", 9000.0)]
+    assert link_pairs(hits, ours, zones) == {"Z1": ("D5", "point"), "Z3": ("R1", "point")}
+
+
+@pytest.mark.parametrize(
+    ("location", "code"),
+    [
+        ("부산진구 가야동 101번지 일원", "26230"),
+        ("부산광역시 서구 암남동 1", "26140"),
+        ("강서구 송정동 1", "26440"),  # "서구"가 아니다
+        ("용소로28번길 8, 7층 (대연동,금하빌딩)", "26290"),  # 구 이름이 없으면 법정동으로
+        ("대연6동 1595번지", "26290"),  # 행정동 번호는 떼고 본다
+        ("송정동 1", None),  # 송정동은 해운대구·강서구 둘 다 있다
+        ("기장군 기장읍 교리 1", "26710"),
+        (None, None),
+        ("", None),
+    ],
+)
+def test_our_sigungu_is_read_from_the_location_text(location, code):
+    assert sigungu_of(location) == code
+
+
+SONGJEONG = [("S1", "송정1재개발구역"), ("S2", "송정1재개발구역")]
+SONGJEONG_GU = {"S1": "26350", "S2": "26440"}  # 해운대구, 강서구
+
+
+def test_names_link_only_pieces_in_our_sigungu():
+    ours = [("SJ", "송정1 재개발", "redevelopment", "해운대구 송정동 123")]
+    assert link_pairs([], ours, SONGJEONG, zone_sigungu=SONGJEONG_GU) == {"S1": ("SJ", "name")}
+
+
+def test_names_spanning_several_sigungu_are_not_linked_when_ours_is_unknown():
+    ours = [("SJ", "송정1 재개발", "redevelopment", "송정동 123")]
+    assert link_pairs([], ours, SONGJEONG, zone_sigungu=SONGJEONG_GU) == {}
+    # 한 시군구 안이면 지금처럼 잇는다
+    same = {"S1": "26350", "S2": "26350"}
+    assert link_pairs([], ours, SONGJEONG, zone_sigungu=same) == {"S1": ("SJ", "name"), "S2": ("SJ", "name")}
+
+
+def test_the_point_linked_zone_tells_our_sigungu():
+    ours = [("SJ", "송정1 재개발", "redevelopment", "송정동 123")]
+    zones = [*SONGJEONG, ("S3", "송정1재개발구역")]
+    gu = {**SONGJEONG_GU, "S3": "26350"}
+    assert link_pairs([("SJ", "S1", 9000.0)], ours, zones, zone_sigungu=gu) == {
+        "S1": ("SJ", "point"),
+        "S3": ("SJ", "name"),
+    }
+
+
+def test_a_lot_less_description_is_a_firm_sigungu():
+    # 번지 없는 구역 설명("강서구 송정동 일원")도 구역 위치라 확정 시군구다. 다른 구 묶음에 붙지 않는다
+    ours = [("SJ", "송정1 재개발", "redevelopment", "강서구 송정동 일원")]
+    gu = {"S1": "26350", "S2": "26350"}  # 원천에는 해운대구 송정1만 있다
+    assert link_pairs([], ours, SONGJEONG, zone_sigungu=gu, ours_location_kind={"SJ": "none"}) == {}
+
+
+def test_a_missing_zoom_still_simplifies():
+    assert simplify_tolerance(None) > 0
+    assert simplify_tolerance(None) == simplify_tolerance(12)
+
+
+BEOMCHEON = [("BC", "범천1 재개발", "redevelopment", "부산광역시 동구 범일로 1, 2층")]  # 사무실은 동구, 구역은 부산진구
+
+
+def test_an_office_in_another_gu_does_not_drop_pieces_in_one_sigungu():
+    zones = [("B1", "범천1재개발구역"), ("B2", "범천1재개발구역")]
+    gu = {"B1": "26230", "B2": "26230"}
+    pairs = link_pairs([], BEOMCHEON, zones, zone_sigungu=gu, ours_location_kind={"BC": "office"})
+    assert pairs == {"B1": ("BC", "name"), "B2": ("BC", "name")}
+
+
+def test_an_office_sigungu_only_picks_among_pieces_spread_over_several_sigungu():
+    zones = [("B1", "범천1재개발구역"), ("B2", "범천1재개발구역"), ("B3", "범천1재개발구역")]
+    kinds = {"BC": "office"}
+    gu = {"B1": "26230", "B2": "26170", "B3": "26170"}
+    assert link_pairs([], BEOMCHEON, zones, zone_sigungu=gu, ours_location_kind=kinds) == {
+        "B2": ("BC", "name"),
+        "B3": ("BC", "name"),
+    }
+    # 사무실 시군구가 묶음에 없으면 고르지 못해 잇지 않는다
+    gu = {"B1": "26230", "B2": "26350", "B3": "26350"}
+    assert link_pairs([], BEOMCHEON, zones, zone_sigungu=gu, ours_location_kind=kinds) == {}
+
+
+def test_points_prefer_a_zone_over_a_larger_planned_area():
+    ours = [("R1", "가상1 재개발", "redevelopment", "가상동 101")]
+    hits = [("R1", "PL", 90000.0), ("R1", "ZZ", 9000.0)]
+    pairs = link_pairs(hits, ours, [("PL", None), ("ZZ", None)], zone_layers={"PL": "planned", "ZZ": "zone"})
+    assert pairs == {"ZZ": ("R1", "point")}
+
+
+def test_pieces_with_the_same_name_follow_a_zone_linked_by_point():
+    # 구 경계를 넘어 둘로 나뉜 구역: 지번 좌표는 한 조각(Z1)에만 든다. 이름·종류가 같은 다른 조각도 같은 구역이다
+    ours = [("R1", "양정2 재개발", "redevelopment", None)]
+    zones = [("Z1", "양정2재개발정비구역"), ("Z2", "양정2재개발정비구역")]
+    assert link_pairs([("R1", "Z1", 5000.0)], ours, zones) == {"Z1": ("R1", "point"), "Z2": ("R1", "name")}
+
+
+def test_a_same_name_piece_does_not_follow_when_another_of_ours_has_that_name():
+    # 좌표로 이어진 경계와 이름이 같아도, 우리 쪽에 그 이름·종류의 다른 구역이 있으면 따라가지 않는다
+    # (이름이 맞는 R2가 이름으로 잇는다)
+    ours = [("R1", "가상9 재개발", "redevelopment", None), ("R2", "양정2 재개발", "redevelopment", None)]
+    zones = [("Z1", "양정2재개발정비구역"), ("Z2", "양정2재개발정비구역")]
+    assert link_pairs([("R1", "Z1", 5000.0)], ours, zones) == {"Z1": ("R1", "point"), "Z2": ("R2", "name")}
+
+
+def test_pieces_follow_a_point_linked_zone_whose_name_differs_when_no_one_else_has_that_name():
+    # 우리 구역 이름(가상9)과 경계 이름(양정2)이 달라도, 우리 쪽에 양정2가 없으면 좌표로 이은 구역이 나머지 조각을 받는다
+    ours = [("R1", "가상9 재개발", "redevelopment", None)]
+    zones = [("Z1", "양정2재개발정비구역"), ("Z2", "양정2재개발정비구역")]
+    assert link_pairs([("R1", "Z1", 5000.0)], ours, zones) == {"Z1": ("R1", "point"), "Z2": ("R1", "name")}
+
+
+# 양정2(실데이터): 부산진구(26230) 조각과 연제구(26470) 조각이 구 경계에서 맞닿아 있다
+YANGJEONG = [("Y1", "양정2재개발정비구역"), ("Y2", "양정2재개발정비구역")]
+YANGJEONG_GU = {"Y1": "26230", "Y2": "26470"}
+
+
+def test_a_piece_touching_ours_across_the_gu_line_is_kept_by_the_sigungu_filter():
+    ours = [("YJ", "양정2 재개발", "redevelopment", "부산진구 양정동 1")]
+    touching = link_pairs([], ours, YANGJEONG, zone_sigungu=YANGJEONG_GU, zone_touches=[("Y1", "Y2")])
+    assert touching == {"Y1": ("YJ", "name"), "Y2": ("YJ", "name")}
+    # 맞닿지 않았으면(멀리 떨어진 다른 구의 같은 이름) 우리 시군구 조각만
+    assert link_pairs([], ours, YANGJEONG, zone_sigungu=YANGJEONG_GU) == {"Y1": ("YJ", "name")}
+
+
+def test_pieces_spread_over_two_sigungu_link_when_they_touch_and_ours_is_unknown():
+    # 명서1·양정2·온천4는 우리 위치가 비어 시군구를 모른다. 조각들이 모두 이어져 한 덩어리면 한 구역이다
+    ours = [("YJ", "양정2 재개발", "redevelopment", None)]
+    pairs = link_pairs([], ours, YANGJEONG, zone_sigungu=YANGJEONG_GU, zone_touches=[("Y2", "Y1")])
+    assert pairs == {"Y1": ("YJ", "name"), "Y2": ("YJ", "name")}
+    # 떨어진 두 덩어리면 지금처럼 잇지 않는다
+    assert link_pairs([], ours, YANGJEONG, zone_sigungu=YANGJEONG_GU) == {}

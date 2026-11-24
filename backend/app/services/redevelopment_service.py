@@ -8,12 +8,18 @@ from app.repositories.types import Redevelopment, RedevelopmentFilter, Redevelop
 NOT_READY = "정비사업 구역 데이터가 아직 없어요. 동기화가 끝나면 다시 시도해 주세요"
 ZONES_NOT_READY = "정비구역 경계 데이터가 아직 없어요"
 ZONE_LIMIT = 300
+# zoom 없이 부르면 원본 도형이 통째로 나가지 않게 구 단위 화면(앱 줌 12, 1px ≈ 8m)에 맞춰 줄인다.
+# 줌 0까지 가면 1px가 수십 km라 구역이 뭉개지므로 "가장 거친 쪽" 대신 구역이 보이는 넓은 화면을 기본으로 둔다
+DEFAULT_SIMPLIFY_ZOOM = 12
 
 
 def simplify_tolerance(zoom: int | None) -> float:
-    """화면 1px쯤(도 단위)보다 작은 굴곡은 버린다. 앱 줌 = 18 - 카카오 레벨, 1px = 2^(15-zoom) m."""
+    """화면 1px쯤(도 단위)보다 작은 굴곡은 버린다. 앱 줌 = 18 - 카카오 레벨, 1px = 2^(15-zoom) m.
+
+    zoom이 없으면 `DEFAULT_SIMPLIFY_ZOOM`으로 본다.
+    """
     if zoom is None:
-        return 0.0
+        zoom = DEFAULT_SIMPLIFY_ZOOM
     meters_per_px = 2.0 ** (15 - zoom)
     return meters_per_px / 111_000
 

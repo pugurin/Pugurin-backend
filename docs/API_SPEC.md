@@ -28,6 +28,7 @@
 - **주변 학교·병원 추가:** `GET /nearby`, `GET /complexes/{id}/nearby`, `GET /schools`, `GET /hospitals` (6.2장)
 - **초등학교 통학구역(학구도) 추가:** `GET /schools/{school_id}/zone`, 주변 요약의 `schools.assigned_elementary` (6.2장)
 - **정비사업 구역 추가:** `GET /redevelopments`, `GET /redevelopments/{id}` (6.3장). 동기화 전에는 `503 DATA_NOT_READY`
+- **관심 단지·경매 물건을 회원 계정으로(10장):** 관심 API는 모두 로그인(access token)이 필요하다. 기기 단위(`X-Device-Id`) 목록은 계정으로 옮기지 않고 버렸다(결정, 마이그레이션 0015)
 - **같은 평형 평균가 추가:**
   - 지도 단지 마커에 `typical`(거래가 가장 많은 평형과 그 평균가, 2장) 추가. `latest`는 그대로
   - 경매 목록·상세에 `recent_trade_avg_price`(같은 평형 최근 12개월 평균가), `recent_trade_supply_area_pyeong` 추가. `sort=recent_trade_discount`는 최근 1건 대신 평균가와 비교한다 (6.1장)
@@ -846,9 +847,9 @@
   - `office`: 조합 사무실 주소다(원천 위치의 약 절반). 구역 위치가 아니라서 좌표를 비운다
   - `none`: 위치가 비었거나 지번이 없다
   - 좌표가 없는 구역은 지도(`bbox`)에는 안 나오고 목록에만 나온다. 화면에서 "위치 정보 없음(사무실 주소만 있음)"처럼 안내한다
-  - ⚠️ 단, 정비구역 경계와 이어진 구역은 경계 안의 대표점을 `lat`·`lng`로 쓰고 지도에도 나온다(`position_source: "zone"`, `location_precise: false`)
-- `position_source` ⚠️: 위치 출처. `lot`(지번 좌표) / `zone`(이어진 정비구역 경계의 대표점) / `none`
-- `zone_id` ⚠️: 이어진 정비구역 경계(`/redevelopment-zones`의 `zone_id`). 없으면 `null`
+  - ⚠️ 단, 정비구역 경계와 이어진 구역은 지번 좌표가 정확하지 않으면(좌표 없음·법정동 중심점) 경계 안의 대표점을 `lat`·`lng`로 쓰고 지도에도 나온다(`position_source: "zone"`, `location_precise: false`). `bbox` 필터도 같은 점으로 본다
+- `position_source` ⚠️: 위치 출처. `lot`(지번 좌표. 정확한 지번이거나, 경계와 안 이어진 구역의 법정동 중심점) / `zone`(이어진 정비구역 경계의 대표점) / `none`
+- `zone_id` ⚠️: 이어진 정비구역 경계(`/redevelopment-zones`의 `zone_id`). 조각이 여럿이면 정비구역·재정비촉진을 정비예정구역보다 먼저, 그다음 가장 큰 조각이다(나머지 조각은 `/redevelopment-zones`에서 같은 `redevelopment_id`로 온다). 없으면 `null`
 - 숫자 항목은 원천 값을 읽을 수 없거나 "미선정"이면 `null`이다. `engineer`·`contractor` 등 글자 항목도 "미선정"이면 `null`이다
 - `images`: 조감도·위치도·전경·배치도 원본 주소(시 홈페이지, http). 없으면 `null`
 - `source_url`: 부산시 정비사업 통합홈페이지의 구역 페이지. 원천에 `aCode`가 없던 구역(`NOCODE_…`)은 `null`
@@ -934,9 +935,9 @@
 
 **`GET /redevelopment-zones?bbox=&zoom=` ⚠️(추가)**
 
-- 브이월드 용도지역지구정보의 "도시및주거환경정비/정비구역"(필수)·"도시재정비/재정비촉진지구"·"정비예정구역" 경계 중 부산 것(구역 안의 도로·통로 같은 시설, 1,000㎡ 미만 조각, 다른 구역 안에 든 조각은 뺌). 파일을 받아 `python -m app.ingestion redevelopment-zones`로 싣는다
-- `bbox` 필수. `zoom`(앱 줌)을 주면 화면 1px보다 작은 굴곡을 줄여 보낸다. 큰 구역부터 최대 300개
-- 우리 정비사업 구역과 일대일로 이어지면(지번 좌표가 경계 안 → 핵심 이름이 같음 → 조합 사무실이 경계 안이고 동네 이름이 맞음 순) `redevelopment_id`·`area_name`·`kind`·`stage`가 채워진다. 누르면 `/redevelopments/{redevelopment_id}`로 상세를 연다
+- 브이월드 용도지역지구정보의 "도시및주거환경정비/정비구역"(필수)·"도시재정비/재정비촉진지구"·"정비예정구역" 경계 중 부산 것(구역 안의 도로·통로 같은 시설, 1,000㎡ 미만 조각, 같은 종류의 더 큰 구역 안에 든 조각은 뺌. 종류가 다르면 겹쳐도 둘 다 둔다. 같은 경계가 두 벌이면 이름 있는 쪽 하나만 둠). 파일을 받아 `python -m app.ingestion redevelopment-zones`로 싣는다
+- `bbox` 필수. `zoom`(앱 줌)에 맞춰 화면 1px보다 작은 굴곡을 줄여 보낸다. `zoom`이 없으면 앱 줌 12(1px ≈ 8m)로 줄인다. 큰 구역부터 최대 300개
+- 우리 정비사업 구역과 이어지면(지번 좌표가 경계 안(정비예정구역보다 정비구역·재정비촉진 먼저) → 핵심 이름이 같고 같은 시군구 → 조합 사무실이 경계 안이고 동네 이름이 맞음 순. 경계 하나는 우리 구역 하나에만 붙지만, 구 경계 등으로 나뉜 구역은 조각 여럿이 같은 `redevelopment_id`를 가진다. 좌표로 이은 조각과 이름·종류가 같은 조각, 다른 구라도 맞닿은 같은 이름 조각도 함께 붙는다) `redevelopment_id`·`area_name`·`kind`·`stage`가 채워진다. 누르면 `/redevelopments/{redevelopment_id}`로 상세를 연다
 - 화면에 출처 `meta.source_attribution`("브이월드 용도지역지구정보")을 표시한다
 
 ```json
@@ -958,7 +959,7 @@
 ```
 - `layer`: `zone`(정비구역) / `promotion`(재정비촉진구역) / `planned`(정비예정구역)
 - `name`: 원천 이름. 비었거나 안내 문구("별도문의")면 `null`. `notice`: 이름 칸에 고시 번호만 있을 때(예: "부산광역시 고시 제2016-415호")
-- 경계 파일을 한 번도 안 실었으면 `503 DATA_NOT_READY`. `bbox`가 없거나 잘못되면 `400`
+- 경계 파일을 한 번도 안 실었으면 `503 DATA_NOT_READY`. 실었는데 걸러서 0건이면 `200`과 빈 배열(`meta.data_as_of`는 적재 시각). `bbox`가 없거나 잘못되면 `400`
 
 ## 7. 용어 해설 (Glossary) [1차]
 
@@ -1269,6 +1270,7 @@
 - 없는 단지·물건은 `404`. 서버에 DB가 없으면 `503 DATA_NOT_READY`.
 - 응답은 회원마다 달라서 `Cache-Control: private, no-cache`로 내린다(ETag 재검증은 된다).
 - 최근 본 매물·단지는 **앱 로컬 저장** (서버 API 없음)
+- 예전 기기 단위 목록(`X-Device-Id`, 마이그레이션 0012)은 계정으로 옮기지 않고 0015에서 버렸다(결정). 0015 뒤로는 회원만 넣을 수 있어 버려진 것은 그 전에 쌓인 기기 목록뿐이다
 
 **`PUT /interests/complexes/{complex_id}` · `PUT /interests/auctions/{auction_id}` 응답**
 ```json

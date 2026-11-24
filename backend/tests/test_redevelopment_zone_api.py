@@ -5,7 +5,7 @@ FakeLookup은 지번 끝 번호 n을 (35.16 + n/100000, 129.16 + n/100000)에 �
 """
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -199,3 +199,46 @@ def test_the_daily_sync_relinks_zones(postgis, tmp_path):
         return dict(rows)
 
     assert asyncio.run(links()) == {"A": "BARA_0000000000001", "B": None, "G": None, "H": None}
+
+
+def test_a_load_that_keeps_nothing_answers_an_empty_list(postgis, tmp_path):
+    url = create_database(postgis, "redevelopment_zones_nothing")
+    migrate.upgrade(url)
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), ours()))
+    report = asyncio.run(
+        _load(url, write_zone_files(tmp_path / "files", [FakeZone("C", rings=[square(FAR_5186, 10)])]))
+    )
+    assert report.zones == 0  # 1,000㎡ 미만이라 모두 걸러졌다
+    with client(url) as c:
+        r = c.get(f"{API}/redevelopment-zones", params={"bbox": AROUND})
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == [] and r.json()["meta"]["data_as_of"]
+
+
+def test_zones_loaded_before_the_load_record_existed_stay_ready(postgis, tmp_path):
+    # 0016 전에 실은 경계에는 etl_runs 기록이 없다. 마이그레이션이 그 적재를 기록으로 채워 503으로 돌아가지 않게 한다
+    url = create_database(postgis, "redevelopment_zones_backfill")
+    migrate.upgrade(url, "0015")
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), ours()))
+
+    async def load_without_record():
+        engine = make_engine(url)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO redevelopment_zones (zone_id, layer, sigungu_code, geom, label_point, area_m2, "
+                    "base_date, loaded_at) VALUES ('OLD', 'zone', '26230', "
+                    "ST_GeomFromText('MULTIPOLYGON(((129.15 35.16,129.16 35.16,129.16 35.17,129.15 35.16)))', 4326), "
+                    "ST_SetSRID(ST_MakePoint(129.155, 35.165), 4326), 9000, '2026-11-09', :now)"
+                ),
+                {"now": FIXED_NOW},
+            )
+        await engine.dispose()
+
+    asyncio.run(load_without_record())
+    migrate.upgrade(url)
+    with client(url) as c:
+        r = c.get(f"{API}/redevelopment-zones", params={"bbox": AROUND})
+    assert r.status_code == 200, r.text
+    assert [z["zone_id"] for z in r.json()["data"]] == ["OLD"]
+    assert datetime.fromisoformat(r.json()["meta"]["data_as_of"].replace("Z", "+00:00")) == FIXED_NOW

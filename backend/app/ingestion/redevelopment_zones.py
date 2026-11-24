@@ -7,6 +7,7 @@
 SHP 읽기는 학구도 적재(`school_zones`)의 함수를 그대로 쓴다.
 """
 
+import json
 import re
 from collections import defaultdict
 from collections.abc import Callable, Iterable
@@ -315,6 +316,13 @@ _POINT_HITS = text(
 )
 _OURS = text("SELECT id, area_name, kind, location FROM redevelopments WHERE closed_at IS NULL")
 _ZONES = text("SELECT zone_id, name FROM redevelopment_zones")
+# 적재 기록. 걸러서 0건이어도 "실었다"를 알 수 있게 etl_runs에 남긴다(조회 API의 data_as_of)
+_RECORD_RUN = text(
+    """
+    INSERT INTO etl_runs (job, status, started_at, finished_at, rows_fetched, rows_inserted, report)
+    VALUES ('redevelopment_zone', 'success', :now, :now, :fetched, :zones, CAST(:report AS jsonb))
+    """
+)
 _CLEAR_LINKS = text("UPDATE redevelopment_zones SET redevelopment_id = NULL, link_method = NULL")
 _SET_LINK = text(
     "UPDATE redevelopment_zones SET redevelopment_id = :ours_id, link_method = :method WHERE zone_id = :zone_id"
@@ -390,4 +398,13 @@ async def load_redevelopment_zones(
             "다른 구역 안": nested,
         }
         report.linked_by_point, report.linked_by_name, report.linked_by_office = await relink(conn)
+        await conn.execute(
+            _RECORD_RUN,
+            {
+                "now": now,
+                "fetched": busan,
+                "zones": report.zones,
+                "report": json.dumps({"layers": report.layers, "skipped": report.skipped}, ensure_ascii=False),
+            },
+        )
     return report

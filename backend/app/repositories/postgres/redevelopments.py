@@ -35,7 +35,8 @@ _FROM = """ FROM redevelopments r LEFT JOIN LATERAL (
 # 사업이 많이 나간 구역부터. 모르는 단계(NULL)는 뒤로
 _ORDER = "r.stage_order DESC NULLS LAST, r.area_name, r.id"
 
-_ZONES_AS_OF = text("SELECT max(loaded_at) FROM redevelopment_zones")
+# 경계를 실은 시각. 걸러서 0건이어도 적재 기록(etl_runs)이 있으면 "실었다"로 본다
+_ZONES_AS_OF = text("SELECT max(finished_at) FROM etl_runs WHERE job = 'redevelopment_zone' AND status = 'success'")
 # 줌에 맞춰 단순화한다(화면에서 1px보다 작은 굴곡은 버림). 이어진 우리 구역의 이름·종류·단계를 함께 준다
 _ZONES_IN = text(
     """

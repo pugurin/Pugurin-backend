@@ -5,13 +5,14 @@ FakeLookup은 지번 끝 번호 n을 (35.16 + n/100000, 129.16 + n/100000)에 �
 """
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.adapters.kakao import GeoResult
 from app.core.config import Settings
 from app.db import migrate
 from app.db.engine import make_engine
@@ -106,7 +107,7 @@ def test_load_keeps_real_zones_and_links_by_point_then_name(zone_db):
     _, report = zone_db
     assert report.zones == 5  # A, B, G, H, P1
     assert report.layers == {"zone": 4, "promotion": 1}
-    assert report.skipped == {"시설": 4, "도형 없음": 0, "1,000㎡ 미만": 1, "다른 구역 안": 1}
+    assert report.skipped == {"시설": 4, "도형 없음": 0, "ID 중복": 0, "1,000㎡ 미만": 1, "다른 구역 안": 1}
     assert (report.linked_by_point, report.linked_by_name, report.linked_by_office) == (1, 2, 1)
 
 
@@ -199,3 +200,184 @@ def test_the_daily_sync_relinks_zones(postgis, tmp_path):
         return dict(rows)
 
     assert asyncio.run(links()) == {"A": "BARA_0000000000001", "B": None, "G": None, "H": None}
+
+
+def test_a_planned_area_over_a_zone_does_not_erase_it_and_duplicate_ids_are_skipped(postgis, tmp_path):
+    url = create_database(postgis, "redevelopment_zones_layers")
+    migrate.upgrade(url)
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), ours()))
+    files = write_zone_files(
+        tmp_path / "files", [FakeZone("B", name="가상2주택재건축정비구역", rings=[square(NORTH_5186, 200)])]
+    )
+    planned = [
+        FakeZone("PL1", name="가상정비예정구역", rings=[square(NORTH_5186, 600)]),  # 정비구역 B를 통째로 덮는다
+        FakeZone("B", name="ID가 겹친 정비예정구역", rings=[square(FAR_5186, 300)]),  # 정비구역과 ID가 같다
+    ]
+    write_zone_files(files, planned, folder="planned")
+    report = asyncio.run(_load(url, files))
+    assert report.layers == {"zone": 1, "planned": 1}
+    assert report.skipped["다른 구역 안"] == 0 and report.skipped["ID 중복"] == 1
+    with client(url) as c:
+        body = c.get(f"{API}/redevelopment-zones", params={"bbox": "128.75,34.85,129.35,35.4"}).json()
+    by_id = {z["zone_id"]: z for z in body["data"]}
+    assert (by_id["B"]["layer"], by_id["B"]["redevelopment_id"]) == ("zone", "BARA_0000000000002")
+    assert by_id["PL1"]["layer"] == "planned"
+
+
+def test_a_load_that_keeps_nothing_answers_an_empty_list(postgis, tmp_path):
+    url = create_database(postgis, "redevelopment_zones_nothing")
+    migrate.upgrade(url)
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), ours()))
+    report = asyncio.run(
+        _load(url, write_zone_files(tmp_path / "files", [FakeZone("C", rings=[square(FAR_5186, 10)])]))
+    )
+    assert report.zones == 0  # 1,000㎡ 미만이라 모두 걸러졌다
+    with client(url) as c:
+        r = c.get(f"{API}/redevelopment-zones", params={"bbox": AROUND})
+    assert r.status_code == 200, r.text
+    assert r.json()["data"] == [] and r.json()["meta"]["data_as_of"]
+
+
+def test_zones_loaded_before_the_load_record_existed_stay_ready(postgis, tmp_path):
+    # 0016 전에 실은 경계에는 etl_runs 기록이 없다. 마이그레이션이 그 적재를 기록으로 채워 503으로 돌아가지 않게 한다
+    url = create_database(postgis, "redevelopment_zones_backfill")
+    migrate.upgrade(url, "0015")
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), ours()))
+
+    async def load_without_record():
+        engine = make_engine(url)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "INSERT INTO redevelopment_zones (zone_id, layer, sigungu_code, geom, label_point, area_m2, "
+                    "base_date, loaded_at) VALUES ('OLD', 'zone', '26230', "
+                    "ST_GeomFromText('MULTIPOLYGON(((129.15 35.16,129.16 35.16,129.16 35.17,129.15 35.16)))', 4326), "
+                    "ST_SetSRID(ST_MakePoint(129.155, 35.165), 4326), 9000, '2026-11-09', :now)"
+                ),
+                {"now": FIXED_NOW},
+            )
+        await engine.dispose()
+
+    asyncio.run(load_without_record())
+    migrate.upgrade(url)
+    with client(url) as c:
+        r = c.get(f"{API}/redevelopment-zones", params={"bbox": AROUND})
+    assert r.status_code == 200, r.text
+    assert [z["zone_id"] for z in r.json()["data"]] == ["OLD"]
+    assert datetime.fromisoformat(r.json()["meta"]["data_as_of"].replace("Z", "+00:00")) == FIXED_NOW
+
+
+def test_points_prefer_a_zone_over_a_planned_area_and_an_office_in_another_gu_still_links(postgis, tmp_path):
+    url = create_database(postgis, "redevelopment_zones_prefer")
+    migrate.upgrade(url)
+    rows = [
+        zone_row(1),  # 가야동 101(지번) → 정비구역 A와 그것을 덮는 더 큰 정비예정구역 PL 둘 다 안
+        # 사무실은 동구인데 경계 B는 부산진구(26230)에 있다
+        zone_row(2, areaName="가상2구역 재건축", location="부산광역시 동구 가상로 266, 2층(초량동)"),
+    ]
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), rows))
+    files = write_zone_files(
+        tmp_path / "files",
+        [
+            FakeZone("A", rings=[square(ORIGIN_5186, 300)]),
+            FakeZone("B", name="가상2주택재건축정비구역", rings=[square(NORTH_5186, 200)]),
+        ],
+    )
+    write_zone_files(
+        files, [FakeZone("PL", name="가상1재개발구역", rings=[square(ORIGIN_5186, 600)])], folder="planned"
+    )
+    report = asyncio.run(_load(url, files))
+    assert report.layers == {"zone": 2, "planned": 1}
+    with client(url) as c:
+        zones = {z["zone_id"]: z for z in c.get(f"{API}/redevelopment-zones", params={"bbox": AROUND}).json()["data"]}
+        one = c.get(f"{API}/redevelopments/BARA_0000000000001").json()["data"]
+        two = c.get(f"{API}/redevelopments/BARA_0000000000002").json()["data"]
+    assert zones["A"]["redevelopment_id"] == "BARA_0000000000001"
+    # 같은 이름의 정비예정구역은 이름으로 같은 구역에 붙지만, 대표 조각은 더 작아도 정비구역 A다
+    assert zones["PL"]["redevelopment_id"] == "BARA_0000000000001"
+    assert (one["zone_id"], one["position_source"]) == ("A", "lot")
+    assert (zones["B"]["redevelopment_id"], two["zone_id"]) == ("BARA_0000000000002", "B")
+
+
+def test_twin_boundaries_keep_the_named_one_and_other_layers_are_not_swallowed(postgis, tmp_path):
+    # 같은 구역 경계가 이름 있는 것과 없는 것 두 벌로 들어 있다(이름 없는 쪽이 조금 크다).
+    # 정비예정구역(planned) 큰 경계 안에 든 정비구역은 종류가 달라 지우지 않는다
+    url = create_database(postgis, "redevelopment_zones_twins")
+    migrate.upgrade(url)
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), []))
+    files = write_zone_files(
+        tmp_path / "files",
+        [
+            FakeZone("T1", name="가상7재개발정비구역", rings=[square(FAR_5186, 100)]),
+            FakeZone("T2", rings=[square(FAR_5186, 100.2)]),  # 이름 없는 쌍둥이(면적 0.4% 큼)
+            FakeZone("N1", name="가상8재개발정비구역", rings=[square(ORIGIN_5186, 100)]),
+        ],
+    )
+    write_zone_files(files, [FakeZone("W1", name="가상예정구역", rings=[square(ORIGIN_5186, 400)])], folder="planned")
+    report = asyncio.run(_load(url, files))
+
+    async def zones():
+        engine = make_engine(url)
+        async with engine.connect() as conn:
+            rows = (await conn.execute(text("SELECT zone_id, layer FROM redevelopment_zones"))).all()
+        await engine.dispose()
+        return dict(rows)
+
+    assert asyncio.run(zones()) == {"T1": "zone", "N1": "zone", "W1": "planned"}
+    assert report.skipped["다른 구역 안"] == 1
+
+
+def test_a_zone_split_by_the_gu_line_takes_the_touching_piece_but_not_a_far_namesake(postgis, tmp_path):
+    # 우리 위치는 부산진구(확정). 같은 이름 조각 Y2는 연제구지만 Y1과 맞닿아 있어 같은 구역이다.
+    # 해운대구의 같은 이름 Y3은 떨어져 있어 붙지 않는다
+    url = create_database(postgis, "redevelopment_zones_split")
+    migrate.upgrade(url)
+    rows = [zone_row(2, areaName="가상2구역 재건축", location="부산진구 가야동 102번지 일원")]
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), rows))
+    x, y = NORTH_5186
+    name = "가상2주택재건축정비구역"
+    files = write_zone_files(
+        tmp_path / "files",
+        [
+            FakeZone("Y1", name=name, sigungu="26230", rings=[square(NORTH_5186, 100)]),
+            FakeZone("Y2", name=name, sigungu="26470", rings=[square((x + 200, y), 100)]),  # Y1 동쪽 변에 붙는다
+            FakeZone("Y3", name=name, sigungu="26350", rings=[square(FAR_5186, 100)]),
+        ],
+    )
+    asyncio.run(_load(url, files))
+    with client(url) as c:
+        body = c.get(f"{API}/redevelopment-zones", params={"bbox": "128.75,34.85,129.35,35.4"}).json()
+    linked = {z["zone_id"]: z["redevelopment_id"] for z in body["data"]}
+    assert linked == {"Y1": "BARA_0000000000002", "Y2": "BARA_0000000000002", "Y3": None}
+
+
+class DongCenterLookup:
+    """지번을 못 찾아 법정동 중심점(precise=False)만 돌려준다. 경계(NORTH)에서 멀리 떨어진 곳이다."""
+
+    async def lookup(self, query: str):
+        return GeoResult(35.15, 129.05, "2623010100", None, precise=False)
+
+
+def test_a_dong_center_point_gives_way_to_the_linked_boundary_point(postgis, tmp_path):
+    # 동 중심점은 구역 위치가 아니다. 경계와 이어졌으면 경계 대표점을 쓰고, 지도 범위도 그 점으로 본다
+    url = create_database(postgis, "redevelopment_zones_dong_center")
+    migrate.upgrade(url)
+
+    async def sync():
+        engine = make_engine(url)
+        rows = [zone_row(2, areaName="가상2구역 재건축", location="부산진구 가야동 7번지 일원")]
+        await sync_redevelopments(
+            engine, FakeRedevelopmentSource(rows), DongCenterLookup(), GeocodeCache(tmp_path / "geo.json"),
+            now=FIXED_NOW, out=lambda _: None,
+        )  # fmt: skip
+        await engine.dispose()
+
+    asyncio.run(sync())
+    asyncio.run(_load(url, write_zone_files(tmp_path / "files", boundaries())))
+    with client(url) as c:
+        two = c.get(f"{API}/redevelopments/BARA_0000000000002").json()["data"]
+        north = [z["id"] for z in c.get(f"{API}/redevelopments", params={"bbox": NORTH}).json()["data"]]
+        dong = c.get(f"{API}/redevelopments", params={"bbox": "129.04,35.14,129.06,35.16"}).json()["data"]
+    assert (two["position_source"], two["zone_id"], two["location_precise"]) == ("zone", "B", False)
+    assert 35.165 < two["lat"] < 35.175 and 129.155 < two["lng"] < 129.165
+    assert north == ["BARA_0000000000002"] and dong == []

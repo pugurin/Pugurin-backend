@@ -17,25 +17,30 @@ from app.repositories.types import (
     RedevelopmentZone,
 )
 
-# 좌표가 없으면 이어진 정비구역 경계의 대표점을 위치로 쓴다(docs/REDEVELOPMENT_ZONES.md "위치 보강")
-_COLS = """
+# 지번 좌표가 정확하면 그것을, 아니면(좌표 없음·법정동 중심점) 이어진 정비구역 경계의 대표점을 위치로 쓴다.
+# 경계도 없으면 동 중심점이라도 쓴다(docs/REDEVELOPMENT_ZONES.md "위치 보강"). 위치·출처·지도 범위가 같은 규칙을 따른다
+_PRECISE = "(r.location_precise AND r.geom IS NOT NULL)"
+_POINT = f"CASE WHEN {_PRECISE} THEN r.geom ELSE COALESCE(z.label_point, r.geom) END"
+_COLS = f"""
     r.id, r.area_name, r.kind, r.step_raw, r.stage, r.stage_order, r.location, r.location_kind,
-    COALESCE(r.lat, ST_Y(z.label_point)) AS lat, COALESCE(r.lng, ST_X(z.label_point)) AS lng, r.location_precise,
-    CASE WHEN r.geom IS NOT NULL THEN 'lot' WHEN z.zone_id IS NOT NULL THEN 'zone' ELSE 'none' END AS position_source,
+    ST_Y({_POINT}) AS lat, ST_X({_POINT}) AS lng, r.location_precise,
+    CASE WHEN {_PRECISE} THEN 'lot' WHEN z.zone_id IS NOT NULL THEN 'zone'
+         WHEN r.geom IS NOT NULL THEN 'lot' ELSE 'none' END AS position_source,
     z.zone_id,
     r.area_m2, r.households, r.buildings, r.union_members, r.floor_area_ratio, r.building_coverage_ratio, r.scale,
     r.business_entity, r.contractor, r.engineer, r.architect, r.specialists, r.tel, r.images,
     r.first_seen_at, r.last_seen_at, r.closed_at
 """
-# 조각이 여럿이면 가장 큰 조각을 대표로 쓴다
+# 조각이 여럿이면 정비구역·재정비촉진을 정비예정구역보다 먼저, 그다음 가장 큰 조각을 대표로 쓴다
 _FROM = """ FROM redevelopments r LEFT JOIN LATERAL (
     SELECT zone_id, label_point FROM redevelopment_zones
-    WHERE redevelopment_id = r.id ORDER BY area_m2 DESC, zone_id LIMIT 1
+    WHERE redevelopment_id = r.id ORDER BY layer = 'planned', area_m2 DESC, zone_id LIMIT 1
 ) z ON true"""
 # 사업이 많이 나간 구역부터. 모르는 단계(NULL)는 뒤로
 _ORDER = "r.stage_order DESC NULLS LAST, r.area_name, r.id"
 
-_ZONES_AS_OF = text("SELECT max(loaded_at) FROM redevelopment_zones")
+# 경계를 실은 시각. 걸러서 0건이어도 적재 기록(etl_runs)이 있으면 "실었다"로 본다
+_ZONES_AS_OF = text("SELECT max(finished_at) FROM etl_runs WHERE job = 'redevelopment_zone' AND status = 'success'")
 # 줌에 맞춰 단순화한다(화면에서 1px보다 작은 굴곡은 버림). 이어진 우리 구역의 이름·종류·단계를 함께 준다
 _ZONES_IN = text(
     """
@@ -125,9 +130,7 @@ class PostgresRedevelopmentRepository:
         if not flt.include_closed:
             clauses.append("r.closed_at IS NULL")
         if flt.bbox is not None:
-            clauses.append(
-                "COALESCE(r.geom, z.label_point) && ST_MakeEnvelope(:min_lng, :min_lat, :max_lng, :max_lat, 4326)"
-            )
+            clauses.append(f"{_POINT} && ST_MakeEnvelope(:min_lng, :min_lat, :max_lng, :max_lat, 4326)")
             b = flt.bbox
             params.update(min_lng=b.min_lng, min_lat=b.min_lat, max_lng=b.max_lng, max_lat=b.max_lat)
         if flt.kinds:

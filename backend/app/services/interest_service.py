@@ -17,6 +17,12 @@ MAX_PER_KIND = 200
 NOT_READY = "관심 목록은 서버 DB가 있어야 쓸 수 있어요"
 
 
+def limit_message(kind: InterestKind) -> str:
+    """종류별 한도 안내. 받침에 맞춰 조사를 고른다(단지는 / 경매 물건은)."""
+    what = "단지는" if kind is InterestKind.COMPLEX else "경매 물건은"
+    return f"관심 {what} {MAX_PER_KIND}개까지 등록할 수 있어요"
+
+
 @dataclass(frozen=True)
 class InterestedComplex:
     complex: Complex
@@ -55,8 +61,7 @@ class InterestService:
     async def _add(self, user_id: UUID, kind: InterestKind, target: str) -> datetime:
         added = await self._ready().add(user_id, kind, target, max_items=MAX_PER_KIND)
         if added is None:
-            what = "단지" if kind is InterestKind.COMPLEX else "경매 물건"
-            raise AppError(ErrorCode.CONFLICT, f"관심 {what}는 {MAX_PER_KIND}개까지 등록할 수 있어요")
+            raise AppError(ErrorCode.CONFLICT, limit_message(kind))
         return added
 
     async def add_complex(self, user_id: UUID, complex_id: UUID) -> datetime:

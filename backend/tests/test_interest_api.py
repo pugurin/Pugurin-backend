@@ -16,6 +16,7 @@ from app.db import migrate
 from app.db.engine import make_engine
 from app.ingestion.geocode import GeocodeCache
 from app.main import create_app
+from app.repositories.postgres.interests import InterestKind
 from app.repositories.types import SocialProvider
 from tests.conftest import API, FIXED_NOW, create_database
 from tests.fakes.oauth import FakeOAuth
@@ -156,7 +157,16 @@ def test_limit_per_kind_is_409(interest_db, monkeypatch):
         assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200
         r = c.put(f"{API}/interests/complexes/{OFFICETEL_ID}")
         assert (r.status_code, r.json()["error"]["code"]) == (409, "CONFLICT")
+        assert r.json()["error"]["message"] == "관심 단지는 1개까지 등록할 수 있어요"
         assert c.put(f"{API}/interests/complexes/{COMPLEX_ID}").status_code == 200  # 이미 있는 건 한도와 상관없다
+
+
+def test_limit_message_uses_the_right_particle():
+    # "경매 물건는"이 아니라 "경매 물건은"
+    assert (
+        interest_service.limit_message(InterestKind.AUCTION)
+        == f"관심 경매 물건은 {interest_service.MAX_PER_KIND}개까지 등록할 수 있어요"
+    )
 
 
 @pytest.mark.parametrize(
@@ -194,6 +204,82 @@ def test_withdrawing_deletes_the_list(interest_db):
         return count
 
     assert asyncio.run(rows()) == 0
+
+
+def test_a_withdrawn_member_cannot_add_after_the_fact(interest_db):
+    # 탈퇴와 등록(PUT)이 겹쳐 탈퇴가 먼저 끝나도, 늦게 온 등록이 탈퇴한 회원의 행을 남기지 않는다
+    from app.repositories.postgres.interests import PostgresInterestRepository
+
+    with client(interest_db) as c:
+        user_id = c.get(f"{API}/users/me").json()["data"]["id"]
+        assert c.delete(f"{API}/users/me").status_code == 204
+
+    async def add_late() -> tuple[object, int]:
+        engine = make_engine(interest_db)
+        added = await PostgresInterestRepository(engine).add(
+            user_id, InterestKind.COMPLEX, str(COMPLEX_ID), max_items=5
+        )
+        async with engine.connect() as conn:
+            n = await conn.execute(text("SELECT count(*) FROM user_interests WHERE user_id = :id"), {"id": user_id})
+            count = n.scalar()
+        await engine.dispose()
+        return added, count
+
+    assert asyncio.run(add_late()) == (None, 0)
+
+
+def test_a_withdrawal_waits_for_an_add_in_flight_and_still_clears_it(interest_db):
+    # 등록 트랜잭션이 아직 커밋 전일 때 탈퇴가 들어오면, 탈퇴는 사용자 행 잠금에서 기다렸다가 그 행까지 지운다
+    # (탈퇴가 관심 목록을 먼저 지우고 사용자 행을 나중에 잠그면, 커밋 전 등록 행을 못 보고 지나쳐 남는다)
+    from app.repositories.postgres.accounts import PostgresAccountRepository
+    from app.repositories.postgres.interests import _ADD
+
+    with client(interest_db) as c:
+        user_id = c.get(f"{API}/users/me").json()["data"]["id"]
+
+    async def race() -> tuple[bool, int]:
+        engine = make_engine(interest_db)
+        params = {"user": user_id, "kind": "complex", "target": str(COMPLEX_ID), "max": 5}
+        async with engine.connect() as adding:
+            tx = await adding.begin()
+            assert (await adding.execute(_ADD, params)).scalar() is not None
+            withdrawal = asyncio.create_task(PostgresAccountRepository(engine).withdraw(user_id, now=FIXED_NOW))
+            await asyncio.sleep(0.5)
+            waited = not withdrawal.done()
+            await tx.commit()
+        await withdrawal
+        async with engine.connect() as conn:
+            n = await conn.execute(text("SELECT count(*) FROM user_interests WHERE user_id = :id"), {"id": user_id})
+            count = n.scalar()
+        await engine.dispose()
+        return waited, count
+
+    assert asyncio.run(race()) == (True, 0)
+
+
+def test_a_withdrawal_does_not_wait_for_a_foreign_key_check_on_the_user(interest_db):
+    # 토큰 갱신의 새 토큰 INSERT는 FK 확인으로 사용자 행에 FOR KEY SHARE를 건다. 탈퇴가 사용자 행을 FOR UPDATE로
+    # 잠그면 이것과 부딪쳐(갱신은 토큰 행을 쥔 채 사용자 행을, 탈퇴는 사용자 행을 쥔 채 토큰 행을 기다림) 교착이 난다.
+    # 탈퇴의 첫 잠금은 FOR NO KEY UPDATE라 KEY SHARE를 기다리지 않아야 한다
+    from app.repositories.postgres.accounts import PostgresAccountRepository
+
+    with client(interest_db) as c:
+        user_id = c.get(f"{API}/users/me").json()["data"]["id"]
+
+    async def race() -> bool:
+        engine = make_engine(interest_db)
+        async with engine.connect() as refreshing:
+            tx = await refreshing.begin()
+            await refreshing.execute(text("SELECT 1 FROM users WHERE id = :id FOR KEY SHARE"), {"id": user_id})
+            withdrawal = asyncio.create_task(PostgresAccountRepository(engine).withdraw(user_id, now=FIXED_NOW))
+            await asyncio.sleep(0.5)
+            finished = withdrawal.done()
+            await tx.commit()
+        await withdrawal
+        await engine.dispose()
+        return finished
+
+    assert asyncio.run(race()) is True
 
 
 def test_without_a_database_interests_are_503():

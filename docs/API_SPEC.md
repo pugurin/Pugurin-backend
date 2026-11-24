@@ -1245,28 +1245,26 @@
 
 ---
 
-## 10. 관심 단지·경매 물건·지역·매물 찜 (Interests)
+## 10. 관심 단지·경매 물건·매물 찜 (Interests)
 
-**관심 단지·관심 경매 물건은 로그인한 회원만 쓴다.** access token(`Authorization: Bearer`)으로 회원 계정에 저장하므로 기기를 바꿔도 목록이 따라간다. 토큰이 없거나 틀리거나 만료됐으면 `401 UNAUTHORIZED`(앱은 로그인 안내 창을 띄운다). 관심 지역·매물 찜은 2차·3차.
+**관심 단지·관심 경매 물건은 로그인한 회원만 쓴다.** access token(`Authorization: Bearer`)으로 회원 계정에 저장하므로 기기를 바꿔도 목록이 따라간다. 토큰이 없거나 틀리거나 만료됐으면 `401 UNAUTHORIZED`(앱은 로그인 안내 창을 띄운다). 주간 리포트는 관심 단지 기준이다([`INTEREST_COMPLEX_REPORT.md`](./INTEREST_COMPLEX_REPORT.md)). 관심 지역은 두지 않는다. 매물 찜은 3차.
 
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| GET | `/interests` | 필요 | 내 관심 id 목록 (별 표시용, 최근 등록 순) |
+| GET | `/interests` | 필요 | 내 관심 id 목록 (별 표시용, 최근 등록 순). `complexes`·`auctions` |
 | PUT | `/interests/complexes/{complex_id}` | 필요 | 관심 단지 등록 (멱등) |
 | DELETE | `/interests/complexes/{complex_id}` | 필요 | 해제 (멱등, `204`) |
 | GET | `/interests/complexes` | 필요 | 목록 (단지별 최신 매매 포함) |
 | PUT | `/interests/auctions/{auction_id}` | 필요 | 관심 경매·공매 물건 등록 (멱등) |
 | DELETE | `/interests/auctions/{auction_id}` | 필요 | 해제 (멱등, `204`) |
 | GET | `/interests/auctions` | 필요 | 목록 (끝난 물건 포함) |
-| PUT | `/interests/regions/{region_code}` | 필요 | 관심 법정동 등록 (멱등, 최대 10개) [2차] |
-| DELETE | `/interests/regions/{region_code}` | 필요 | 해제 [2차] |
-| GET | `/interests/regions` | 필요 | 목록 [2차] |
+| GET | `/notifications` | 필요 | 알림함 (§12, 주간 리포트가 여기 쌓인다) |
 | PUT | `/interests/listings/{listing_id}` | 필요 | 매물 찜 [3차] |
 | DELETE | `/interests/listings/{listing_id}` | 필요 | 찜 해제 [3차] |
 | GET | `/interests/listings` | 필요 | 찜 목록 [3차] |
 
 - 등록은 `PUT`으로 멱등 처리. 다시 넣어도 처음 등록 시각이 그대로 온다.
-- 종류별 회원당 **최대 200개**. 넘으면 `409 CONFLICT`. 이미 있는 대상을 다시 넣는 건 한도와 상관없이 `200`.
+- 단지·경매는 회원당 **최대 200개**, 지역은 **최대 10개**. 넘으면 `409 CONFLICT`. 이미 있는 대상을 다시 넣는 건 한도와 상관없이 `200`.
 - 없는 단지·물건은 `404`. 서버에 DB가 없으면 `503 DATA_NOT_READY`.
 - 응답은 회원마다 달라서 `Cache-Control: private, no-cache`로 내린다(ETag 재검증은 된다).
 - 최근 본 매물·단지는 **앱 로컬 저장** (서버 API 없음)
@@ -1389,19 +1387,25 @@
 
 ## 12. 알림 (Notifications) [2차]
 
+**알림함(`/notifications`)은 구현됐다.** 지금 담기는 건 관심 단지 주간 리포트(`kind = interest_report`) 하나다. 나머지 트리거는 아래 목록대로 2차.
+
 | Method | Path | Auth | 설명 |
 |---|---|---|---|
-| GET | `/notifications` | 필요 | 알림 목록 (페이지네이션) |
-| POST | `/notifications/read` | 필요 | 읽음 처리 `{ "ids": ["uuid"] }` 또는 `{ "all": true }` |
+| GET | `/notifications` | 필요 | 알림 목록 (최신순, `page`·`page_size`≤50). `meta.unread_count` 포함 (구현됨) |
+| GET | `/notifications/{id}` | 필요 | 한 통 (`payload` 포함). 남의 알림·없는 id는 `404` (구현됨) |
+| POST | `/notifications/read` | 필요 | 읽음 처리 `{ "ids": ["uuid"] }` 또는 `{ "all": true }` (`204`, 구현됨) |
+| GET | `/notifications/settings` | 필요 | 주간 리포트 받기 설정 `{ "data": { "weekly_report": true } }` (키가 없으면 true, 구현됨) |
+| PUT | `/notifications/settings` | 필요 | 켜고 끄기 `{ "weekly_report": false }` → 같은 모양으로 응답. 다른 키는 `422` (구현됨) |
 | PUT | `/devices/{device_id}` | 필요 | 푸시 토큰 등록/갱신 `{ "push_token": "string", "platform": "ios\|android" }` |
 | DELETE | `/devices/{device_id}` | 필요 | 푸시 토큰 해제 |
 
+- 알림 목록 항목: `id`, `kind`, `period_start`(리포트 주의 월요일), `title`, `summary`, `read_at`, `created_at`. 상세는 여기에 `payload`가 붙는다. 응답은 `Cache-Control: private, no-cache`
+- 주간 리포트는 매주 월요일 08:00 KST에 worker가 만든다. 지난주(월~일)에 끝난 수집까지 들어가며, 월요일 04:00 수집은 다음 주 것이라 반영되지 않는다(마지막 반영 수집은 일요일 04:00). 관심 단지가 있고 `weekly_report`를 끄지 않은 회원에게만, 같은 주·회원은 한 통만, 90일 지나면 지운다 ([`INTEREST_COMPLEX_REPORT.md`](./INTEREST_COMPLEX_REPORT.md))
 - 푸시 토큰은 경로가 아니라 **body**로 받는다 (경로는 `X-Device-Id`와 같은 device_id)
 - 웹 푸시는 범위 밖이다. 웹 사용자는 `/notifications`(알림함)로 확인한다
 - 트리거:
   - `chat_message` — 새 채팅 (수신자 오프라인 시)
   - `interest_complex_new_transaction` — 관심 단지 신규 **적재** 거래 (ETL 후 1회 묶음 발송)
-  - `interest_region_new_transaction` — 관심 법정동 신규 적재 거래 (ETL 후 1회 묶음 발송)
   - `listing_status_changed` — 찜한 매물 `sold` 전환
   - `ownership_revoked` — 소유권 변동·관리자 조치로 소유 확인이 해제되고 매물이 숨겨짐 (사유 포함)
   - `sanction_applied` — 매물 숨김·사용자 정지 등 제재 (사유, 이의제기용 `sanction_id` 포함)

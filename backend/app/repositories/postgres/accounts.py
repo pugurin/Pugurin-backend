@@ -122,6 +122,18 @@ class PostgresAccountRepository:
             # FOR UPDATE가 아니라 FOR NO KEY UPDATE: 토큰 갱신의 INSERT가 FK 확인으로 거는 FOR KEY SHARE와는
             # 부딪치지 않아야 교착(갱신은 토큰 행→사용자 행, 탈퇴는 사용자 행→토큰 행)이 생기지 않는다
             await conn.execute(text("SELECT 1 FROM users WHERE id = :id FOR NO KEY UPDATE"), {"id": user_id})
+            # 바로 익명화한다. 위 잠금과 함께, 리포트 배치의 insert_report(EXISTS … FOR SHARE)가
+            # 탈퇴 뒤 알림을 남기지 않게 한다
+            await conn.execute(
+                text(
+                    """
+                    UPDATE users SET nickname = :withdrawn, provider = NULL, marketing_push = false,
+                                     marketing_consented_at = NULL, settings = '{}', deleted_at = :now
+                    WHERE id = :id AND deleted_at IS NULL
+                    """
+                ),
+                {"id": user_id, "now": now, "withdrawn": WITHDRAWN_NICKNAME},
+            )
             # 제공자 연결 끊기(커밋 뒤)에 쓰려고 지우기 전에 읽어 둔다
             identities = (
                 await conn.execute(
@@ -140,16 +152,7 @@ class PostgresAccountRepository:
             await conn.execute(text("DELETE FROM user_identities WHERE user_id = :id"), {"id": user_id})
             # 사용자 행은 익명화만 하고 남기므로(ON DELETE CASCADE가 안 걸린다) 관심 목록은 직접 지운다
             await conn.execute(text("DELETE FROM user_interests WHERE user_id = :id"), {"id": user_id})
-            await conn.execute(
-                text(
-                    """
-                    UPDATE users SET nickname = :withdrawn, provider = NULL, marketing_push = false,
-                                     marketing_consented_at = NULL, settings = '{}', deleted_at = :now
-                    WHERE id = :id AND deleted_at IS NULL
-                    """
-                ),
-                {"id": user_id, "now": now, "withdrawn": WITHDRAWN_NICKNAME},
-            )
+            await conn.execute(text("DELETE FROM notifications WHERE user_id = :id"), {"id": user_id})
             # 탈퇴하면 refresh token은 폐기 표시가 아니라 행을 지운다(기기 ID 등도 남기지 않는다)
             await conn.execute(text("DELETE FROM refresh_tokens WHERE user_id = :id"), {"id": user_id})
         return [(SocialProvider(p), puid) for p, puid in identities]

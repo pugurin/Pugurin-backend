@@ -287,3 +287,10 @@ def test_without_a_database_interests_are_503():
     with client(None) as c:
         r = c.get(f"{API}/interests", headers={"Authorization": "Bearer x"})
     assert r.status_code == 503
+
+
+def test_region_interest_routes_are_gone(interest_db):
+    with client(interest_db) as c:
+        assert c.put(f"{API}/interests/regions/2626010500").status_code == 404
+        assert c.get(f"{API}/interests/regions").status_code == 404
+        assert "regions" not in c.get(f"{API}/interests").json()["data"]

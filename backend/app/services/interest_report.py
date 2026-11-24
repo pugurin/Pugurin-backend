@@ -12,6 +12,7 @@ import math
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from sqlalchemy import text
@@ -97,7 +98,9 @@ def _round_half_up(value: float) -> int:
 def format_price(won: int) -> str:
     """억 이상은 소수 1자리(.0 생략) '9.8억', 그 아래는 '4,100만'."""
     if won >= 100_000_000:
-        return f"{won / 100_000_000:.1f}".removesuffix(".0") + "억"
+        # 앱 toFixed(1)처럼 float 값 그대로(이진 표현 그대로) 반올림하고 동률이면 위로. :.1f는 은행가 반올림이라 다르다
+        eok = Decimal(won / 100_000_000).quantize(Decimal("0.1"), ROUND_HALF_UP)
+        return f"{eok:f}".removesuffix(".0") + "억"
     return f"{_round_half_up(won / 10_000):,}만"
 
 

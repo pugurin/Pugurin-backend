@@ -19,6 +19,7 @@
 - 백엔드 테스트: `cd backend && PATH=/private/tmp/claude-501/-Users-owl-pugurin/c19cdd34-6a9e-4dfc-ac20-d192b465ed06/scratchpad/venv312/bin:$PATH pytest <경로> -q`. 린트 `ruff check app tests`.
 - 프론트 테스트: `npx vitest run <경로>`, 타입 `npx tsc --noEmit`. 포트 8081은 건드리지 않는다.
 - 0016 마이그레이션은 새 파일 없이 그 자리에서 고친다(아직 배포 전).
+- 나중 결정: #66·#67 후속 PR(#70)이 0016을 쓰게 되어 리포트 마이그레이션은 0017로 옮겼다(아래 본문의 0016 언급은 당시 기록으로 남긴다).
 - 알림 종류 `interest_report`, CLI `interest-reports`, 설정 키 `weekly_report`(기본 true).
 - 투자 권유성 문구 금지. 사실만 쓴다.
 - 표기: 가격은 기존 `format_price`(억·만), 평형은 "N평형"(공급평형 있으면 공급평형, 없으면 전용평 — `market.py`의 `_supply_pyeong`·`_PYEONG`과 같은 규칙), 정비사업 단계 이름은 기존 `STAGE_LABEL`.

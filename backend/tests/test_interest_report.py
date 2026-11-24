@@ -14,6 +14,7 @@ from app.db.engine import make_engine
 from app.services.interest_report import (
     ReportRun,
     ReportWeekNotOver,
+    _format_diff,
     format_price,
     generate_interest_reports,
     week_start,
@@ -332,6 +333,12 @@ def test_prices_are_written_like_the_app():
     assert format_price(980_000_000) == "9.8억"
     assert format_price(1_000_000_000) == "10억"
     assert format_price(41_000_000) == "4,100만"
+    # 앱 toFixed(1)은 float 값 그대로 반올림(동률이면 위로). 파이썬 :.1f는 은행가 반올림이라 다르다
+    assert format_price(125_000_000) == "1.3억"
+    assert format_price(525_000_000) == "5.3억"
+    assert format_price(1_225_000_000) == "12.3억"
+    assert format_price(115_000_000) == "1.1억"  # 1.15는 float로 1.1499…라 앱도 1.1
+    assert _format_diff(-125_000_000) == "-1.3억"
 
 
 # ── 설계 문서 §3의 한 주 ───────────────────────────────────

@@ -26,12 +26,17 @@ class Notification:
 
 
 # 같은 주를 다시 돌려도 한 통만 남긴다(이미 만든 리포트는 덮지 않는다).
-# 탈퇴한 회원에겐 넣지 않는다(FOR SHARE로 행을 잡아 탈퇴 트랜잭션과 겹쳐도 어긋나지 않게 한다)
+# 탈퇴한 회원이나 리포트 받기를 끈 회원에겐 넣지 않는다(대상 조회 뒤에 끈 경우도 여기서 거른다).
+# FOR SHARE로 행을 잡아 탈퇴·설정 변경 트랜잭션과 겹쳐도 어긋나지 않게 한다
 _INSERT = text(
     """
     INSERT INTO notifications (id, user_id, kind, period_start, title, summary, payload, created_at)
     SELECT :id, :user, :kind, :period, :title, :summary, CAST(:payload AS jsonb), :now
-    WHERE EXISTS (SELECT 1 FROM users WHERE id = :user AND deleted_at IS NULL FOR SHARE)
+    WHERE EXISTS (
+        SELECT 1 FROM users
+        WHERE id = :user AND deleted_at IS NULL AND coalesce((settings->>'weekly_report')::boolean, true)
+        FOR SHARE
+    )
     ON CONFLICT (user_id, kind, period_start) DO NOTHING
     """
 )
@@ -66,7 +71,7 @@ class PostgresNotificationRepository:
     async def insert_report(
         self, user_id: UUID, period_start: date, title: str, summary: str, payload: dict, now: datetime
     ) -> bool:
-        """새로 넣었으면 True, 같은 주 리포트가 이미 있거나 탈퇴한 회원이면 False."""
+        """새로 넣었으면 True, 같은 주 리포트가 이미 있거나 탈퇴했거나 리포트를 끈 회원이면 False."""
         params = {
             "id": uuid4(),
             "user": user_id,

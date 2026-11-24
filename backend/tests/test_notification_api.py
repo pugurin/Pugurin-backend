@@ -192,6 +192,18 @@ def test_insert_report_skips_withdrawn_users(notification_db):
     assert asyncio.run(rows()) == 0
 
 
+def test_insert_report_skips_users_who_turned_reports_off(notification_db):
+    """배치가 대상 회원을 고른 뒤 회원이 리포트를 끄면, 그 주 리포트는 넣지 않는다."""
+    with client(notification_db) as c:
+        uid = my_id(c)  # 대상 조회 시점엔 받음(기본값)
+        assert c.put(f"{API}/notifications/settings", json={"weekly_report": False}).status_code == 200
+        assert insert_reports(notification_db, uid, weeks=1) == [False]
+        assert c.get(f"{API}/notifications").json()["meta"]["total"] == 0
+        # 다시 켜면 들어간다
+        assert c.put(f"{API}/notifications/settings", json={"weekly_report": True}).status_code == 200
+        assert insert_reports(notification_db, uid, weeks=1) == [True]
+
+
 def test_delete_older_than(notification_db):
     async def run(user_id: str) -> int:
         engine = make_engine(notification_db)

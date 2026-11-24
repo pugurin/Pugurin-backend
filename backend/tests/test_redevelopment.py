@@ -583,3 +583,19 @@ async def test_the_daily_routine_runs_the_sync_only_with_a_key(monkeypatch, key,
     settings = Settings(redevelopment_api_key=key, auction_api_key="", neis_api_key="", hospital_api_key="")
     assert await cli._daily(settings, None) == 0
     assert calls == expected
+
+
+async def test_stage_change_is_recorded_only_when_stage_differs(engine, cache):
+    sql = "SELECT stage, previous_stage, stage_changed_at FROM redevelopments"
+    await sync(engine, FakeRedevelopmentSource([zone_row(1, step="추진위원회 구성")]), cache)
+    assert await fetch(engine, sql) == [("committee", None, None)]
+    # 같은 단계로 다시 받으면 변화로 보지 않는다
+    await sync(engine, FakeRedevelopmentSource([zone_row(1, step="추진위원회 구성")]), cache, minutes=1)
+    assert await fetch(engine, sql) == [("committee", None, None)]
+    # 단계가 바뀐 원천을 받으면 이전 단계와 바뀐 시각을 남긴다
+    day_later = 24 * 60
+    await sync(engine, FakeRedevelopmentSource([zone_row(1, step="조합설립인가")]), cache, minutes=day_later)
+    assert await fetch(engine, sql) == [("association", "committee", FIXED_NOW + timedelta(days=1))]
+    # 그 뒤 같은 단계가 이어지면 기록이 그대로 남는다
+    await sync(engine, FakeRedevelopmentSource([zone_row(1, step="조합설립인가")]), cache, minutes=day_later + 5)
+    assert await fetch(engine, sql) == [("association", "committee", FIXED_NOW + timedelta(days=1))]

@@ -174,7 +174,7 @@ def test_signup_creates_the_user_and_returns_a_session(world):
             "marketing_consented_at": "2026-10-06T12:00:00+09:00",
             "marketing_reconfirm_due": "2028-10-06T12:00:00+09:00",
         },
-        "settings": {"loading_tips": True, "unseen_term_dots": True},
+        "settings": {"loading_tips": True, "unseen_term_dots": True, "weekly_report": True},
         "created_at": "2026-10-06T12:00:00+09:00",
     }
     r = world.me(session["access_token"])
@@ -511,9 +511,17 @@ def test_patch_nickname_and_settings(world):
     r = patch_me(world, session, {"nickname": " 해운대 ", "settings": {"loading_tips": False}})
     assert r.status_code == 200
     user = r.json()["data"]
-    assert user["nickname"] == "해운대" and user["settings"] == {"loading_tips": False, "unseen_term_dots": True}
+    assert user["nickname"] == "해운대" and user["settings"] == {
+        "loading_tips": False,
+        "unseen_term_dots": True,
+        "weekly_report": True,
+    }
     user = patch_me(world, session, {"settings": {"unseen_term_dots": False}}).json()["data"]
-    assert user["nickname"] == "해운대" and user["settings"] == {"loading_tips": False, "unseen_term_dots": False}
+    assert user["nickname"] == "해운대" and user["settings"] == {
+        "loading_tips": False,
+        "unseen_term_dots": False,
+        "weekly_report": True,
+    }
     assert world.me(session["access_token"]).json()["data"] == user
 
 

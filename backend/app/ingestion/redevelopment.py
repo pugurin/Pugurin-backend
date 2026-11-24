@@ -88,6 +88,11 @@ _UPSERT = text(
         area_name = excluded.area_name,
         kind = excluded.kind,
         step_raw = excluded.step_raw,
+        -- 단계가 바뀐 경우에만 이전 단계와 바뀐 시각을 남긴다(같은 단계가 이어지면 기록을 그대로 둔다)
+        previous_stage = CASE WHEN redevelopments.stage IS DISTINCT FROM excluded.stage
+                              THEN redevelopments.stage ELSE redevelopments.previous_stage END,
+        stage_changed_at = CASE WHEN redevelopments.stage IS DISTINCT FROM excluded.stage
+                                THEN CAST(:now AS timestamptz) ELSE redevelopments.stage_changed_at END,
         stage = excluded.stage,
         stage_order = excluded.stage_order,
         location = excluded.location,

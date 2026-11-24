@@ -495,6 +495,25 @@ CREATE UNIQUE INDEX mv_monthly_stats_key
 - **PK `(user_id, kind, target_id)`** 라 다시 넣어도 한 행(멱등). 종류별 회원당 최대 200개.
 - 대상이 닫히거나 지워져도 행은 남긴다(외래키 없음). 끝난 경매는 목록에 `is_closed=true`로 보이고, 실거래 데이터에서 사라진 단지·원천에서 지워진 물건은 목록에서 빠진다.
 
+### 4.5 알림 `notifications`과 정비사업 단계 변화 컬럼 (마이그레이션 0017)
+
+- **관심 단지 기준:** 리포트는 4.4의 관심 단지(`user_interests.kind='complex'`)로 만든다. 관심 지역(`kind='region'`)은 두지 않는다.
+- **정비사업 새 컬럼 2개:** `redevelopments.previous_stage`(바뀌기 전 단계), `stage_changed_at`(단계가 바뀐 시각, 리포트의 "이번 주 단계 변화"). `redevelopments.region_code`는 두지 않는다.
+- **`notifications`:** 회원에게 보낸 알림. 지금은 주간 리포트(`kind='interest_report'`)만 담는다. 받을지 말지는 `users.settings`의 `weekly_report`(기본 true, 바꾼 값만 저장)가 정한다. 설계는 [`INTEREST_COMPLEX_REPORT.md`](./INTEREST_COMPLEX_REPORT.md).
+
+| 컬럼 | 설명 |
+|---|---|
+| `id uuid` | PK |
+| `user_id uuid` | `users.id` (ON DELETE CASCADE). 탈퇴는 사용자 행을 익명화만 하므로 탈퇴 트랜잭션에서 직접 지운다 |
+| `kind text` | `interest_report` (CHECK) |
+| `period_start date` | 리포트 주의 월요일(KST) |
+| `title`, `summary` | 목록에 보이는 제목·한 줄 요약 |
+| `payload jsonb` | 리포트 내용(관심 단지별 새 거래·직전 거래·경매·정비사업 단계 변화) |
+| `created_at`, `read_at` | 만든 시각, 읽은 시각(NULL이면 안 읽음) |
+
+- **`UNIQUE (user_id, kind, period_start)`** 라 같은 주를 다시 돌려도 덮지 않는다(멱등). 인덱스 `(user_id, created_at DESC)`.
+- 90일이 지난 알림은 지우고, 관심 단지를 해제해도 받은 리포트는 남긴다.
+
 ## 5. 2·3차 테이블 윤곽
 
 ```mermaid
@@ -504,8 +523,7 @@ erDiagram
     users ||--o| consents : ""
     users ||--o{ agent_applications : ""
     users ||--o| agents : ""
-    users ||--o{ interests_complexes : ""
-    users ||--o{ interests_regions : ""
+    users ||--o{ user_interests : ""
     users ||--o{ devices : ""
     users ||--o{ notifications : ""
     users ||--o{ reports : "신고자"
@@ -526,7 +544,7 @@ erDiagram
 | `withdrawn_retention` | 2 | 탈퇴 후 **법정 보관 대상만** 분리 보관(개인정보 분리) |
 | `agent_applications` | 2 | `status`(none/pending/auto_verified/approved/rejected), 사업자번호·등록번호, `verification_result jsonb`, `license_upload_id`, 반려 사유 |
 | `agents` | 2 | `user_id` UNIQUE, 사무소명·대표자·등록번호·전화, `location`(서버 지오코딩), `intro`, 승인 시각 |
-| `interests_complexes`, `interests_regions` | 2 | `(user_id, complex_id)`·`(user_id, region_code)` UNIQUE, 관심 법정동 사용자당 최대 10 |
+| `user_interests` | 2 | PK `(user_id, kind, target_id)`, `kind`는 관심 단지(`complex`)·관심 경매(`auction`), 종류별 최대 200 (마이그레이션 0015) |
 | `chat_rooms` | 2 | `buyer_id`, `agent_id`, `context_type`+`context_id`, **UNIQUE(buyer, agent, context)**, 읽음 위치·숨김 여부를 참여자별로 |
 | `chat_messages` | 2 | `id uuid`, `room_id`, `sender_id`, `client_message_id`(**UNIQUE(room, sender, client_message_id)** 로 재전송 멱등), `content`, `sent_at` |
 | `notifications` | 2 | `user_id`, `type`, `payload jsonb`, `read_at`. 관심 거래 알림은 ETL 후 묶음 1건 |

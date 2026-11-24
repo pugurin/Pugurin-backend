@@ -242,7 +242,6 @@ def test_zones_loaded_before_the_load_record_existed_stay_ready(postgis, tmp_pat
     # 0016 전에 실은 경계에는 etl_runs 기록이 없다. 마이그레이션이 그 적재를 기록으로 채워 503으로 돌아가지 않게 한다
     url = create_database(postgis, "redevelopment_zones_backfill")
     migrate.upgrade(url, "0015")
-    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), ours()))
 
     async def load_without_record():
         engine = make_engine(url)
@@ -260,6 +259,8 @@ def test_zones_loaded_before_the_load_record_existed_stay_ready(postgis, tmp_pat
 
     asyncio.run(load_without_record())
     migrate.upgrade(url)
+    # 정비사업 동기화는 지금 코드가 쓰는 컬럼(뒤 마이그레이션에서 생김)이 있어야 하므로 끝까지 올린 뒤에 한다
+    asyncio.run(_sync(url, GeocodeCache(tmp_path / "geocode.json"), ours()))
     with client(url) as c:
         r = c.get(f"{API}/redevelopment-zones", params={"bbox": AROUND})
     assert r.status_code == 200, r.text

@@ -58,18 +58,18 @@ def _group_case() -> str:
     return "CASE " + " ".join(whens) + " END"
 
 
-# 단지와는 PNU(같은 필지)로 잇는다.
+# 경매(`auctions a`) → 단지 하나(`cx`). 단지와는 PNU(같은 필지)로 잇는다.
 # 한 필지에 단지가 여럿이면 같은 유형·전용면적이 가장 가까운 평형이 있는 곳, 그다음 id 순.
 # 경매 건물면적은 전용면적이다(운영 데이터에서 아파트·오피스텔의 95% 이상이 단지 평형과 0.5㎡ 안에서 일치).
-# 최근 실거래: 그 평형(area_bucket)의 최근 12개월 매매 중 가장 최근 1건. 해제·직거래·삭제된 거래는 뺀다.
-# 같은 거래들의 평균가(원 단위 반올림)와 거래 수도 함께 낸다. 평균은 창 함수라 LIMIT 1 전에 계산된다.
-_FROM = f"""
-    FROM auctions a
+# cx: id(단지), area_bucket·exclusive_area_m2·supply_area_pyeong(이어진 평형, 못 맞추면 NULL).
+# 지도 ⚖ 배지와 관심 단지 주간 리포트(services/interest_report.py)가 같이 쓴다. :area_tolerance가 필요하다
+AUCTION_COMPLEX_LINK = f"""
     LEFT JOIN LATERAL (
-        SELECT c.id, at.area_bucket, at.supply_area_pyeong
+        SELECT c.id, at.area_bucket, at.exclusive_area_m2, at.supply_area_pyeong
         FROM complexes c
         LEFT JOIN LATERAL (
-            SELECT t.area_bucket, t.supply_area_pyeong::float8 AS supply_area_pyeong,
+            SELECT t.area_bucket, t.exclusive_area_m2::float8 AS exclusive_area_m2,
+                   t.supply_area_pyeong::float8 AS supply_area_pyeong,
                    abs(t.exclusive_area_m2 - a.building_area_m2) AS diff
             FROM complex_area_types t
             WHERE t.complex_id = c.id AND a.building_area_m2 IS NOT NULL
@@ -80,6 +80,13 @@ _FROM = f"""
         WHERE a.pnu IS NOT NULL AND c.pnu = a.pnu
         ORDER BY at.diff IS NULL, at.diff, c.id LIMIT 1
     ) cx ON true
+"""
+
+# 최근 실거래: 그 평형(area_bucket)의 최근 12개월 매매 중 가장 최근 1건. 해제·직거래·삭제된 거래는 뺀다.
+# 같은 거래들의 평균가(원 단위 반올림)와 거래 수도 함께 낸다. 평균은 창 함수라 LIMIT 1 전에 계산된다.
+_FROM = f"""
+    FROM auctions a
+    {AUCTION_COMPLEX_LINK}
     LEFT JOIN LATERAL (
         SELECT t.price, t.contract_date, t.exclusive_area_m2::float8 AS exclusive_area_m2, count(*) OVER () AS n,
                round(avg(t.price) OVER ())::bigint AS avg_price

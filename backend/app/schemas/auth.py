@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.dates import KST
 from app.repositories.types import Account, SocialProvider
 
-DEFAULT_SETTINGS = {"loading_tips": True, "unseen_term_dots": True}
+DEFAULT_SETTINGS = {"loading_tips": True, "unseen_term_dots": True, "weekly_report": True}
 MARKETING_RECONFIRM_YEARS = 2  # 광고성 정보 수신동의는 2년마다 다시 받는다(정보통신망법)
 
 
@@ -47,6 +47,7 @@ class SettingsPatch(BaseModel):
 
     loading_tips: bool | None = None
     unseen_term_dots: bool | None = None
+    weekly_report: bool | None = None  # 관심 단지 주간 리포트 받기
 
 
 class UserPatch(BaseModel):
@@ -73,6 +74,7 @@ class ConsentsOut(BaseModel):
 class UserSettingsOut(BaseModel):
     loading_tips: bool
     unseen_term_dots: bool
+    weekly_report: bool
 
 
 class UserOut(BaseModel):

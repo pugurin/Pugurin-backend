@@ -1004,6 +1004,16 @@ async def test_old_notifications_are_cleaned(engine):
     assert [r.period_start for r in await reports(engine)] == [date(2026, 8, 24)]
 
 
+async def test_old_notification_cleanup_has_a_created_at_index(engine):
+    # 주 1회 오래된 알림 지우기(created_at < cutoff)가 알림 전체를 훑지 않게 created_at만의 인덱스를 둔다
+    async with engine.connect() as conn:
+        defs = (
+            (await conn.execute(text("SELECT indexdef FROM pg_indexes WHERE tablename = 'notifications'")))
+            .scalars()
+            .all()
+        )
+    assert any(d.endswith("USING btree (created_at)") for d in defs), defs
+
 
 async def test_week_must_be_a_monday(engine):
     with pytest.raises(ValueError) as e:

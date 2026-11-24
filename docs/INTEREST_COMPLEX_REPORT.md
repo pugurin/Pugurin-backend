@@ -93,7 +93,7 @@ C단지 · D단지: 이번 주 새 소식이 없어요
 
 - **`user_interests`:** 건드리지 않는다(동네 리포트 때 넣었던 `region` 종류 추가를 뺐다). 관심 단지(`kind='complex'`)를 그대로 쓴다.
 - **`redevelopments`:** `previous_stage text`, `stage_changed_at timestamptz`는 그대로 둔다(정비사업 동기화가 단계가 바뀔 때만 채운다, 새 구역은 비움). 동네 연결용 `region_code`는 뺀다.
-- **`notifications`:** 동네 리포트 설계와 같다. `kind`는 `'interest_report'`로 바꾼다. UNIQUE(`user_id`, `kind`, `period_start`) + `ON CONFLICT DO NOTHING`, 90일 지난 것은 배치가 지운다(`created_at` 인덱스 `notifications_created_idx`로 전체를 훑지 않는다), 관심을 해제해도 받은 리포트는 남긴다, 탈퇴 트랜잭션에서 지운다.
+- **`notifications`:** 동네 리포트 설계와 같다. `kind`는 `'interest_report'`로 바꾼다. UNIQUE(`user_id`, `kind`, `period_start`) + `ON CONFLICT DO NOTHING`, 90일 지난 것은 배치가 지운다(`created_at` 인덱스 `notifications_created_idx`(마이그레이션 0018)로 전체를 훑지 않는다), 관심을 해제해도 받은 리포트는 남긴다, 탈퇴 트랜잭션에서 지운다.
 - 동네 리포트 때 만든 옛 0016(`0016_region_reports`)은 배포되지 않았다. 0016은 정비구역 적재 기록(#70)이 쓰고, 리포트는 0017이다. 옛 0016을 적용한 개발 DB는 `alembic downgrade 0015`로 정리되지 않는다(지금 0016인 정비구역 적재 기록의 downgrade가 돈다). `notifications` 테이블과 `redevelopments.previous_stage`·`stage_changed_at`(·`region_code`)을 직접 지우고 `user_interests`의 `kind` CHECK를 0015대로(`region` 없이) 되돌린 뒤 `alembic stamp 0015` → `alembic upgrade head`.
 - **리포트 받기 설정:** 새 컬럼을 만들지 않고 이미 있는 회원 설정(`users.settings` jsonb, `PATCH /users/me`의 `settings`)에 `weekly_report` 키를 더한다(기본 `true`). 끈 회원은 만들지 않는다. 끄기 전에 받은 리포트는 남긴다.
 

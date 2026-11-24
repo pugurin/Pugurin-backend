@@ -257,6 +257,31 @@ def test_a_withdrawal_waits_for_an_add_in_flight_and_still_clears_it(interest_db
     assert asyncio.run(race()) == (True, 0)
 
 
+def test_a_withdrawal_does_not_wait_for_a_foreign_key_check_on_the_user(interest_db):
+    # 토큰 갱신의 새 토큰 INSERT는 FK 확인으로 사용자 행에 FOR KEY SHARE를 건다. 탈퇴가 사용자 행을 FOR UPDATE로
+    # 잠그면 이것과 부딪쳐(갱신은 토큰 행을 쥔 채 사용자 행을, 탈퇴는 사용자 행을 쥔 채 토큰 행을 기다림) 교착이 난다.
+    # 탈퇴의 첫 잠금은 FOR NO KEY UPDATE라 KEY SHARE를 기다리지 않아야 한다
+    from app.repositories.postgres.accounts import PostgresAccountRepository
+
+    with client(interest_db) as c:
+        user_id = c.get(f"{API}/users/me").json()["data"]["id"]
+
+    async def race() -> bool:
+        engine = make_engine(interest_db)
+        async with engine.connect() as refreshing:
+            tx = await refreshing.begin()
+            await refreshing.execute(text("SELECT 1 FROM users WHERE id = :id FOR KEY SHARE"), {"id": user_id})
+            withdrawal = asyncio.create_task(PostgresAccountRepository(engine).withdraw(user_id, now=FIXED_NOW))
+            await asyncio.sleep(0.5)
+            finished = withdrawal.done()
+            await tx.commit()
+        await withdrawal
+        await engine.dispose()
+        return finished
+
+    assert asyncio.run(race()) is True
+
+
 def test_without_a_database_interests_are_503():
     # DB가 없으면 로그인부터 쓸 수 없다(인증이 먼저 503)
     with client(None) as c:

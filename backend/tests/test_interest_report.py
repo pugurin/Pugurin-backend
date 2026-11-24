@@ -14,6 +14,7 @@ from app.db.engine import make_engine
 from app.services.interest_report import (
     ReportRun,
     ReportWeekNotOver,
+    _area_label,
     _format_diff,
     format_price,
     generate_interest_reports,
@@ -341,6 +342,17 @@ def test_prices_are_written_like_the_app():
     assert _format_diff(-125_000_000) == "-1.3억"
 
 
+def test_area_labels_are_written_like_the_app():
+    # 앱 areaLabel(평 단위)과 같게: 공급평형을 알면 "N평형", 모르면 "전용 25.7평"(toFixed(1), 끝 .0 생략)
+    assert _area_label(34.0, 84.97) == "34평형"
+    assert _area_label(33.6, None) == "34평형"
+    assert _area_label(None, 84.9) == "전용 25.7평"  # 84.9 ÷ 3.3058 = 25.68…
+    assert _area_label(None, 84.97) == "전용 25.7평"
+    assert _area_label(None, 82.645) == "전용 25평"  # 나누면 25.0 → 끝 .0 생략
+    assert _area_label(None, 59.9) == "전용 18.1평"
+    assert _area_label(None, None) is None
+
+
 # ── 설계 문서 §3의 한 주 ───────────────────────────────────
 
 
@@ -568,9 +580,9 @@ async def test_exclusive_pyeong_when_supply_is_unknown(engine):
     await generate(engine)
 
     garam = await one_block(engine)
-    # 84.97㎡ ÷ 3.3058 = 25.7 → 26평형
-    assert garam["sales"]["areas"][0]["area_label"] == "26평형"
-    assert garam["lines"][1] == "26평형 1건: 5억 (11/02)"
+    # 84.97㎡ ÷ 3.3058 = 25.7 → 앱처럼 "전용 25.7평"
+    assert garam["sales"]["areas"][0]["area_label"] == "전용 25.7평"
+    assert garam["lines"][1] == "전용 25.7평 1건: 5억 (11/02)"
 
 
 # ── 직전 같은 평형 대비 ──────────────────────────────────────
@@ -749,6 +761,20 @@ async def test_closed_public_and_unknown_auctions(engine):
     ]
     assert narae["lines"] == ["새 경매 1건"]
     assert row.summary == "가람단지 새 경매 2건 외 1개 단지"
+
+
+async def test_auction_area_is_exclusive_pyeong_when_supply_is_unknown(engine):
+    await run_(engine, IN_WEEK)
+    # 이어진 평형의 공급평형을 모르면 그 평형의 전용면적으로 앱처럼 "전용 18.1평"
+    await complex_(engine, GARAM, "가람단지", [(60, 59.9, None)], pnu=PNU)
+    await auction(engine, "2026타경1")
+    await user(engine, GARAM)
+
+    await generate(engine)
+
+    garam = await one_block(engine)
+    assert garam["auctions"][0]["area_label"] == "전용 18.1평"
+    assert garam["lines"] == ["새 경매 1건: 전용 18.1평 · 최저가 4.1억 · 매각기일 12/10"]
 
 
 # ── 정비사업 ────────────────────────────────────────────────
@@ -976,6 +1002,17 @@ async def test_old_notifications_are_cleaned(engine):
     await generate(engine)
 
     assert [r.period_start for r in await reports(engine)] == [date(2026, 8, 24)]
+
+
+async def test_old_notification_cleanup_has_a_created_at_index(engine):
+    # 주 1회 오래된 알림 지우기(created_at < cutoff)가 알림 전체를 훑지 않게 created_at만의 인덱스를 둔다
+    async with engine.connect() as conn:
+        defs = (
+            (await conn.execute(text("SELECT indexdef FROM pg_indexes WHERE tablename = 'notifications'")))
+            .scalars()
+            .all()
+        )
+    assert any(d.endswith("USING btree (created_at)") for d in defs), defs
 
 
 async def test_week_must_be_a_monday(engine):

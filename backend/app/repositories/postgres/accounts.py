@@ -117,6 +117,9 @@ class PostgresAccountRepository:
 
     async def withdraw(self, user_id: UUID, *, now: datetime) -> list[tuple[SocialProvider, str]]:
         async with self._engine.begin() as conn:
+            # 사용자 행부터 잠근다. 커밋 전인 관심 등록(_ADD가 FOR SHARE로 잠금)이 있으면 끝나기를 기다린 뒤
+            # 아래에서 그 행까지 지운다. 늦게 온 등록은 이 잠금을 기다렸다가 deleted_at을 보고 넣지 않는다
+            await conn.execute(text("SELECT 1 FROM users WHERE id = :id FOR UPDATE"), {"id": user_id})
             # 제공자 연결 끊기(커밋 뒤)에 쓰려고 지우기 전에 읽어 둔다
             identities = (
                 await conn.execute(

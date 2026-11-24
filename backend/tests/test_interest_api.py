@@ -206,6 +206,57 @@ def test_withdrawing_deletes_the_list(interest_db):
     assert asyncio.run(rows()) == 0
 
 
+def test_a_withdrawn_member_cannot_add_after_the_fact(interest_db):
+    # 탈퇴와 등록(PUT)이 겹쳐 탈퇴가 먼저 끝나도, 늦게 온 등록이 탈퇴한 회원의 행을 남기지 않는다
+    from app.repositories.postgres.interests import PostgresInterestRepository
+
+    with client(interest_db) as c:
+        user_id = c.get(f"{API}/users/me").json()["data"]["id"]
+        assert c.delete(f"{API}/users/me").status_code == 204
+
+    async def add_late() -> tuple[object, int]:
+        engine = make_engine(interest_db)
+        added = await PostgresInterestRepository(engine).add(
+            user_id, InterestKind.COMPLEX, str(COMPLEX_ID), max_items=5
+        )
+        async with engine.connect() as conn:
+            n = await conn.execute(text("SELECT count(*) FROM user_interests WHERE user_id = :id"), {"id": user_id})
+            count = n.scalar()
+        await engine.dispose()
+        return added, count
+
+    assert asyncio.run(add_late()) == (None, 0)
+
+
+def test_a_withdrawal_waits_for_an_add_in_flight_and_still_clears_it(interest_db):
+    # 등록 트랜잭션이 아직 커밋 전일 때 탈퇴가 들어오면, 탈퇴는 사용자 행 잠금에서 기다렸다가 그 행까지 지운다
+    # (탈퇴가 관심 목록을 먼저 지우고 사용자 행을 나중에 잠그면, 커밋 전 등록 행을 못 보고 지나쳐 남는다)
+    from app.repositories.postgres.accounts import PostgresAccountRepository
+    from app.repositories.postgres.interests import _ADD
+
+    with client(interest_db) as c:
+        user_id = c.get(f"{API}/users/me").json()["data"]["id"]
+
+    async def race() -> tuple[bool, int]:
+        engine = make_engine(interest_db)
+        params = {"user": user_id, "kind": "complex", "target": str(COMPLEX_ID), "max": 5}
+        async with engine.connect() as adding:
+            tx = await adding.begin()
+            assert (await adding.execute(_ADD, params)).scalar() is not None
+            withdrawal = asyncio.create_task(PostgresAccountRepository(engine).withdraw(user_id, now=FIXED_NOW))
+            await asyncio.sleep(0.5)
+            waited = not withdrawal.done()
+            await tx.commit()
+        await withdrawal
+        async with engine.connect() as conn:
+            n = await conn.execute(text("SELECT count(*) FROM user_interests WHERE user_id = :id"), {"id": user_id})
+            count = n.scalar()
+        await engine.dispose()
+        return waited, count
+
+    assert asyncio.run(race()) == (True, 0)
+
+
 def test_without_a_database_interests_are_503():
     # DB가 없으면 로그인부터 쓸 수 없다(인증이 먼저 503)
     with client(None) as c:

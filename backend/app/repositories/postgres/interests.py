@@ -20,7 +20,9 @@ class Interest:
     added_at: datetime
 
 
-# 이미 있으면 그대로 두고(멱등), 없으면 한도 안일 때만 넣는다
+# 이미 있으면 그대로 두고(멱등), 없으면 한도 안이고 탈퇴하지 않은 회원일 때만 넣는다.
+# 사용자 행을 FOR SHARE로 잠가 탈퇴(accounts.withdraw가 사용자 행을 먼저 FOR UPDATE)와 차례를 맞춘다:
+# 탈퇴가 먼저면 커밋을 기다렸다가 deleted_at을 보고 넣지 않고, 등록이 먼저면 탈퇴가 커밋을 기다렸다가 그 행까지 지운다
 _ADD = text(
     """
     WITH existing AS (
@@ -29,6 +31,7 @@ _ADD = text(
         INSERT INTO user_interests (user_id, kind, target_id)
         SELECT :user, :kind, :target
         WHERE NOT EXISTS (SELECT 1 FROM existing)
+          AND EXISTS (SELECT 1 FROM users WHERE id = :user AND deleted_at IS NULL FOR SHARE)
           AND (SELECT count(*) FROM user_interests WHERE user_id = :user AND kind = :kind) < :max
         ON CONFLICT DO NOTHING
         RETURNING created_at

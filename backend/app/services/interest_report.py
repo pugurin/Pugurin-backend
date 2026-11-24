@@ -98,9 +98,7 @@ def _round_half_up(value: float) -> int:
 def format_price(won: int) -> str:
     """억 이상은 소수 1자리(.0 생략) '9.8억', 그 아래는 '4,100만'."""
     if won >= 100_000_000:
-        # 앱 toFixed(1)처럼 float 값 그대로(이진 표현 그대로) 반올림하고 동률이면 위로. :.1f는 은행가 반올림이라 다르다
-        eok = Decimal(won / 100_000_000).quantize(Decimal("0.1"), ROUND_HALF_UP)
-        return f"{eok:f}".removesuffix(".0") + "억"
+        return _one_decimal(won / 100_000_000) + "억"
     return f"{_round_half_up(won / 10_000):,}만"
 
 
@@ -110,11 +108,23 @@ def _format_diff(won: int) -> str:
 
 
 def _area_label(supply_pyeong: float | None, exclusive_m2: float | None) -> str | None:
-    """'N평형': 공급평형을 알면 공급평형, 모르면 전용평(market.py _supply_pyeong과 같은 규칙)."""
-    pyeong = supply_pyeong
-    if pyeong is None and exclusive_m2 is not None:
-        pyeong = exclusive_m2 / SQM_PER_PYEONG
-    return None if pyeong is None else f"{_round_half_up(pyeong)}평형"
+    """앱 areaLabel(평 단위)의 머리 표기: 공급평형을 알면 '34평형', 모르면 전용평 '전용 25.7평'.
+
+    공급평형은 반올림한 정수(앱 pyeongType), 전용평은 소수 1자리에 끝 .0을 뺀다(앱 one() = +toFixed(1)).
+    """
+    if supply_pyeong is not None:
+        return f"{_round_half_up(supply_pyeong)}평형"
+    if exclusive_m2 is None:
+        return None
+    return f"전용 {_one_decimal(exclusive_m2 / SQM_PER_PYEONG)}평"
+
+
+def _one_decimal(value: float) -> str:
+    """앱 +v.toFixed(1)처럼: float 값 그대로(이진 표현 그대로) 소수 1자리로 반올림하고 동률이면 위로, 끝 .0은 뺀다.
+
+    :.1f는 은행가 반올림이라 다르다.
+    """
+    return f"{Decimal(value).quantize(Decimal('0.1'), ROUND_HALF_UP):f}".removesuffix(".0")
 
 
 def _mmdd(day: date) -> str:

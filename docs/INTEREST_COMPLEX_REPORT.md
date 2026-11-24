@@ -1,6 +1,6 @@
 # 관심 단지 주간 리포트 설계 (F-NOTI-02 · F-NOTI-03 확장)
 
-- **상태:** 설계(동네 단위로 만든 `feat/region-report`를 단지 단위로 고친다)
+- **상태:** 구현됨(백엔드 #71). 동네 단위로 만든 `feat/region-report`를 단지 단위로 고쳤다
 - **관련 이슈:** 백엔드 #22(알림), PR #69
 - **선행 PR:** 백엔드 #67(관심 목록을 회원 계정에 묶기, `user_interests` 0015) 위에 쌓는다. 정비사업 단계는 #66(정비구역 경계 `redevelopment_zones`)을 쓴다.
 - **바뀐 이유:** 처음엔 법정동을 관심 지역으로 등록해 동네 소식을 받는 설계였다(이 문서의 옛 이름 `INTEREST_REGION_REPORT.md`). 받는 사람이 동네를 고르면서 **후보 단지 몇 곳을 관심 등록해 비교하는 사람**이라, 리포트를 관심 단지 기준으로 바꾼다.
@@ -77,7 +77,7 @@ C단지 · D단지: 이번 주 새 소식이 없어요
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 새 실거래           | `transactions`에서 `complex_id`=그 단지, `deal_type='sale'`, `is_cancelled=false`, `deleted_at IS NULL`, 가격 0 아님, 그리고 **처음 수집된 실행**(`first_seen_run_id`)이 `job='collect'`·`status` `success`/`partial`이고 그 실행의 `finished_at`이 그 주 안. 계약일이 주 시작보다 60일 넘게 이전이면 뺀다(백필이 옛 거래를 부풀리지 않게). 동네 리포트와 같은 규칙. |
 | 평형 묶음 | 거래 전용면적의 `floor(exclusive_area_m2 + 0.5)`(= `area_bucket`, 단지 시트 평형 칩과 같다). `transactions`에는 컬럼이 없어 계산한다. |
-| 평형 표기           | 프론트 면적 표기와 같은 "N평형": 그 묶음의 공급평형(`complex_area_types.supply_area_pyeong`)을 알면 공급평형, 모르면 전용평.                                                                                                                                                                                                                                         |
+| 평형 표기           | 프론트 면적 표기(`state/market.ts` `areaLabel`)의 머리와 같게: 그 묶음의 공급평형(`complex_area_types.supply_area_pyeong`)을 알면 반올림한 "34평형", 모르면 전용평 "전용 25.7평"(소수 1자리, 끝 `.0`은 뺀다 — 앱 `+toFixed(1)`). |
 | 평형 줄             | 묶음마다 건수, **최근 거래**(계약일 가장 늦은 것, 같으면 가격 높은 것)의 가격·계약일.                                                                                                                                                                                                                                                                                |
 | 직전 같은 평형 대비 | 그 묶음의 최근 거래와, 같은 단지·같은 묶음에서 **이번 주 새 거래가 아닌** 거래 중 계약일이 가장 늦은 것(계약일이 최근 거래보다 늦지 않은 것)의 가격 차이. 그런 거래가 없거나 1년보다 오래됐으면 뺀다. 만 원 단위.                                                                                                                                                    |
 | 새 경매 | 지도의 경매 ⚖ 배지와 **같은 단지 잇기**(`repositories/postgres/auctions.py`의 `cx`: 같은 `pnu`의 단지 중 같은 유형·전용면적이 가장 가까운 평형이 있는 곳 하나)로 그 단지에 이어진 경매 중 `first_seen_at`이 그 주 안. 한 경매는 한 단지에만 붙어 중복으로 세지 않는다. 건별로 평형(경매 건물면적은 전용면적이다 — 이어진 평형의 표기를 쓴다, 없으면 평형 없이), `min_price`, 경매는 매각기일(`sale_date`)·공매는 입찰 마감(`bid_end_at`). 그 주 안에 닫힌 것도 넣는다. 1건이면 `새 경매 1건: …` 한 줄, 2건 이상이면 머리줄 `새 경매 N건` 뒤에 건마다 한 줄(아는 조각이 하나도 없는 건은 머리줄 건수에만 센다). |
@@ -93,7 +93,7 @@ C단지 · D단지: 이번 주 새 소식이 없어요
 
 - **`user_interests`:** 건드리지 않는다(동네 리포트 때 넣었던 `region` 종류 추가를 뺐다). 관심 단지(`kind='complex'`)를 그대로 쓴다.
 - **`redevelopments`:** `previous_stage text`, `stage_changed_at timestamptz`는 그대로 둔다(정비사업 동기화가 단계가 바뀔 때만 채운다, 새 구역은 비움). 동네 연결용 `region_code`는 뺀다.
-- **`notifications`:** 동네 리포트 설계와 같다. `kind`는 `'interest_report'`로 바꾼다. UNIQUE(`user_id`, `kind`, `period_start`) + `ON CONFLICT DO NOTHING`, 90일 지난 것은 배치가 지운다, 관심을 해제해도 받은 리포트는 남긴다, 탈퇴 트랜잭션에서 지운다.
+- **`notifications`:** 동네 리포트 설계와 같다. `kind`는 `'interest_report'`로 바꾼다. UNIQUE(`user_id`, `kind`, `period_start`) + `ON CONFLICT DO NOTHING`, 90일 지난 것은 배치가 지운다(`created_at` 인덱스 `notifications_created_idx`로 전체를 훑지 않는다), 관심을 해제해도 받은 리포트는 남긴다, 탈퇴 트랜잭션에서 지운다.
 - 동네 리포트 때 만든 옛 0016(`0016_region_reports`)은 배포되지 않았다. 0016은 정비구역 적재 기록(#70)이 쓰고, 리포트는 0017이다. 옛 0016을 적용한 개발 DB는 `alembic downgrade 0015`로 정리되지 않는다(지금 0016인 정비구역 적재 기록의 downgrade가 돈다). `notifications` 테이블과 `redevelopments.previous_stage`·`stage_changed_at`(·`region_code`)을 직접 지우고 `user_interests`의 `kind` CHECK를 0015대로(`region` 없이) 되돌린 뒤 `alembic stamp 0015` → `alembic upgrade head`.
 - **리포트 받기 설정:** 새 컬럼을 만들지 않고 이미 있는 회원 설정(`users.settings` jsonb, `PATCH /users/me`의 `settings`)에 `weekly_report` 키를 더한다(기본 `true`). 끈 회원은 만들지 않는다. 끄기 전에 받은 리포트는 남긴다.
 

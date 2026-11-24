@@ -5,7 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 from app.core.dates import Clock
-from app.core.errors import AppError, ErrorCode, data_not_ready
+from app.core.errors import AppError, ErrorCode, data_not_ready, unauthorized
 from app.repositories.ports import MarketRepository
 from app.repositories.postgres.auctions import PostgresAuctionRepository
 from app.repositories.postgres.interests import InterestKind, PostgresInterestRepository
@@ -59,10 +59,12 @@ class InterestService:
         return self._repo
 
     async def _add(self, user_id: UUID, kind: InterestKind, target: str) -> datetime:
-        added = await self._ready().add(user_id, kind, target, max_items=MAX_PER_KIND)
-        if added is None:
+        result = await self._ready().add(user_id, kind, target, max_items=MAX_PER_KIND)
+        if not result.member_alive:  # 인증을 통과한 직후 탈퇴가 커밋됐다: 인증 실패와 같은 401
+            raise unauthorized()
+        if result.added_at is None:
             raise AppError(ErrorCode.CONFLICT, limit_message(kind))
-        return added
+        return result.added_at
 
     async def add_complex(self, user_id: UUID, complex_id: UUID) -> datetime:
         self._ready()

@@ -208,7 +208,7 @@ def test_withdrawing_deletes_the_list(interest_db):
 
 def test_a_withdrawn_member_cannot_add_after_the_fact(interest_db):
     # 탈퇴와 등록(PUT)이 겹쳐 탈퇴가 먼저 끝나도, 늦게 온 등록이 탈퇴한 회원의 행을 남기지 않는다
-    from app.repositories.postgres.interests import PostgresInterestRepository
+    from app.repositories.postgres.interests import AddResult, PostgresInterestRepository
 
     with client(interest_db) as c:
         user_id = c.get(f"{API}/users/me").json()["data"]["id"]
@@ -225,7 +225,8 @@ def test_a_withdrawn_member_cannot_add_after_the_fact(interest_db):
         await engine.dispose()
         return added, count
 
-    assert asyncio.run(add_late()) == (None, 0)
+    # 넣지 못했고, 한도 초과가 아니라 탈퇴한 회원이라서임을 알린다(서비스가 409 대신 401로 답한다)
+    assert asyncio.run(add_late()) == (AddResult(added_at=None, member_alive=False), 0)
 
 
 def test_a_withdrawal_waits_for_an_add_in_flight_and_still_clears_it(interest_db):

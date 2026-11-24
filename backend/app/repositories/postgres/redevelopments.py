@@ -17,11 +17,15 @@ from app.repositories.types import (
     RedevelopmentZone,
 )
 
-# 좌표가 없으면 이어진 정비구역 경계의 대표점을 위치로 쓴다(docs/REDEVELOPMENT_ZONES.md "위치 보강")
-_COLS = """
+# 지번 좌표가 정확하면 그것을, 아니면(좌표 없음·법정동 중심점) 이어진 정비구역 경계의 대표점을 위치로 쓴다.
+# 경계도 없으면 동 중심점이라도 쓴다(docs/REDEVELOPMENT_ZONES.md "위치 보강"). 위치·출처·지도 범위가 같은 규칙을 따른다
+_PRECISE = "(r.location_precise AND r.geom IS NOT NULL)"
+_POINT = f"CASE WHEN {_PRECISE} THEN r.geom ELSE COALESCE(z.label_point, r.geom) END"
+_COLS = f"""
     r.id, r.area_name, r.kind, r.step_raw, r.stage, r.stage_order, r.location, r.location_kind,
-    COALESCE(r.lat, ST_Y(z.label_point)) AS lat, COALESCE(r.lng, ST_X(z.label_point)) AS lng, r.location_precise,
-    CASE WHEN r.geom IS NOT NULL THEN 'lot' WHEN z.zone_id IS NOT NULL THEN 'zone' ELSE 'none' END AS position_source,
+    ST_Y({_POINT}) AS lat, ST_X({_POINT}) AS lng, r.location_precise,
+    CASE WHEN {_PRECISE} THEN 'lot' WHEN z.zone_id IS NOT NULL THEN 'zone'
+         WHEN r.geom IS NOT NULL THEN 'lot' ELSE 'none' END AS position_source,
     z.zone_id,
     r.area_m2, r.households, r.buildings, r.union_members, r.floor_area_ratio, r.building_coverage_ratio, r.scale,
     r.business_entity, r.contractor, r.engineer, r.architect, r.specialists, r.tel, r.images,
@@ -126,9 +130,7 @@ class PostgresRedevelopmentRepository:
         if not flt.include_closed:
             clauses.append("r.closed_at IS NULL")
         if flt.bbox is not None:
-            clauses.append(
-                "COALESCE(r.geom, z.label_point) && ST_MakeEnvelope(:min_lng, :min_lat, :max_lng, :max_lat, 4326)"
-            )
+            clauses.append(f"{_POINT} && ST_MakeEnvelope(:min_lng, :min_lat, :max_lng, :max_lat, 4326)")
             b = flt.bbox
             params.update(min_lng=b.min_lng, min_lat=b.min_lat, max_lng=b.max_lng, max_lat=b.max_lat)
         if flt.kinds:

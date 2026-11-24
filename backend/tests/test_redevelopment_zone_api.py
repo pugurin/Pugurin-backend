@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.adapters.kakao import GeoResult
 from app.core.config import Settings
 from app.db import migrate
 from app.db.engine import make_engine
@@ -348,3 +349,35 @@ def test_a_zone_split_by_the_gu_line_takes_the_touching_piece_but_not_a_far_name
         body = c.get(f"{API}/redevelopment-zones", params={"bbox": "128.75,34.85,129.35,35.4"}).json()
     linked = {z["zone_id"]: z["redevelopment_id"] for z in body["data"]}
     assert linked == {"Y1": "BARA_0000000000002", "Y2": "BARA_0000000000002", "Y3": None}
+
+
+class DongCenterLookup:
+    """지번을 못 찾아 법정동 중심점(precise=False)만 돌려준다. 경계(NORTH)에서 멀리 떨어진 곳이다."""
+
+    async def lookup(self, query: str):
+        return GeoResult(35.15, 129.05, "2623010100", None, precise=False)
+
+
+def test_a_dong_center_point_gives_way_to_the_linked_boundary_point(postgis, tmp_path):
+    # 동 중심점은 구역 위치가 아니다. 경계와 이어졌으면 경계 대표점을 쓰고, 지도 범위도 그 점으로 본다
+    url = create_database(postgis, "redevelopment_zones_dong_center")
+    migrate.upgrade(url)
+
+    async def sync():
+        engine = make_engine(url)
+        rows = [zone_row(2, areaName="가상2구역 재건축", location="부산진구 가야동 7번지 일원")]
+        await sync_redevelopments(
+            engine, FakeRedevelopmentSource(rows), DongCenterLookup(), GeocodeCache(tmp_path / "geo.json"),
+            now=FIXED_NOW, out=lambda _: None,
+        )  # fmt: skip
+        await engine.dispose()
+
+    asyncio.run(sync())
+    asyncio.run(_load(url, write_zone_files(tmp_path / "files", boundaries())))
+    with client(url) as c:
+        two = c.get(f"{API}/redevelopments/BARA_0000000000002").json()["data"]
+        north = [z["id"] for z in c.get(f"{API}/redevelopments", params={"bbox": NORTH}).json()["data"]]
+        dong = c.get(f"{API}/redevelopments", params={"bbox": "129.04,35.14,129.06,35.16"}).json()["data"]
+    assert (two["position_source"], two["zone_id"], two["location_precise"]) == ("zone", "B", False)
+    assert 35.165 < two["lat"] < 35.175 and 129.155 < two["lng"] < 129.165
+    assert north == ["BARA_0000000000002"] and dong == []
